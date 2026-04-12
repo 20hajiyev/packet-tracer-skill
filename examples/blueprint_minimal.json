@@ -1,0 +1,46 @@
+{
+  "packet_tracer_version": "9.0.0.0810",
+  "name": "Minimal LAN",
+  "devices": [
+    {
+      "name": "S1",
+      "type": "Switch",
+      "model": "2960-24TT",
+      "x": 400,
+      "y": 260
+    },
+    {
+      "name": "PC1",
+      "type": "PC",
+      "model": "PC-PT",
+      "x": 250,
+      "y": 420
+    }
+  ],
+  "links": [
+    {
+      "a": {
+        "dev": "PC1",
+        "port": "FastEthernet0"
+      },
+      "b": {
+        "dev": "S1",
+        "port": "FastEthernet0/1"
+      },
+      "media": "copper"
+    }
+  ],
+  "configs": {
+    "PC1": {
+      "ip": "192.168.1.10",
+      "mask": "255.255.255.0",
+      "gw": "192.168.1.1",
+      "dns": "8.8.8.8"
+    },
+    "S1": [
+      "hostname S1",
+      "interface FastEthernet0/1",
+      "switchport mode access"
+    ]
+  }
+}

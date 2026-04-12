@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+output/
+*.pkt
+*.xml
+.pytest_cache/
+scripts/vendor/_twofish*.pyd
+scripts/vendor/_twofish*.so
+scripts/vendor/_twofish*.dll
