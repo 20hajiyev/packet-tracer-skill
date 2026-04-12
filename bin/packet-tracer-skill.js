@@ -3,6 +3,7 @@
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
+const { spawnSync } = require("child_process");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
 
@@ -36,6 +37,7 @@ Usage:
   packet-tracer-skill --path <dir> [--direct] [--force]
   packet-tracer-skill --verify [--codex|--cursor|--claude|--kiro|--adal]
   packet-tracer-skill --verify --path <dir> [--direct]
+  packet-tracer-skill --doctor
 
 Examples:
   packet-tracer-skill
@@ -44,6 +46,7 @@ Examples:
   packet-tracer-skill --path .agents/skills --force
   packet-tracer-skill --verify --codex
   packet-tracer-skill --verify --path .agents/skills
+  packet-tracer-skill --doctor
 `);
 }
 
@@ -53,6 +56,7 @@ function parseArgs(argv) {
     force: false,
     verify: false,
     direct: false,
+    doctor: false,
     path: null,
     help: false,
   };
@@ -67,6 +71,8 @@ function parseArgs(argv) {
       args.verify = true;
     } else if (arg === "--direct") {
       args.direct = true;
+    } else if (arg === "--doctor") {
+      args.doctor = true;
     } else if (arg === "--path") {
       i += 1;
       args.path = argv[i];
@@ -135,12 +141,60 @@ function verifyInstall(target) {
   };
 }
 
+function commandExists(command) {
+  const probe = process.platform === "win32" ? "where" : "which";
+  const result = spawnSync(probe, [command], { stdio: "ignore" });
+  return result.status === 0;
+}
+
+function envPathStatus(value) {
+  if (!value) {
+    return { ok: false, message: "not set" };
+  }
+  if (!fs.existsSync(value)) {
+    return { ok: false, message: `set but missing: ${value}` };
+  }
+  return { ok: true, message: value };
+}
+
+function doctor() {
+  const checks = [
+    ["node", commandExists("node"), commandExists("node") ? "found" : "missing"],
+    ["python", commandExists("python"), commandExists("python") ? "found" : "missing"],
+  ];
+
+  const root = envPathStatus(process.env.PACKET_TRACER_ROOT);
+  const donor = envPathStatus(process.env.PACKET_TRACER_COMPAT_DONOR);
+  const twofish = envPathStatus(process.env.PKT_TWOFISH_LIBRARY);
+
+  checks.push(["PACKET_TRACER_ROOT", root.ok, root.message]);
+  checks.push(["PACKET_TRACER_COMPAT_DONOR", donor.ok, donor.message]);
+  checks.push(["PKT_TWOFISH_LIBRARY", twofish.ok, twofish.message]);
+
+  for (const [name, ok, detail] of checks) {
+    console.log(`${ok ? "OK" : "MISSING"}  ${name}  ${detail}`);
+  }
+
+  const failed = checks.some(([, ok]) => !ok);
+  if (failed) {
+    console.error("\nRuntime is not fully ready. Install copies are fine, but Packet Tracer generation still needs the missing items above.");
+    process.exit(1);
+  }
+
+  console.log("\nRuntime looks ready.");
+  process.exit(0);
+}
+
 function main() {
   try {
     const args = parseArgs(process.argv.slice(2));
     if (args.help) {
       printHelp();
       process.exit(0);
+    }
+
+    if (args.doctor) {
+      doctor();
     }
 
     const target = resolveTarget(args);

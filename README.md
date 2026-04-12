@@ -62,6 +62,8 @@ Default install for Codex:
 npx github:20hajiyev/packet-tracer-skill
 ```
 
+That already installs everything shipped inside this repository.
+
 Common targets:
 
 ```powershell
@@ -108,6 +110,27 @@ From a local clone:
 node .\bin\packet-tracer-skill.js --verify
 python .\scripts\install_skill.py --host codex --force
 ```
+
+### Check Runtime Requirements
+
+Repository install and runtime readiness are different things.
+
+- `install` copies the skill files
+- `doctor` checks system prerequisites for real `.pkt` generation
+
+Run:
+
+```powershell
+npx github:20hajiyev/packet-tracer-skill --doctor
+```
+
+It checks:
+
+- `node`
+- `python`
+- `PACKET_TRACER_ROOT`
+- `PACKET_TRACER_COMPAT_DONOR`
+- `PKT_TWOFISH_LIBRARY`
 
 ### Runtime Configuration
 
@@ -318,6 +341,8 @@ Codex üçün standart quraşdırma:
 npx github:20hajiyev/packet-tracer-skill
 ```
 
+Bu komanda repository daxilində olan bütün faylları quraşdırır.
+
 Tez-tez lazım olan digər variantlar:
 
 ```powershell
@@ -364,6 +389,27 @@ npx github:20hajiyev/packet-tracer-skill --verify --path .agents/skills
 node .\bin\packet-tracer-skill.js --verify
 python .\scripts\install_skill.py --host codex --force
 ```
+
+### Runtime tələblərini yoxlama
+
+Repository-nin quraşdırılması ilə runtime hazırlığı eyni şey deyil.
+
+- `install` skill fayllarını kopyalayır
+- `doctor` real `.pkt` generasiya üçün sistem tələblərini yoxlayır
+
+İşlət:
+
+```powershell
+npx github:20hajiyev/packet-tracer-skill --doctor
+```
+
+Yoxladığı şeylər:
+
+- `node`
+- `python`
+- `PACKET_TRACER_ROOT`
+- `PACKET_TRACER_COMPAT_DONOR`
+- `PKT_TWOFISH_LIBRARY`
 
 ### Runtime konfiqurasiyası
 
