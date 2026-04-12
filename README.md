@@ -42,6 +42,7 @@ Use the same repository, then install it into the skill path your host expects.
 | Tool | Install | First Use |
 | --- | --- | --- |
 | Claude Code | `npx github:20hajiyev/packet-tracer-skill --claude` | `Use /pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Claude Desktop | `npx github:20hajiyev/packet-tracer-skill --path <claude-desktop-skills-dir>` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
 | Cursor | `npx github:20hajiyev/packet-tracer-skill --cursor` | `@pkt build a Packet Tracer lab with VLAN and DHCP` |
 | Gemini CLI | `npx github:20hajiyev/packet-tracer-skill --path <gemini-skills-dir>` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
 | Codex CLI | `npx github:20hajiyev/packet-tracer-skill` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
@@ -64,6 +65,7 @@ npx github:20hajiyev/packet-tracer-skill
 Common targets:
 
 ```powershell
+npx github:20hajiyev/packet-tracer-skill --path <claude-desktop-skills-dir>
 npx github:20hajiyev/packet-tracer-skill --cursor
 npx github:20hajiyev/packet-tracer-skill --claude
 npx github:20hajiyev/packet-tracer-skill --kiro
@@ -296,6 +298,7 @@ quraşdırılır.
 | Alət | Quraşdırma | İlk istifadə |
 | --- | --- | --- |
 | Claude Code | `npx github:20hajiyev/packet-tracer-skill --claude` | `Use /pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Claude Desktop | `npx github:20hajiyev/packet-tracer-skill --path <claude-desktop-skills-dir>` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
 | Cursor | `npx github:20hajiyev/packet-tracer-skill --cursor` | `@pkt build a Packet Tracer lab with VLAN and DHCP` |
 | Gemini CLI | `npx github:20hajiyev/packet-tracer-skill --path <gemini-skills-dir>` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
 | Codex CLI | `npx github:20hajiyev/packet-tracer-skill` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
@@ -318,6 +321,7 @@ npx github:20hajiyev/packet-tracer-skill
 Tez-tez lazım olan digər variantlar:
 
 ```powershell
+npx github:20hajiyev/packet-tracer-skill --path <claude-desktop-skills-dir>
 npx github:20hajiyev/packet-tracer-skill --cursor
 npx github:20hajiyev/packet-tracer-skill --claude
 npx github:20hajiyev/packet-tracer-skill --kiro
