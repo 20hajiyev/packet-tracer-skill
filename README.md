@@ -1,70 +1,81 @@
-# pkt skill
+# packet-tracer-skill
 
-Cisco Packet Tracer 9.0 `.pkt` generator and editor for Codex, Cursor, Claude Code,
-Antigravity, and other skill-based hosts.
+Cisco Packet Tracer 9.x `.pkt` generator and editor for skill-based coding hosts.
 
-This repository is built for one specific goal: take a natural-language network
+This repository is built for one specific job: take a natural-language network
 request, plan it explicitly, adapt a compatible local Cisco Packet Tracer donor
-lab, and produce a Packet Tracer file that opens cleanly in Packet Tracer 9.x.
+lab, and produce a `.pkt` file that opens cleanly in Packet Tracer 9.x.
 
-It is intentionally **Cisco-sample-centric**:
+It is intentionally:
 
-- Cisco Packet Tracer local sample saves are the primary donor source
-- bundled templates are only secondary fallback helpers
-- imported external labs are **reference-only**
-
-It is also intentionally **intent-first**:
-
-- prompt parsing happens before generation
-- topology/config planning is explicit
-- validation and autofix happen before write
-- unsafe generation is blocked instead of guessed
+- Cisco-sample-centric
+- intent-first
+- donor-prune-based for compatibility
+- reference-aware without trusting external labs as donors
 
 ## Host Support
 
-Use the same repository, but install or invoke it in the way your host expects.
+Use the same repository, then install or point it to the skill path your host
+expects.
 
 | Tool | Install | First Use |
 | --- | --- | --- |
-| Claude Code | `git clone https://github.com/20hajiyev/packet-tracer-skill.git <claude-skills-dir>/pkt` | `Use /pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| Cursor | `git clone https://github.com/20hajiyev/packet-tracer-skill.git <cursor-skills-dir>/pkt` | `@pkt build a Packet Tracer lab with VLAN and DHCP` |
-| Gemini CLI | `git clone https://github.com/20hajiyev/packet-tracer-skill.git <gemini-skills-dir>/pkt` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| Codex CLI | `git clone https://github.com/20hajiyev/packet-tracer-skill.git <codex-skills-dir>/pkt` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| Antigravity | `git clone https://github.com/20hajiyev/packet-tracer-skill.git <antigravity-skills-dir>/pkt` | `Use @pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| Kiro CLI | `git clone https://github.com/20hajiyev/packet-tracer-skill.git <kiro-skills-dir>/pkt` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| Kiro IDE | `git clone https://github.com/20hajiyev/packet-tracer-skill.git <kiro-ide-skills-dir>/pkt` | `Use @pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| GitHub Copilot | Clone or copy this repo into your local prompts/rules/skills docs | `Ask Copilot to use pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| OpenCode | `git clone https://github.com/20hajiyev/packet-tracer-skill.git .agents/skills/pkt` | `opencode run @pkt build a Packet Tracer lab with VLAN and DHCP` |
-| AdaL CLI | `git clone https://github.com/20hajiyev/packet-tracer-skill.git .adal/skills/pkt` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| Custom path | `git clone https://github.com/20hajiyev/packet-tracer-skill.git ./my-skills/pkt` | Depends on your tool |
+| Claude Code | `python .\scripts\install_skill.py --host claude --force` | `Use /pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Cursor | `python .\scripts\install_skill.py --host cursor --force` | `@pkt build a Packet Tracer lab with VLAN and DHCP` |
+| Gemini CLI | `python .\scripts\install_skill.py --path <gemini-skills-dir> --force` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Codex CLI | `python .\scripts\install_skill.py --host codex --force` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Antigravity | `python .\scripts\install_skill.py --path <antigravity-skills-dir> --force` | `Use @pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Kiro CLI | `python .\scripts\install_skill.py --host kiro --force` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Kiro IDE | `python .\scripts\install_skill.py --host kiro --force` | `Use @pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| GitHub Copilot | Copy this repo into your local prompts/rules/skills docs | `Ask Copilot to use pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| OpenCode | `python .\scripts\install_skill.py --path .agents/skills --force` | `opencode run @pkt build a Packet Tracer lab with VLAN and DHCP` |
+| AdaL CLI | `python .\scripts\install_skill.py --host adal --force` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Custom path | `python .\scripts\install_skill.py --path ./my-skills --force` | Depends on your tool |
 
-For path details, prompt examples, and setup caveats by host, go to:
+## Quick Start
 
-- [ComposioHQ/awesome-claude-skills](https://github.com/ComposioHQ/awesome-claude-skills)
-- [sickn33/antigravity-awesome-skills](https://github.com/sickn33/antigravity-awesome-skills)
+```powershell
+git clone https://github.com/20hajiyev/packet-tracer-skill.git
+cd .\packet-tracer-skill
+powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1 -Dev
+python .\scripts\install_skill.py --host codex --force
+```
+
+Then configure your local Packet Tracer environment:
+
+```powershell
+$env:PACKET_TRACER_ROOT='C:\Program Files\Cisco Packet Tracer 9.0.0'
+$env:PACKET_TRACER_COMPAT_DONOR='C:\labs\campus_donor_9_0.pkt'
+$env:PKT_TWOFISH_LIBRARY='C:\tools\pkt-twofish\_twofish.cp314-win_amd64.pyd'
+```
+
+## Screenshot
+
+Generated campus topology opened in Cisco Packet Tracer:
+
+![Packet Tracer topology](docs/screenshots/packet-tracer-topology-cropped.png)
 
 ## What This Repo Does
 
 - Parses hybrid Azerbaijani + English prompts
 - Builds explicit `IntentPlan`, `TopologyPlan`, and `ConfigPlan`
 - Ranks Cisco local donors by capability and topology fit
-- Uses donor-prune adaptation for Packet Tracer 9.0 compatibility
+- Uses donor-prune adaptation for Packet Tracer 9.x compatibility
 - Edits existing `.pkt` labs
 - Supports VLAN, router-on-a-stick, DHCP, DNS, Telnet, ACL, wireless/AP-client, and department/campus layouts
-- Explains its own plan before generation with `--explain-plan`
+- Explains the plan before generation with `--explain-plan`
 
 ## Design Principles
 
 ### 1. Cisco local donors are primary
 
-This repo does **not** try to synthesize Packet Tracer runtime state from scratch
-for the main generation path. Instead, it adapts a working local Packet Tracer
-9.0 donor lab.
+This repo does not try to fully synthesize Packet Tracer runtime state from
+scratch on the main generation path. It adapts a working local Packet Tracer
+9.x donor lab.
 
-That choice is deliberate. Packet Tracer compatibility failures are usually not
-caused by high-level configs; they come from deeper runtime, workspace, physical,
-scenario, and reference structures. Donor-preserving adaptation is the more
-reliable path.
+That choice is deliberate. Packet Tracer compatibility failures usually come
+from deeper runtime, workspace, physical, scenario, and reference structures.
+Donor-preserving adaptation is the more reliable path.
 
 ### 2. External labs are reference-only
 
@@ -75,7 +86,7 @@ Imported external `.pkt` collections can help with:
 - config ideas
 - capability hints
 
-They do **not** become prototype donors by default.
+They do not become prototype donors by default.
 
 ### 3. Planning is explicit
 
@@ -90,21 +101,34 @@ Prompt generation follows this pipeline:
 
 ### 4. Unsafe prompts are blocked
 
-If a prompt is incomplete or ambiguous, the tool should return structured
-`blocking_gaps` instead of inventing risky topology/config decisions.
+If a prompt is incomplete or ambiguous, the tool returns structured
+`blocking_gaps` instead of inventing risky topology or config decisions.
 
 ## Requirements
 
 - Windows
 - Cisco Packet Tracer 9.x installed locally
 - local Cisco Packet Tracer sample saves available
-- a local Packet Tracer 9.0 donor lab for prompt-driven donor-prune generation
-- Python environment compatible with your local Twofish bridge
+- a local Packet Tracer 9.x donor lab for donor-prune generation
+- a local Twofish bridge compatible with your Python runtime
+
+### Python dependencies
+
+- `requirements.txt`
+  - runtime package list
+- `requirements-dev.txt`
+  - test and development extras such as `pytest`
+
+Install them with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1 -Dev
+```
 
 ## Runtime Configuration
 
 This repository does not ship Cisco sample `.pkt` files. It resolves them from
-the local Packet Tracer installation.
+the local Packet Tracer installation and from your explicitly configured donor.
 
 ### Environment variables
 
@@ -114,14 +138,6 @@ the local Packet Tracer installation.
 - `PACKET_TRACER_COMPAT_DONOR`
 - `PACKET_TRACER_TARGET_VERSION`
 - `PKT_TWOFISH_LIBRARY`
-
-### Minimum recommended setup
-
-```powershell
-$env:PACKET_TRACER_ROOT='C:\Program Files\Cisco Packet Tracer 9.0.0'
-$env:PACKET_TRACER_COMPAT_DONOR='C:\labs\campus_donor_9_0.pkt'
-$env:PKT_TWOFISH_LIBRARY='C:\tools\pkt-twofish\_twofish.cp314-win_amd64.pyd'
-```
 
 ### Sample-source policy
 
@@ -137,13 +153,13 @@ $env:PKT_TWOFISH_LIBRARY='C:\tools\pkt-twofish\_twofish.cp314-win_amd64.pyd'
 
 ## Twofish Bridge
 
-This public repo does **not** ship a prebuilt Twofish bridge by default.
+This public repo does not ship a prebuilt Twofish bridge binary by default.
 
 That is intentional:
 
 - no machine-specific binary is committed by default
 - no unsigned local artifact is published by accident
-- no private path/build residue is shared by default
+- no private path or build residue is shared by default
 
 Read `scripts/vendor/README.md` for local setup.
 
@@ -152,7 +168,7 @@ Read `scripts/vendor/README.md` for local setup.
 - `scripts/generate_pkt.py`
   - CLI entrypoint
 - `scripts/intent_parser.py`
-  - natural-language + mini-DSL parsing
+  - natural-language and mini-DSL parsing
 - `scripts/pkt_editor.py`
   - donor-preserving edit and mutation operations
 - `scripts/pkt_transformer.py`
@@ -160,11 +176,15 @@ Read `scripts/vendor/README.md` for local setup.
 - `scripts/sample_catalog.py`
   - local Cisco and external reference indexing
 - `scripts/sample_selector.py`
-  - donor/reference scoring
+  - donor and reference scoring
 - `scripts/packet_tracer_env.py`
   - local environment and donor resolution
 - `scripts/pkt_codec.py`
   - Packet Tracer modern codec
+- `scripts/install_skill.py`
+  - host-path installer helper
+- `scripts/setup.ps1`
+  - virtual environment and dependency setup
 - `templates/pt900/`
   - secondary fallback XML templates
 - `tests/`
@@ -268,15 +288,6 @@ Still your responsibility before publishing:
 - external labs are not donors by default
 - bundled template coverage is intentionally limited
 
-## Recommended Public Repo Checklist
-
-Before pushing publicly, confirm:
-
-- `scripts/vendor/` contains no local prebuilt `_twofish` binary
-- no generated `.pkt` or `.xml` outputs are staged
-- your local donor path exists only in your shell env, not in committed files
-- README examples match your intended public setup
-
 ## Suggested Screenshots
 
 If you want a screenshot section in the repo, use screenshots that show the real
@@ -284,14 +295,18 @@ workflow and actual value of the skill:
 
 1. `Explain Plan`
    - terminal screenshot of `--explain-plan`
-   - show `intent_plan`, `topology_plan`, and `blocking_gaps` or `validation_report`
+   - show `intent_plan`, `topology_plan`, and `validation_report`
 2. `Opened Packet Tracer Topology`
    - Packet Tracer logical view with a generated campus or department lab
    - labels readable, links visible, layout clean
 3. `Existing .pkt Edit`
-   - before/after pair or a single screenshot showing renamed departments, VLAN changes, or updated SSIDs
+   - before and after pair or one screenshot showing renamed departments, VLAN changes, or updated SSIDs
 4. `Services or Wireless`
    - a server DHCP/DNS screen, AP SSID/security screen, or router/switch CLI verification
+
+Suggested save folder in this repo:
+
+- `docs/screenshots/`
 
 Avoid screenshots that expose:
 
@@ -305,13 +320,3 @@ Avoid screenshots that expose:
 This project is licensed under the MIT License.
 
 Third-party license notices can remain under `LICENSES/` when needed.
-
-## Status
-
-This repo is now structured for public sharing with:
-
-- env-based donor setup
-- external-reference-only workflow
-- explicit explain-plan output
-- no machine-specific donor path committed
-- no vendored private binary required in the repo by default

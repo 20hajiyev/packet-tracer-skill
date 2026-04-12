@@ -1,0 +1,6 @@
+# Runtime Python dependencies
+#
+# The main runtime is intentionally standard-library-first.
+# Packet Tracer encode/decode for modern 9.x files additionally needs a local
+# Twofish bridge binary configured via PKT_TWOFISH_LIBRARY or placed under
+# scripts/vendor/.
