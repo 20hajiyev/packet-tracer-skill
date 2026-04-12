@@ -1,0 +1,27 @@
+{
+  "name": "packet-tracer-skill",
+  "version": "0.1.0",
+  "private": false,
+  "description": "Install and verify the pkt skill for Codex, Cursor, Claude Code, Kiro, AdaL, and custom skill hosts.",
+  "license": "MIT",
+  "bin": {
+    "packet-tracer-skill": "bin/packet-tracer-skill.js"
+  },
+  "files": [
+    "SKILL.md",
+    "LICENSE",
+    "LICENSES",
+    "README.md",
+    "requirements.txt",
+    "requirements-dev.txt",
+    "scripts",
+    "templates",
+    "references",
+    "examples",
+    "tests",
+    "bin"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -20,25 +20,59 @@ expects.
 
 | Tool | Install | First Use |
 | --- | --- | --- |
-| Claude Code | `python .\scripts\install_skill.py --host claude --force` | `Use /pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| Cursor | `python .\scripts\install_skill.py --host cursor --force` | `@pkt build a Packet Tracer lab with VLAN and DHCP` |
-| Gemini CLI | `python .\scripts\install_skill.py --path <gemini-skills-dir> --force` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| Codex CLI | `python .\scripts\install_skill.py --host codex --force` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| Antigravity | `python .\scripts\install_skill.py --path <antigravity-skills-dir> --force` | `Use @pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| Kiro CLI | `python .\scripts\install_skill.py --host kiro --force` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| Kiro IDE | `python .\scripts\install_skill.py --host kiro --force` | `Use @pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Claude Code | `npx github:20hajiyev/packet-tracer-skill --claude` | `Use /pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Cursor | `npx github:20hajiyev/packet-tracer-skill --cursor` | `@pkt build a Packet Tracer lab with VLAN and DHCP` |
+| Gemini CLI | `npx github:20hajiyev/packet-tracer-skill --path <gemini-skills-dir>` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Codex CLI | `npx github:20hajiyev/packet-tracer-skill` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Antigravity | `npx github:20hajiyev/packet-tracer-skill --path <antigravity-skills-dir>` | `Use @pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Kiro CLI | `npx github:20hajiyev/packet-tracer-skill --kiro` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Kiro IDE | `npx github:20hajiyev/packet-tracer-skill --kiro` | `Use @pkt to build a Packet Tracer lab with VLAN and DHCP` |
 | GitHub Copilot | Copy this repo into your local prompts/rules/skills docs | `Ask Copilot to use pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| OpenCode | `python .\scripts\install_skill.py --path .agents/skills --force` | `opencode run @pkt build a Packet Tracer lab with VLAN and DHCP` |
-| AdaL CLI | `python .\scripts\install_skill.py --host adal --force` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| Custom path | `python .\scripts\install_skill.py --path ./my-skills --force` | Depends on your tool |
+| OpenCode | `npx github:20hajiyev/packet-tracer-skill --path .agents/skills` | `opencode run @pkt build a Packet Tracer lab with VLAN and DHCP` |
+| AdaL CLI | `npx github:20hajiyev/packet-tracer-skill --adal` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Custom path | `npx github:20hajiyev/packet-tracer-skill --path ./my-skills` | Depends on your tool |
 
 ## Quick Start
+
+```powershell
+npx github:20hajiyev/packet-tracer-skill
+```
+
+That installs `pkt` into the default Codex skill path.
+
+If you publish this package to npm later, the same command shape becomes:
+
+```powershell
+npx packet-tracer-skill
+```
+
+Other common targets:
+
+```powershell
+npx github:20hajiyev/packet-tracer-skill --cursor
+npx github:20hajiyev/packet-tracer-skill --claude
+npx github:20hajiyev/packet-tracer-skill --kiro
+```
+
+If you publish to npm later, those become:
+
+```powershell
+npx packet-tracer-skill --cursor
+npx packet-tracer-skill --claude
+```
+
+If PowerShell blocks `npx.ps1` on your machine, use:
+
+```powershell
+cmd /c npx github:20hajiyev/packet-tracer-skill --cursor
+```
+
+If you want the local development setup for this repository itself:
 
 ```powershell
 git clone https://github.com/20hajiyev/packet-tracer-skill.git
 cd .\packet-tracer-skill
 powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1 -Dev
-python .\scripts\install_skill.py --host codex --force
 ```
 
 Then configure your local Packet Tracer environment:
@@ -47,6 +81,29 @@ Then configure your local Packet Tracer environment:
 $env:PACKET_TRACER_ROOT='C:\Program Files\Cisco Packet Tracer 9.0.0'
 $env:PACKET_TRACER_COMPAT_DONOR='C:\labs\campus_donor_9_0.pkt'
 $env:PKT_TWOFISH_LIBRARY='C:\tools\pkt-twofish\_twofish.cp314-win_amd64.pyd'
+```
+
+## Verify the Install
+
+Check that the skill was copied into the expected host directory:
+
+```powershell
+npx github:20hajiyev/packet-tracer-skill --verify
+```
+
+Examples:
+
+```powershell
+npx github:20hajiyev/packet-tracer-skill --verify --cursor
+npx github:20hajiyev/packet-tracer-skill --verify --claude
+npx github:20hajiyev/packet-tracer-skill --verify --path .agents/skills
+```
+
+If you are working from a local clone instead of `npx`, these also work:
+
+```powershell
+node .\bin\packet-tracer-skill.js --verify
+python .\scripts\install_skill.py --host codex --force
 ```
 
 ## Screenshot
