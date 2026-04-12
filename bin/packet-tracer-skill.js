@@ -37,6 +37,8 @@ Usage:
   packet-tracer-skill --path <dir> [--direct] [--force]
   packet-tracer-skill --verify [--codex|--cursor|--claude|--kiro|--adal]
   packet-tracer-skill --verify --path <dir> [--direct]
+  packet-tracer-skill --bootstrap [--dev] [--codex|--cursor|--claude|--kiro|--adal]
+  packet-tracer-skill --bootstrap [--dev] --path <dir> [--direct]
   packet-tracer-skill --doctor
 
 Examples:
@@ -46,6 +48,8 @@ Examples:
   packet-tracer-skill --path .agents/skills --force
   packet-tracer-skill --verify --codex
   packet-tracer-skill --verify --path .agents/skills
+  packet-tracer-skill --bootstrap --cursor
+  packet-tracer-skill --bootstrap --dev --path .agents/skills
   packet-tracer-skill --doctor
 `);
 }
@@ -57,6 +61,8 @@ function parseArgs(argv) {
     verify: false,
     direct: false,
     doctor: false,
+    bootstrap: false,
+    dev: false,
     path: null,
     help: false,
   };
@@ -73,6 +79,10 @@ function parseArgs(argv) {
       args.direct = true;
     } else if (arg === "--doctor") {
       args.doctor = true;
+    } else if (arg === "--bootstrap") {
+      args.bootstrap = true;
+    } else if (arg === "--dev") {
+      args.dev = true;
     } else if (arg === "--path") {
       i += 1;
       args.path = argv[i];
@@ -157,7 +167,109 @@ function envPathStatus(value) {
   return { ok: true, message: value };
 }
 
-function doctor() {
+function requirementLines(requirementsPath) {
+  if (!fs.existsSync(requirementsPath)) {
+    return [];
+  }
+  return fs
+    .readFileSync(requirementsPath, "utf8")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("#"));
+}
+
+function runOrThrow(command, args, options = {}) {
+  const result = spawnSync(command, args, {
+    stdio: "inherit",
+    shell: false,
+    ...options,
+  });
+  if (result.status !== 0) {
+    throw new Error(`${command} ${args.join(" ")} failed with exit code ${result.status}`);
+  }
+}
+
+function runCaptured(command, args, options = {}) {
+  return spawnSync(command, args, {
+    stdio: "pipe",
+    encoding: "utf8",
+    shell: false,
+    ...options,
+  });
+}
+
+function firstAvailableCommand(candidates) {
+  for (const candidate of candidates) {
+    if (commandExists(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function bootstrapEnvironment(target, includeDev) {
+  const pythonCommand = firstAvailableCommand(["python", "py"]);
+  if (!pythonCommand) {
+    return {
+      ok: false,
+      message: "python was not found in PATH",
+      venvDir: path.join(target, ".venv"),
+      runtimeRequirements: [],
+      devRequirements: [],
+    };
+  }
+
+  const venvDir = path.join(target, ".venv");
+  const pythonExe =
+    process.platform === "win32"
+      ? path.join(venvDir, "Scripts", "python.exe")
+      : path.join(venvDir, "bin", "python");
+
+  const runtimeRequirements = requirementLines(path.join(target, "requirements.txt"));
+  const devRequirements = requirementLines(path.join(target, "requirements-dev.txt"));
+  try {
+    const venvArgs = pythonCommand === "py" ? ["-3", "-m", "venv", venvDir] : ["-m", "venv", venvDir];
+    const venvResult = runCaptured(pythonCommand, venvArgs);
+    if (venvResult.status !== 0) {
+      const detail = (venvResult.stderr || venvResult.stdout || "").trim().split(/\r?\n/).filter(Boolean).pop() || `exit code ${venvResult.status}`;
+      throw new Error(`${pythonCommand} ${venvArgs.join(" ")} failed: ${detail}`);
+    }
+
+    if (runtimeRequirements.length > 0) {
+      const runtimeResult = runCaptured(pythonExe, ["-m", "pip", "install", "-r", path.join(target, "requirements.txt")]);
+      if (runtimeResult.status !== 0) {
+        const detail = (runtimeResult.stderr || runtimeResult.stdout || "").trim().split(/\r?\n/).filter(Boolean).pop() || `exit code ${runtimeResult.status}`;
+        throw new Error(`${pythonExe} -m pip install -r requirements.txt failed: ${detail}`);
+      }
+    }
+
+    if (includeDev && devRequirements.length > 0) {
+      const devResult = runCaptured(pythonExe, ["-m", "pip", "install", "-r", path.join(target, "requirements-dev.txt")]);
+      if (devResult.status !== 0) {
+        const detail = (devResult.stderr || devResult.stdout || "").trim().split(/\r?\n/).filter(Boolean).pop() || `exit code ${devResult.status}`;
+        throw new Error(`${pythonExe} -m pip install -r requirements-dev.txt failed: ${detail}`);
+      }
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      message: error.message,
+      venvDir,
+      runtimeRequirements,
+      devRequirements,
+    };
+  }
+
+  return {
+    ok: true,
+    message: "venv created",
+    venvDir,
+    runtimeRequirements,
+    devRequirements,
+  };
+}
+
+function doctorChecks() {
   const checks = [
     ["node", commandExists("node"), commandExists("node") ? "found" : "missing"],
     ["python", commandExists("python"), commandExists("python") ? "found" : "missing"],
@@ -171,18 +283,13 @@ function doctor() {
   checks.push(["PACKET_TRACER_COMPAT_DONOR", donor.ok, donor.message]);
   checks.push(["PKT_TWOFISH_LIBRARY", twofish.ok, twofish.message]);
 
+  return checks;
+}
+
+function printDoctorChecks(checks) {
   for (const [name, ok, detail] of checks) {
     console.log(`${ok ? "OK" : "MISSING"}  ${name}  ${detail}`);
   }
-
-  const failed = checks.some(([, ok]) => !ok);
-  if (failed) {
-    console.error("\nRuntime is not fully ready. Install copies are fine, but Packet Tracer generation still needs the missing items above.");
-    process.exit(1);
-  }
-
-  console.log("\nRuntime looks ready.");
-  process.exit(0);
 }
 
 function main() {
@@ -194,7 +301,15 @@ function main() {
     }
 
     if (args.doctor) {
-      doctor();
+      const checks = doctorChecks();
+      printDoctorChecks(checks);
+      const failed = checks.some(([, ok]) => !ok);
+      if (failed) {
+        console.error("\nRuntime is not fully ready. Install copies are fine, but Packet Tracer generation still needs the missing items above.");
+        process.exit(1);
+      }
+      console.log("\nRuntime looks ready.");
+      process.exit(0);
     }
 
     const target = resolveTarget(args);
@@ -225,6 +340,39 @@ function main() {
     const result = verifyInstall(target);
     if (!result.ok) {
       throw new Error(`Install completed but verification failed: ${result.missing.join(", ")}`);
+    }
+
+    if (args.bootstrap) {
+      const bootstrapResult = bootstrapEnvironment(target, args.dev);
+      console.log(`Installed: ${target}`);
+
+      if (bootstrapResult.ok) {
+        console.log(`Bootstrap venv: ${bootstrapResult.venvDir}`);
+        if (bootstrapResult.runtimeRequirements.length === 0) {
+          console.log("Runtime requirements: none declared");
+        }
+        if (args.dev) {
+          if (bootstrapResult.devRequirements.length === 0) {
+            console.log("Dev requirements: none declared");
+          } else {
+            console.log(`Dev requirements installed: ${bootstrapResult.devRequirements.length}`);
+          }
+        }
+      } else {
+        console.log(`Bootstrap venv: not completed`);
+        console.log(`Bootstrap note: ${bootstrapResult.message}`);
+      }
+
+      const checks = doctorChecks();
+      console.log("\nRemaining manual runtime checks:");
+      printDoctorChecks(checks);
+      const missing = checks.filter(([, ok]) => !ok).map(([name]) => name);
+      if (missing.length > 0) {
+        console.log("\nBootstrap finished. Packet Tracer itself and any missing runtime paths still need to be provided manually.");
+      } else {
+        console.log("\nBootstrap finished. Runtime looks ready.");
+      }
+      process.exit(0);
     }
 
     console.log(`Installed: ${target}`);

@@ -64,6 +64,21 @@ npx github:20hajiyev/packet-tracer-skill
 
 That already installs everything shipped inside this repository.
 
+If you want one command that installs everything this repository can install by
+itself, use bootstrap:
+
+```powershell
+npx github:20hajiyev/packet-tracer-skill --bootstrap
+```
+
+That command:
+
+- installs the skill into the selected host path
+- creates a local `.venv` inside the installed skill directory
+- installs declared Python requirements from this repository
+
+It still does not install Cisco Packet Tracer itself.
+
 Common targets:
 
 ```powershell
@@ -110,6 +125,27 @@ From a local clone:
 node .\bin\packet-tracer-skill.js --verify
 python .\scripts\install_skill.py --host codex --force
 ```
+
+### Check Runtime Requirements
+
+Repository install and runtime readiness are different things.
+
+- `install` copies the skill files
+- `doctor` checks system prerequisites for real `.pkt` generation
+
+Run:
+
+```powershell
+npx github:20hajiyev/packet-tracer-skill --doctor
+```
+
+It checks:
+
+- `node`
+- `python`
+- `PACKET_TRACER_ROOT`
+- `PACKET_TRACER_COMPAT_DONOR`
+- `PKT_TWOFISH_LIBRARY`
 
 ### Check Runtime Requirements
 
@@ -343,6 +379,21 @@ npx github:20hajiyev/packet-tracer-skill
 
 Bu komanda repository daxilində olan bütün faylları quraşdırır.
 
+Əgər repository-nin quraşdıra bildiyi hər şeyi bir komandada qurmaq
+istəyirsənsə, `bootstrap` istifadə et:
+
+```powershell
+npx github:20hajiyev/packet-tracer-skill --bootstrap
+```
+
+Bu komanda:
+
+- skill-i seçilmiş host yoluna quraşdırır
+- quraşdırılmış skill qovluğunda lokal `.venv` yaradır
+- repository-də elan edilmiş Python tələblərini quraşdırır
+
+Amma Cisco Packet Tracer-in özünü quraşdırmır.
+
 Tez-tez lazım olan digər variantlar:
 
 ```powershell
@@ -389,6 +440,27 @@ npx github:20hajiyev/packet-tracer-skill --verify --path .agents/skills
 node .\bin\packet-tracer-skill.js --verify
 python .\scripts\install_skill.py --host codex --force
 ```
+
+### Runtime tələblərini yoxlama
+
+Repository-nin quraşdırılması ilə runtime hazırlığı eyni şey deyil.
+
+- `install` skill fayllarını kopyalayır
+- `doctor` real `.pkt` generasiya üçün sistem tələblərini yoxlayır
+
+İşlət:
+
+```powershell
+npx github:20hajiyev/packet-tracer-skill --doctor
+```
+
+Yoxladığı şeylər:
+
+- `node`
+- `python`
+- `PACKET_TRACER_ROOT`
+- `PACKET_TRACER_COMPAT_DONOR`
+- `PKT_TWOFISH_LIBRARY`
 
 ### Runtime tələblərini yoxlama
 
