@@ -5,12 +5,16 @@ Cisco Packet Tracer 9.x `.pkt` generator and editor for skill-based coding hosts
 Bu repository skill əsaslı coding host-lar üçün Cisco Packet Tracer 9.x `.pkt`
 generatoru və editorudur.
 
-<p>
-  <strong>Readme language:</strong>
-  <a href="#english">English</a>
-  |
-  <a href="#azerbaycan-dili">Azərbaycan dili</a>
-</p>
+<table>
+  <tr>
+    <td>
+      <strong>Choose your language / Dilinizi seçin</strong><br />
+      <a href="#english">🇬🇧 English</a>
+      &nbsp;|&nbsp;
+      <a href="#azerbaycan-dili">🇦🇿 Azərbaycan dili</a>
+    </td>
+  </tr>
+</table>
 
 ---
 
