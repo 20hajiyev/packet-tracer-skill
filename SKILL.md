@@ -106,6 +106,16 @@ Prompt-driven donor-prune generation also requires `PACKET_TRACER_COMPAT_DONOR`
 to point at a working local Packet Tracer 9.0 donor lab with enough device
 capacity for the requested topology.
 
+Strict compatibility rules:
+
+- keep `PACKET_TRACER_TARGET_VERSION` on `9.0.0.0810`
+- do not downgrade prompt generation to `5.3.0.0011`
+- do not use a legacy `5.3` donor/template fallback to bypass strict 9.0 mode
+- if the donor is missing, undecodable, or version-mismatched, stop with a
+  blocking error instead of switching versions
+- every host process must inherit the same `PACKET_TRACER_*` and
+  `PKT_TWOFISH_LIBRARY` environment variables; this is not host-specific
+
 ## Supported First Iteration
 
 - `Router`, `Switch`, `PC`, `Server`

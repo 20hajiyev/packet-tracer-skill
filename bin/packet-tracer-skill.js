@@ -140,6 +140,7 @@ function verifyInstall(target) {
   const required = [
     "SKILL.md",
     path.join("scripts", "generate_pkt.py"),
+    path.join("scripts", "donor_diagnostics.py"),
     path.join("scripts", "install_skill.py"),
     path.join("scripts", "packet_tracer_env.py"),
   ];
@@ -165,6 +166,82 @@ function envPathStatus(value) {
     return { ok: false, message: `set but missing: ${value}` };
   }
   return { ok: true, message: value };
+}
+
+function packetTracerVersionDiagnostics() {
+  const pythonCommand = firstAvailableCommand(["python", "py"]);
+  if (!pythonCommand) {
+    return {
+      targetVersion: process.env.PACKET_TRACER_TARGET_VERSION || "9.0.0.0810",
+      donorPath: process.env.PACKET_TRACER_COMPAT_DONOR || "",
+      donorVersion: "",
+      status: "python_missing",
+      message: "python was not found in PATH",
+    };
+  }
+
+  const diagnosticsScript = path.join(REPO_ROOT, "scripts", "donor_diagnostics.py");
+  const args = pythonCommand === "py" ? ["-3", diagnosticsScript] : [diagnosticsScript];
+  const result = runCaptured(pythonCommand, args);
+  if (result.error) {
+    const donorPath = process.env.PACKET_TRACER_COMPAT_DONOR || "";
+    if (!donorPath) {
+      return {
+        targetVersion: process.env.PACKET_TRACER_TARGET_VERSION || "9.0.0.0810",
+        donorPath: "",
+        donorVersion: "",
+        status: "not_set",
+        message: "not set",
+      };
+    }
+    if (!fs.existsSync(donorPath)) {
+      return {
+        targetVersion: process.env.PACKET_TRACER_TARGET_VERSION || "9.0.0.0810",
+        donorPath,
+        donorVersion: "",
+        status: "missing",
+        message: `set but missing: ${donorPath}`,
+      };
+    }
+    return {
+      targetVersion: process.env.PACKET_TRACER_TARGET_VERSION || "9.0.0.0810",
+      donorPath,
+      donorVersion: "",
+      status: "inspection_blocked",
+      message: `set, but donor version inspection is blocked in this host wrapper: ${result.error.message}`,
+    };
+  }
+  if (result.status !== 0) {
+    const detail =
+      (result.stderr || result.stdout || "").trim().split(/\r?\n/).filter(Boolean).pop() ||
+      `exit code ${result.status}`;
+    return {
+      targetVersion: process.env.PACKET_TRACER_TARGET_VERSION || "9.0.0.0810",
+      donorPath: process.env.PACKET_TRACER_COMPAT_DONOR || "",
+      donorVersion: "",
+      status: "decode_error",
+      message: detail,
+    };
+  }
+
+  try {
+    const parsed = JSON.parse((result.stdout || "").trim() || "{}");
+    return {
+      targetVersion: parsed.target_version || process.env.PACKET_TRACER_TARGET_VERSION || "9.0.0.0810",
+      donorPath: parsed.donor_path || process.env.PACKET_TRACER_COMPAT_DONOR || "",
+      donorVersion: parsed.donor_version || "",
+      status: parsed.status || "decode_error",
+      message: parsed.message || "unknown error",
+    };
+  } catch (error) {
+    return {
+      targetVersion: process.env.PACKET_TRACER_TARGET_VERSION || "9.0.0.0810",
+      donorPath: process.env.PACKET_TRACER_COMPAT_DONOR || "",
+      donorVersion: "",
+      status: "decode_error",
+      message: error.message,
+    };
+  }
 }
 
 function requirementLines(requirementsPath) {
@@ -270,17 +347,36 @@ function bootstrapEnvironment(target, includeDev) {
 }
 
 function doctorChecks() {
+  const nodeOk = commandExists("node");
+  const pythonOk = commandExists("python");
   const checks = [
-    ["node", commandExists("node"), commandExists("node") ? "found" : "missing"],
-    ["python", commandExists("python"), commandExists("python") ? "found" : "missing"],
+    ["node", nodeOk, nodeOk ? "found" : "missing"],
+    ["python", pythonOk, pythonOk ? "found" : "missing"],
   ];
 
   const root = envPathStatus(process.env.PACKET_TRACER_ROOT);
-  const donor = envPathStatus(process.env.PACKET_TRACER_COMPAT_DONOR);
   const twofish = envPathStatus(process.env.PKT_TWOFISH_LIBRARY);
+  const donorDiagnostics = packetTracerVersionDiagnostics();
 
+  const strictTargetVersion = "9.0.0.0810";
   checks.push(["PACKET_TRACER_ROOT", root.ok, root.message]);
-  checks.push(["PACKET_TRACER_COMPAT_DONOR", donor.ok, donor.message]);
+  checks.push([
+    "PACKET_TRACER_TARGET_VERSION",
+    donorDiagnostics.targetVersion === strictTargetVersion,
+    donorDiagnostics.targetVersion === strictTargetVersion
+      ? donorDiagnostics.targetVersion
+      : `${donorDiagnostics.targetVersion} (expected ${strictTargetVersion})`,
+  ]);
+  checks.push([
+    "PACKET_TRACER_COMPAT_DONOR",
+    donorDiagnostics.status === "ok",
+    donorDiagnostics.message,
+  ]);
+  checks.push([
+    "PACKET_TRACER_COMPAT_DONOR_VERSION",
+    donorDiagnostics.status === "ok",
+    donorDiagnostics.donorVersion || donorDiagnostics.status,
+  ]);
   checks.push(["PKT_TWOFISH_LIBRARY", twofish.ok, twofish.message]);
 
   return checks;

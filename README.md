@@ -144,28 +144,9 @@ It checks:
 - `node`
 - `python`
 - `PACKET_TRACER_ROOT`
+- `PACKET_TRACER_TARGET_VERSION`
 - `PACKET_TRACER_COMPAT_DONOR`
-- `PKT_TWOFISH_LIBRARY`
-
-### Check Runtime Requirements
-
-Repository install and runtime readiness are different things.
-
-- `install` copies the skill files
-- `doctor` checks system prerequisites for real `.pkt` generation
-
-Run:
-
-```powershell
-npx github:20hajiyev/packet-tracer-skill --doctor
-```
-
-It checks:
-
-- `node`
-- `python`
-- `PACKET_TRACER_ROOT`
-- `PACKET_TRACER_COMPAT_DONOR`
+- donor version compatibility with the target Packet Tracer version
 - `PKT_TWOFISH_LIBRARY`
 
 ### Runtime Configuration
@@ -186,6 +167,19 @@ Important variables:
 - `PACKET_TRACER_COMPAT_DONOR`
 - `PACKET_TRACER_TARGET_VERSION`
 - `PKT_TWOFISH_LIBRARY`
+
+Required policy:
+
+- keep `PACKET_TRACER_TARGET_VERSION` on `9.0.0.0810`
+- do not switch the target version to `5.3.0.0011`
+- do not use a legacy `5.3` donor or template fallback to bypass strict 9.0 generation
+- if the donor is missing or version-mismatched, stop and fix the donor instead of downgrading the workflow
+
+Host note:
+
+- the host process must inherit the same `PACKET_TRACER_*` and `PKT_TWOFISH_LIBRARY` environment variables
+- this applies to every host equally: Codex, Cursor, Claude Code, Claude Desktop, Antigravity, Gemini CLI, Kiro, and similar tools
+- if a host wrapper blocks child-process inspection, run `python .\scripts\donor_diagnostics.py` from a local clone to verify the donor directly
 
 ### What This Repo Does
 
@@ -459,28 +453,9 @@ Yoxladığı şeylər:
 - `node`
 - `python`
 - `PACKET_TRACER_ROOT`
+- `PACKET_TRACER_TARGET_VERSION`
 - `PACKET_TRACER_COMPAT_DONOR`
-- `PKT_TWOFISH_LIBRARY`
-
-### Runtime tələblərini yoxlama
-
-Repository-nin quraşdırılması ilə runtime hazırlığı eyni şey deyil.
-
-- `install` skill fayllarını kopyalayır
-- `doctor` real `.pkt` generasiya üçün sistem tələblərini yoxlayır
-
-İşlət:
-
-```powershell
-npx github:20hajiyev/packet-tracer-skill --doctor
-```
-
-Yoxladığı şeylər:
-
-- `node`
-- `python`
-- `PACKET_TRACER_ROOT`
-- `PACKET_TRACER_COMPAT_DONOR`
+- donor faylının target Packet Tracer versiyası ilə uyğun olub-olmaması
 - `PKT_TWOFISH_LIBRARY`
 
 ### Runtime konfiqurasiyası
@@ -501,6 +476,19 @@ $env:PKT_TWOFISH_LIBRARY='C:\tools\pkt-twofish\_twofish.cp314-win_amd64.pyd'
 - `PACKET_TRACER_COMPAT_DONOR`
 - `PACKET_TRACER_TARGET_VERSION`
 - `PKT_TWOFISH_LIBRARY`
+
+Məcburi qayda:
+
+- `PACKET_TRACER_TARGET_VERSION` dəyərini `9.0.0.0810` saxla
+- onu `5.3.0.0011`-ə dəyişmə
+- strict 9.0 generate axınını keçmək üçün köhnə `5.3` donor və ya template fallback istifadə etmə
+- donor yoxdursa və ya versiyası uyğun deyilsə, axını aşağı versiyaya salma; əvvəl donor problemini düzəlt
+
+Host qeydi:
+
+- host prosesi eyni `PACKET_TRACER_*` və `PKT_TWOFISH_LIBRARY` environment dəyişənlərini görməlidir
+- bu qayda bütün host-lara aiddir: Codex, Cursor, Claude Code, Claude Desktop, Antigravity, Gemini CLI, Kiro və oxşar alətlər
+- əgər host wrapper child-process yoxlamasını bloklayırsa, donorun özünü birbaşa yoxlamaq üçün lokal clone daxilində `python .\scripts\donor_diagnostics.py` işlət
 
 ### Bu repo nə edir
 
