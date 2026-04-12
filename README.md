@@ -1,6 +1,7 @@
 # pkt skill
 
-Cisco Packet Tracer 9.0 `.pkt` generator and editor for Codex.
+Cisco Packet Tracer 9.0 `.pkt` generator and editor for Codex, Cursor, Claude Code,
+Antigravity, and other skill-based hosts.
 
 This repository is built for one specific goal: take a natural-language network
 request, plan it explicitly, adapt a compatible local Cisco Packet Tracer donor
@@ -18,6 +19,29 @@ It is also intentionally **intent-first**:
 - topology/config planning is explicit
 - validation and autofix happen before write
 - unsafe generation is blocked instead of guessed
+
+## Host Support
+
+Use the same repository, but install or invoke it in the way your host expects.
+
+| Tool | Install | First Use |
+| --- | --- | --- |
+| Claude Code | `npx antigravity-awesome-skills --claude` or Claude plugin marketplace | `Use /pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Cursor | `npx antigravity-awesome-skills --cursor` | `@pkt build a Packet Tracer lab with VLAN and DHCP` |
+| Gemini CLI | `npx antigravity-awesome-skills --gemini` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Codex CLI | `npx antigravity-awesome-skills --codex` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Antigravity | `npx antigravity-awesome-skills --antigravity` | `Use @pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Kiro CLI | `npx antigravity-awesome-skills --kiro` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Kiro IDE | `npx antigravity-awesome-skills --path ~/.kiro/skills` | `Use @pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| GitHub Copilot | No installer, paste skills or rules manually | `Ask Copilot to use pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| OpenCode | `npx antigravity-awesome-skills --path .agents/skills --category development,backend --risk safe,none` | `opencode run @pkt build a Packet Tracer lab with VLAN and DHCP` |
+| AdaL CLI | `npx antigravity-awesome-skills --path .adal/skills` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Custom path | `npx antigravity-awesome-skills --path ./my-skills` | Depends on your tool |
+
+For path details, prompt examples, and setup caveats by host, go to:
+
+- [ComposioHQ/awesome-claude-skills](https://github.com/ComposioHQ/awesome-claude-skills)
+- [sickn33/antigravity-awesome-skills](https://github.com/sickn33/antigravity-awesome-skills)
 
 ## What This Repo Does
 
@@ -68,24 +92,6 @@ Prompt generation follows this pipeline:
 
 If a prompt is incomplete or ambiguous, the tool should return structured
 `blocking_gaps` instead of inventing risky topology/config decisions.
-
-## MCP-Inspired Ideas Used Here
-
-Useful ideas from [MCP-Packet-Tracer](https://github.com/Mats2208/MCP-Packet-Tracer)
-were integrated at the architecture level:
-
-- planner-first workflow
-- validator and autofix separation
-- stronger device/model/cable reasoning
-- clearer explain-plan output
-
-Not integrated:
-
-- PTBuilder live deploy
-- direct Packet Tracer bridge control
-- external `.pkt` donor usage
-
-The repo stays file-centric, donor-prune, and Packet Tracer compatibility-focused.
 
 ## Requirements
 
