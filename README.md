@@ -26,17 +26,17 @@ Use the same repository, but install or invoke it in the way your host expects.
 
 | Tool | Install | First Use |
 | --- | --- | --- |
-| Claude Code | `npx antigravity-awesome-skills --claude` or Claude plugin marketplace | `Use /pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| Cursor | `npx antigravity-awesome-skills --cursor` | `@pkt build a Packet Tracer lab with VLAN and DHCP` |
-| Gemini CLI | `npx antigravity-awesome-skills --gemini` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| Codex CLI | `npx antigravity-awesome-skills --codex` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| Antigravity | `npx antigravity-awesome-skills --antigravity` | `Use @pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| Kiro CLI | `npx antigravity-awesome-skills --kiro` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| Kiro IDE | `npx antigravity-awesome-skills --path ~/.kiro/skills` | `Use @pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| GitHub Copilot | No installer, paste skills or rules manually | `Ask Copilot to use pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| OpenCode | `npx antigravity-awesome-skills --path .agents/skills --category development,backend --risk safe,none` | `opencode run @pkt build a Packet Tracer lab with VLAN and DHCP` |
-| AdaL CLI | `npx antigravity-awesome-skills --path .adal/skills` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| Custom path | `npx antigravity-awesome-skills --path ./my-skills` | Depends on your tool |
+| Claude Code | `git clone https://github.com/20hajiyev/packet-tracer-skill.git <claude-skills-dir>/pkt` | `Use /pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Cursor | `git clone https://github.com/20hajiyev/packet-tracer-skill.git <cursor-skills-dir>/pkt` | `@pkt build a Packet Tracer lab with VLAN and DHCP` |
+| Gemini CLI | `git clone https://github.com/20hajiyev/packet-tracer-skill.git <gemini-skills-dir>/pkt` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Codex CLI | `git clone https://github.com/20hajiyev/packet-tracer-skill.git <codex-skills-dir>/pkt` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Antigravity | `git clone https://github.com/20hajiyev/packet-tracer-skill.git <antigravity-skills-dir>/pkt` | `Use @pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Kiro CLI | `git clone https://github.com/20hajiyev/packet-tracer-skill.git <kiro-skills-dir>/pkt` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Kiro IDE | `git clone https://github.com/20hajiyev/packet-tracer-skill.git <kiro-ide-skills-dir>/pkt` | `Use @pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| GitHub Copilot | Clone or copy this repo into your local prompts/rules/skills docs | `Ask Copilot to use pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| OpenCode | `git clone https://github.com/20hajiyev/packet-tracer-skill.git .agents/skills/pkt` | `opencode run @pkt build a Packet Tracer lab with VLAN and DHCP` |
+| AdaL CLI | `git clone https://github.com/20hajiyev/packet-tracer-skill.git .adal/skills/pkt` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Custom path | `git clone https://github.com/20hajiyev/packet-tracer-skill.git ./my-skills/pkt` | Depends on your tool |
 
 For path details, prompt examples, and setup caveats by host, go to:
 
@@ -145,7 +145,7 @@ That is intentional:
 - no unsigned local artifact is published by accident
 - no private path/build residue is shared by default
 
-Read [scripts/vendor/README.md](C:\Users\Sanan\Documents\New%20project\pkt-skill-github\scripts\vendor\README.md) for local setup.
+Read `scripts/vendor/README.md` for local setup.
 
 ## Repository Layout
 
@@ -276,6 +276,35 @@ Before pushing publicly, confirm:
 - no generated `.pkt` or `.xml` outputs are staged
 - your local donor path exists only in your shell env, not in committed files
 - README examples match your intended public setup
+
+## Suggested Screenshots
+
+If you want a screenshot section in the repo, use screenshots that show the real
+workflow and actual value of the skill:
+
+1. `Explain Plan`
+   - terminal screenshot of `--explain-plan`
+   - show `intent_plan`, `topology_plan`, and `blocking_gaps` or `validation_report`
+2. `Opened Packet Tracer Topology`
+   - Packet Tracer logical view with a generated campus or department lab
+   - labels readable, links visible, layout clean
+3. `Existing .pkt Edit`
+   - before/after pair or a single screenshot showing renamed departments, VLAN changes, or updated SSIDs
+4. `Services or Wireless`
+   - a server DHCP/DNS screen, AP SSID/security screen, or router/switch CLI verification
+
+Avoid screenshots that expose:
+
+- local usernames
+- donor file paths
+- private folders
+- generated files you do not want to share publicly
+
+## License
+
+This project is licensed under the MIT License.
+
+Third-party license notices can remain under `LICENSES/` when needed.
 
 ## Status
 
