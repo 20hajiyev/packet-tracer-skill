@@ -2,8 +2,8 @@
 
 Cisco Packet Tracer 9.x `.pkt` generator and editor for skill-based coding hosts.
 
-Bu repo skill esasli coding host-lar ucun Cisco Packet Tracer 9.x `.pkt`
-generatoru ve editorudur.
+Bu repository skill əsaslı coding host-lar üçün Cisco Packet Tracer 9.x `.pkt`
+generatoru və editorudur.
 
 ---
 
@@ -155,7 +155,7 @@ Workflow:
 Example:
 
 ```powershell
-python .\scripts\generate_pkt.py --explain-plan "6 sobeli sebeke qur, her sobede 1 switch 1 AP 1 printer 2 PC 2 tablet olsun" --reference-root C:\labs\external-pkt-samples
+python .\scripts\generate_pkt.py --explain-plan "6 şöbəli şəbəkə qur, hər şöbədə 1 switch 1 AP 1 printer 2 PC 2 tablet olsun" --reference-root C:\labs\external-pkt-samples
 ```
 
 ### Common Commands
@@ -175,13 +175,13 @@ python .\scripts\generate_pkt.py --explain-plan "3 dene switch ve 6 komputer"
 Explain a donor-prune campus prompt:
 
 ```powershell
-python .\scripts\generate_pkt.py --explain-plan "6 sobeli sebeke qur, her sobede 1 switch, 1 AP, 1 printer, 2 PC, 2 tablet olsun, router-on-a-stick olsun, DHCP routerden verilsin, management VLAN ve telnet olsun"
+python .\scripts\generate_pkt.py --explain-plan "6 şöbəli şəbəkə qur, hər şöbədə 1 switch, 1 AP, 1 printer, 2 PC, 2 tablet olsun, router-on-a-stick olsun, DHCP routerdən verilsin, management VLAN və telnet olsun"
 ```
 
 Generate a `.pkt`:
 
 ```powershell
-python .\scripts\generate_pkt.py --prompt "6 sobeli sebeke qur, her sobede 1 switch, 1 AP, 1 printer, 2 PC, 2 tablet olsun, router-on-a-stick olsun, DHCP routerden verilsin, management VLAN ve telnet olsun" --output .\output\campus.pkt --xml-out .\output\campus.xml
+python .\scripts\generate_pkt.py --prompt "6 şöbəli şəbəkə qur, hər şöbədə 1 switch, 1 AP, 1 printer, 2 PC, 2 tablet olsun, router-on-a-stick olsun, DHCP routerdən verilsin, management VLAN və telnet olsun" --output .\output\campus.pkt --xml-out .\output\campus.xml
 ```
 
 Inspect an existing `.pkt`:
@@ -258,29 +258,29 @@ This project is licensed under the MIT License.
 
 ---
 
-## Azerbaycanca
+## Azərbaycan dili
 
-### Umumi baxis
+### Ümumi baxış
 
-Bu repository bir konkret is ucun qurulub: tebii dilde yazilmis sebeke
-isteyini basa dusmek, onu aciq plan sekline salmaq, lokal Cisco Packet Tracer
-donor labini uygunlasdirmaq ve Packet Tracer 9.x-de acilan `.pkt` fayli
-cixarmaq.
+Bu repository bir konkret iş üçün qurulub: təbii dildə yazılmış şəbəkə
+istəyini başa düşmək, onu açıq plan şəklinə salmaq, lokal Cisco Packet Tracer
+donor labını uyğunlaşdırmaq və Packet Tracer 9.x-də açılan `.pkt` faylı
+yaratmaq.
 
-Esas prinsipler:
+Əsas prinsiplər:
 
-- Cisco-nun lokal sample-lari esas donor menbeyidir
-- xarici lab-lar yalniz reference kimi istifade olunur
-- prompt evvel parse olunur, sonra generate edilir
-- uygunluq ucun donor-prune yanasmasi istifade olunur
-- natamam istekler ucun uydurma netice yox, `blocking_gaps` qaytarilir
+- Cisco-nun lokal sample-ları əsas donor mənbəyidir
+- xarici lab-lar yalnız reference kimi istifadə olunur
+- prompt əvvəl parse olunur, sonra generate edilir
+- uyğunluq üçün donor-prune yanaşması istifadə olunur
+- natamam istəklər üçün uydurma nəticə yox, `blocking_gaps` qaytarılır
 
-### Host desteyi
+### Host dəstəyi
 
-Eyni repository istifade olunur, sadece host-un gozlediyi skill yoluna
-qurasdirilir.
+Eyni repository istifadə olunur, sadəcə host-un gözlədiyi skill yoluna
+quraşdırılır.
 
-| Alet | Qurasdirma | Ilk istifade |
+| Alət | Quraşdırma | İlk istifadə |
 | --- | --- | --- |
 | Claude Code | `npx github:20hajiyev/packet-tracer-skill --claude` | `Use /pkt to build a Packet Tracer lab with VLAN and DHCP` |
 | Cursor | `npx github:20hajiyev/packet-tracer-skill --cursor` | `@pkt build a Packet Tracer lab with VLAN and DHCP` |
@@ -289,20 +289,20 @@ qurasdirilir.
 | Antigravity | `npx github:20hajiyev/packet-tracer-skill --path <antigravity-skills-dir>` | `Use @pkt to build a Packet Tracer lab with VLAN and DHCP` |
 | Kiro CLI | `npx github:20hajiyev/packet-tracer-skill --kiro` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
 | Kiro IDE | `npx github:20hajiyev/packet-tracer-skill --kiro` | `Use @pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| GitHub Copilot | Bu repo-nu lokal prompts/rules/skills docs qovluguna kocur | `Ask Copilot to use pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| GitHub Copilot | Bu repo-nu lokal prompts/rules/skills docs qovluğuna köçür | `Ask Copilot to use pkt to build a Packet Tracer lab with VLAN and DHCP` |
 | OpenCode | `npx github:20hajiyev/packet-tracer-skill --path .agents/skills` | `opencode run @pkt build a Packet Tracer lab with VLAN and DHCP` |
 | AdaL CLI | `npx github:20hajiyev/packet-tracer-skill --adal` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| Custom path | `npx github:20hajiyev/packet-tracer-skill --path ./my-skills` | Host-a gore deyisir |
+| Custom path | `npx github:20hajiyev/packet-tracer-skill --path ./my-skills` | Host-a görə dəyişir |
 
-### Suretli baslangic
+### Sürətli başlanğıc
 
-Codex ucun default qurasdirma:
+Codex üçün standart quraşdırma:
 
 ```powershell
 npx github:20hajiyev/packet-tracer-skill
 ```
 
-Tez-tez lazim olan diger variantlar:
+Tez-tez lazım olan digər variantlar:
 
 ```powershell
 npx github:20hajiyev/packet-tracer-skill --cursor
@@ -310,20 +310,20 @@ npx github:20hajiyev/packet-tracer-skill --claude
 npx github:20hajiyev/packet-tracer-skill --kiro
 ```
 
-Eger gelecekde paket npm-e publish olunsa, eyni komandalar bele olacaq:
+Əgər gələcəkdə paket npm-ə publish olunsa, eyni komandalar belə olacaq:
 
 ```powershell
 npx packet-tracer-skill
 npx packet-tracer-skill --cursor
 ```
 
-Eger PowerShell `npx.ps1` faylini bloklayirsa:
+Əgər PowerShell `npx.ps1` faylını bloklayırsa:
 
 ```powershell
 cmd /c npx github:20hajiyev/packet-tracer-skill --cursor
 ```
 
-Eger repo uzerinde lokal development qurmaq isteyirsen:
+Əgər repo üzərində lokal development qurmaq istəyirsənsə:
 
 ```powershell
 git clone https://github.com/20hajiyev/packet-tracer-skill.git
@@ -331,9 +331,9 @@ cd .\packet-tracer-skill
 powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1 -Dev
 ```
 
-### Qurasdirmayi yoxlama
+### Quraşdırmanı yoxlama
 
-Skill-in gozlenilen host yoluna yazildigini yoxlamaq ucun:
+Skill-in gözlənilən host yoluna yazıldığını yoxlamaq üçün:
 
 ```powershell
 npx github:20hajiyev/packet-tracer-skill --verify
@@ -341,16 +341,16 @@ npx github:20hajiyev/packet-tracer-skill --verify --cursor
 npx github:20hajiyev/packet-tracer-skill --verify --path .agents/skills
 ```
 
-Eger lokal clone ile isleyirsen:
+Əgər lokal clone ilə işləyirsənsə:
 
 ```powershell
 node .\bin\packet-tracer-skill.js --verify
 python .\scripts\install_skill.py --host codex --force
 ```
 
-### Runtime konfiqurasiyasi
+### Runtime konfiqurasiyası
 
-Real `.pkt` generate etmezden evvel lokal Packet Tracer muhitini qur:
+Real `.pkt` generate etməzdən əvvəl lokal Packet Tracer mühitini qur:
 
 ```powershell
 $env:PACKET_TRACER_ROOT='C:\Program Files\Cisco Packet Tracer 9.0.0'
@@ -358,7 +358,7 @@ $env:PACKET_TRACER_COMPAT_DONOR='C:\labs\campus_donor_9_0.pkt'
 $env:PKT_TWOFISH_LIBRARY='C:\tools\pkt-twofish\_twofish.cp314-win_amd64.pyd'
 ```
 
-Esas environment deyisenleri:
+Əsas environment dəyişənləri:
 
 - `PACKET_TRACER_ROOT`
 - `PACKET_TRACER_SAVES_ROOT`
@@ -367,19 +367,19 @@ Esas environment deyisenleri:
 - `PACKET_TRACER_TARGET_VERSION`
 - `PKT_TWOFISH_LIBRARY`
 
-### Bu repo ne edir
+### Bu repo nə edir
 
-- Azerbaycan dili + Ingilis dili qarisik prompt-lari parse edir
-- aciq `IntentPlan`, `TopologyPlan` ve `ConfigPlan` qurur
-- Cisco lokal donorlarini capability ve topology uygunluguna gore siralayir
-- Packet Tracer 9.x uygunlugu ucun donor-prune adaptasiyasi istifade edir
-- movcud `.pkt` lab-lari edit edir
-- VLAN, router-on-a-stick, DHCP, DNS, Telnet, ACL, wireless/AP-client ve department/campus layout-larini destekleyir
-- generate-den evvel plani `--explain-plan` ile gosterir
+- Azərbaycan dili + İngilis dili qarışıq prompt-ları parse edir
+- açıq `IntentPlan`, `TopologyPlan` və `ConfigPlan` qurur
+- Cisco lokal donorlarını capability və topology uyğunluğuna görə sıralayır
+- Packet Tracer 9.x uyğunluğu üçün donor-prune adaptasiyası istifadə edir
+- mövcud `.pkt` lab-ları edit edir
+- VLAN, router-on-a-stick, DHCP, DNS, Telnet, ACL, wireless/AP-client və department/campus layout-larını dəstəkləyir
+- generate-dən əvvəl planı `--explain-plan` ilə göstərir
 
-### Explain-plan cixisi
+### Explain-plan çıxışı
 
-`--explain-plan` asagidaki bloklari qaytarir:
+`--explain-plan` aşağıdakı blokları qaytarır:
 
 - `intent_plan`
 - `topology_plan`
@@ -392,26 +392,26 @@ Esas environment deyisenleri:
 - `external_reference_patterns`
 - `assumptions_used`
 
-Bu, prompt keyfiyyetini debug etmek ucun esas cixisdir.
+Bu, prompt keyfiyyətini debug etmək üçün əsas çıxışdır.
 
 ### Xarici reference workflow
 
-Xarici `.pkt` kolleksiyalari evvelce lokal qovluqda olmalidir. Tool internetden
-scrape etmir ve GitHub URL-lerini birbasa donor kimi istifade etmir.
+Xarici `.pkt` kolleksiyaları əvvəlcə lokal qovluqda olmalıdır. Tool internetdən
+scrape etmir və GitHub URL-lərini birbaşa donor kimi istifadə etmir.
 
 Workflow:
 
-1. xarici repo-nu lokalda klonla ve ya kopyala
-2. hemin qovlugu `--reference-root` ile ver
-3. `--explain-plan` neticesinde `external_reference_patterns`-e bax
+1. xarici repo-nu lokalda klonla və ya kopyala
+2. həmin qovluğu `--reference-root` ilə ver
+3. `--explain-plan` nəticəsində `external_reference_patterns`-ə bax
 
-Numune:
+Nümunə:
 
 ```powershell
-python .\scripts\generate_pkt.py --explain-plan "6 sobeli sebeke qur, her sobede 1 switch 1 AP 1 printer 2 PC 2 tablet olsun" --reference-root C:\labs\external-pkt-samples
+python .\scripts\generate_pkt.py --explain-plan "6 şöbəli şəbəkə qur, hər şöbədə 1 switch 1 AP 1 printer 2 PC 2 tablet olsun" --reference-root C:\labs\external-pkt-samples
 ```
 
-### Tez-tez istifade olunan komandalar
+### Tez-tez istifadə olunan komandalar
 
 Cisco sample catalog qurmaq:
 
@@ -419,43 +419,43 @@ Cisco sample catalog qurmaq:
 python .\scripts\build_sample_catalog.py
 ```
 
-Sade prompt ucun explain-plan:
+Sadə prompt üçün explain-plan:
 
 ```powershell
 python .\scripts\generate_pkt.py --explain-plan "3 dene switch ve 6 komputer"
 ```
 
-Campus prompt ucun donor-prune explain-plan:
+Campus prompt üçün donor-prune explain-plan:
 
 ```powershell
-python .\scripts\generate_pkt.py --explain-plan "6 sobeli sebeke qur, her sobede 1 switch, 1 AP, 1 printer, 2 PC, 2 tablet olsun, router-on-a-stick olsun, DHCP routerden verilsin, management VLAN ve telnet olsun"
+python .\scripts\generate_pkt.py --explain-plan "6 şöbəli şəbəkə qur, hər şöbədə 1 switch, 1 AP, 1 printer, 2 PC, 2 tablet olsun, router-on-a-stick olsun, DHCP routerdən verilsin, management VLAN və telnet olsun"
 ```
 
 `.pkt` yaratmaq:
 
 ```powershell
-python .\scripts\generate_pkt.py --prompt "6 sobeli sebeke qur, her sobede 1 switch, 1 AP, 1 printer, 2 PC, 2 tablet olsun, router-on-a-stick olsun, DHCP routerden verilsin, management VLAN ve telnet olsun" --output .\output\campus.pkt --xml-out .\output\campus.xml
+python .\scripts\generate_pkt.py --prompt "6 şöbəli şəbəkə qur, hər şöbədə 1 switch, 1 AP, 1 printer, 2 PC, 2 tablet olsun, router-on-a-stick olsun, DHCP routerdən verilsin, management VLAN və telnet olsun" --output .\output\campus.pkt --xml-out .\output\campus.xml
 ```
 
-Movcud `.pkt` haqqinda inventory cixarmaq:
+Mövcud `.pkt` haqqında inventory çıxarmaq:
 
 ```powershell
 python .\scripts\generate_pkt.py --inventory .\input\lab.pkt
 ```
 
-`.pkt` decode etmek:
+`.pkt` decode etmək:
 
 ```powershell
 python .\scripts\generate_pkt.py --decode .\output\campus.pkt --xml-out .\output\campus.xml
 ```
 
-### Telebler
+### Tələblər
 
 - Windows
-- lokalda qurasdirilmis Cisco Packet Tracer 9.x
-- lokal Cisco Packet Tracer sample save-leri
-- lokal Packet Tracer 9.x donor labi
-- Python runtime ile uygun lokal Twofish bridge
+- lokalda quraşdırılmış Cisco Packet Tracer 9.x
+- lokal Cisco Packet Tracer sample save-ləri
+- lokal Packet Tracer 9.x donor labı
+- Python runtime ilə uyğun lokal Twofish bridge
 
 Python setup:
 
@@ -465,46 +465,46 @@ powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1 -Dev
 
 ### Twofish bridge
 
-Bu public repo default olaraq prebuilt Twofish binary ile gelmir.
+Bu public repo default olaraq prebuilt Twofish binary ilə gəlmir.
 
-Bu qesdendir:
+Bu qəsdəndir:
 
-- machine-specific binary paylasilmir
-- unsigned lokal artefakt tesadufen publish olunmur
-- private path ve build izi paylasilmir
+- machine-specific binary paylaşılmır
+- unsigned lokal artefakt təsadüfən publish olunmur
+- private path və build izi paylaşılmır
 
-Lokal setup ucun `scripts/vendor/README.md` faylina bax.
+Lokal setup üçün `scripts/vendor/README.md` faylına bax.
 
 ### Screenshot
 
-Cisco Packet Tracer-de acilmis generated campus topology:
+Cisco Packet Tracer-də açılmış generated campus topology:
 
 ![Packet Tracer topology](docs/screenshots/packet-tracer-topology-cropped.png)
 
-### Tehlukesizlik ve mexfilik
+### Təhlükəsizlik və məxfilik
 
-Repo lokal private melumatlarin tesadufen paylasilmamasi ucun hazirlanib:
+Repo lokal private məlumatların təsadüfən paylaşılmaması üçün hazırlanıb:
 
 - hardcoded donor path commit olunmur
-- `C:\Users\<name>\...` donor path config-e yazilmir
-- generated `.pkt` ve `.xml` fayllari gitignore-dadir
-- Python cache fayllari gitignore-dadir
-- Twofish bridge binary-leri gitignore-dadir
+- `C:\Users\<name>\...` donor path config-ə yazılmır
+- generated `.pkt` və `.xml` faylları gitignore-dadır
+- Python cache faylları gitignore-dadır
+- Twofish bridge binary-ləri gitignore-dadır
 
-Public paylasmazdan evvel bunlari yoxla:
+Public paylaşmazdan əvvəl bunları yoxla:
 
-- `PACKET_TRACER_COMPAT_DONOR` yalniz senin lokal env-ində olsun
-- paylasmaq istemediyin generated lab-lari commit etme
-- build etdiyin bridge binary-ni audit etmemisense commit etme
+- `PACKET_TRACER_COMPAT_DONOR` yalnız sənin lokal env-ində olsun
+- paylaşmaq istəmədiyin generated lab-ları commit etmə
+- build etdiyin bridge binary-ni audit etməmisənsə commit etmə
 
-### Cari limitler
+### Cari limitlər
 
-- yalniz Packet Tracer 9.x
+- yalnız Packet Tracer 9.x
 - Windows-first workflow
-- donor-prune generate donor capacity ile mehduddur
-- xarici lab-lar donor kimi istifade olunmur
-- bundled template coverage qesden limitlidir
+- donor-prune generate donor capacity ilə məhduddur
+- xarici lab-lar donor kimi istifadə olunmur
+- bundled template coverage qəsdən limitlidir
 
 ### Lisenziya
 
-Bu layihe MIT License ile paylasilir.
+Bu layihə MIT License ilə paylaşılır.
