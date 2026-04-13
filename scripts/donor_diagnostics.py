@@ -4,44 +4,29 @@
 from __future__ import annotations
 
 import json
-import os
-import sys
-
-from packet_tracer_env import _pkt_version, get_packet_tracer_target_version
+from packet_tracer_env import inspect_packet_tracer_compatibility_donor
 
 
 def main() -> int:
-    donor_path = os.getenv("PACKET_TRACER_COMPAT_DONOR") or ""
-    target_version = get_packet_tracer_target_version()
+    details = inspect_packet_tracer_compatibility_donor()
     result = {
-        "target_version": target_version,
-        "donor_path": donor_path,
-        "donor_version": "",
-        "status": "not_set",
-        "message": "",
+        "target_version": details.target_version,
+        "resolved_donor_path": str(details.resolved_path) if details.resolved_path else "",
+        "donor_path": str(details.resolved_path) if details.resolved_path else "",
+        "donor_version": details.donor_version or "",
+        "donor_source": details.donor_source or "",
+        "status": details.status,
+        "message": (
+            f"{details.resolved_path} (version {details.donor_version})"
+            if details.status == "ok" and details.resolved_path and details.donor_version
+            else details.blocking_reason or details.status
+        ),
+        "blocking_reason": details.blocking_reason,
+        "candidate_paths": [
+            {"source": source, "path": str(path)}
+            for source, path in details.candidate_paths[:10]
+        ],
     }
-
-    if not donor_path:
-        result["message"] = "not set"
-    elif not os.path.exists(donor_path):
-        result["status"] = "missing"
-        result["message"] = f"set but missing: {donor_path}"
-    else:
-        try:
-            donor_version = _pkt_version(donor_path)
-            result["donor_version"] = donor_version
-            if donor_version == target_version:
-                result["status"] = "ok"
-                result["message"] = f"{donor_path} (version {donor_version})"
-            else:
-                result["status"] = "version_mismatch"
-                result["message"] = (
-                    f"{donor_path} (version {donor_version}, expected {target_version})"
-                )
-        except Exception as exc:  # pragma: no cover - runtime diagnostics
-            result["status"] = "decode_error"
-            result["message"] = str(exc)
-
     print(json.dumps(result))
     return 0
 

@@ -102,9 +102,10 @@ Packet Tracer `saves/` directory. The exact path is resolved at runtime from
 the local Packet Tracer installation or the `PACKET_TRACER_*` environment
 variables.
 
-Prompt-driven donor-prune generation also requires `PACKET_TRACER_COMPAT_DONOR`
-to point at a working local Packet Tracer 9.0 donor lab with enough device
-capacity for the requested topology.
+Prompt-driven donor-prune generation prefers an explicit
+`PACKET_TRACER_COMPAT_DONOR`, but it can also auto-detect a working local
+Packet Tracer 9.0 donor from common local locations when the environment
+override is absent.
 
 Strict compatibility rules:
 
@@ -113,6 +114,8 @@ Strict compatibility rules:
 - do not use a legacy `5.3` donor/template fallback to bypass strict 9.0 mode
 - if the donor is missing, undecodable, or version-mismatched, stop with a
   blocking error instead of switching versions
+- if `PACKET_TRACER_COMPAT_DONOR` is explicitly set and wrong, do not silently
+  fall back to another donor
 - every host process must inherit the same `PACKET_TRACER_*` and
   `PKT_TWOFISH_LIBRARY` environment variables; this is not host-specific
 

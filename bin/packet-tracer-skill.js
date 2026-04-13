@@ -176,8 +176,11 @@ function packetTracerVersionDiagnostics() {
       targetVersion: process.env.PACKET_TRACER_TARGET_VERSION || "9.0.0.0810",
       donorPath: process.env.PACKET_TRACER_COMPAT_DONOR || "",
       donorVersion: "",
+      donorSource: "",
       status: "python_missing",
       message: "python was not found in PATH",
+      blockingReason: "python was not found in PATH",
+      candidatePaths: [],
     };
   }
 
@@ -191,8 +194,11 @@ function packetTracerVersionDiagnostics() {
         targetVersion: process.env.PACKET_TRACER_TARGET_VERSION || "9.0.0.0810",
         donorPath: "",
         donorVersion: "",
+        donorSource: "",
         status: "not_set",
         message: "not set",
+        blockingReason: "not set",
+        candidatePaths: [],
       };
     }
     if (!fs.existsSync(donorPath)) {
@@ -200,16 +206,22 @@ function packetTracerVersionDiagnostics() {
         targetVersion: process.env.PACKET_TRACER_TARGET_VERSION || "9.0.0.0810",
         donorPath,
         donorVersion: "",
+        donorSource: "env",
         status: "missing",
         message: `set but missing: ${donorPath}`,
+        blockingReason: `set but missing: ${donorPath}`,
+        candidatePaths: [],
       };
     }
     return {
       targetVersion: process.env.PACKET_TRACER_TARGET_VERSION || "9.0.0.0810",
       donorPath,
       donorVersion: "",
+      donorSource: "env",
       status: "inspection_blocked",
       message: `set, but donor version inspection is blocked in this host wrapper: ${result.error.message}`,
+      blockingReason: `set, but donor version inspection is blocked in this host wrapper: ${result.error.message}`,
+      candidatePaths: [],
     };
   }
   if (result.status !== 0) {
@@ -220,8 +232,11 @@ function packetTracerVersionDiagnostics() {
       targetVersion: process.env.PACKET_TRACER_TARGET_VERSION || "9.0.0.0810",
       donorPath: process.env.PACKET_TRACER_COMPAT_DONOR || "",
       donorVersion: "",
+      donorSource: process.env.PACKET_TRACER_COMPAT_DONOR ? "env" : "",
       status: "decode_error",
       message: detail,
+      blockingReason: detail,
+      candidatePaths: [],
     };
   }
 
@@ -229,18 +244,24 @@ function packetTracerVersionDiagnostics() {
     const parsed = JSON.parse((result.stdout || "").trim() || "{}");
     return {
       targetVersion: parsed.target_version || process.env.PACKET_TRACER_TARGET_VERSION || "9.0.0.0810",
-      donorPath: parsed.donor_path || process.env.PACKET_TRACER_COMPAT_DONOR || "",
+      donorPath: parsed.resolved_donor_path || parsed.donor_path || process.env.PACKET_TRACER_COMPAT_DONOR || "",
       donorVersion: parsed.donor_version || "",
+      donorSource: parsed.donor_source || "",
       status: parsed.status || "decode_error",
       message: parsed.message || "unknown error",
+      blockingReason: parsed.blocking_reason || parsed.message || "unknown error",
+      candidatePaths: parsed.candidate_paths || [],
     };
   } catch (error) {
     return {
       targetVersion: process.env.PACKET_TRACER_TARGET_VERSION || "9.0.0.0810",
       donorPath: process.env.PACKET_TRACER_COMPAT_DONOR || "",
       donorVersion: "",
+      donorSource: process.env.PACKET_TRACER_COMPAT_DONOR ? "env" : "",
       status: "decode_error",
       message: error.message,
+      blockingReason: error.message,
+      candidatePaths: [],
     };
   }
 }
@@ -469,6 +490,30 @@ function doctorChecks() {
     donorDiagnostics.donorVersion || donorDiagnostics.status,
   ]);
   checks.push([
+    "RESOLVED_DONOR_PATH",
+    donorDiagnostics.donorPath !== "",
+    donorDiagnostics.donorPath || "not resolved",
+  ]);
+  checks.push([
+    "DONOR_SOURCE",
+    donorDiagnostics.status === "ok",
+    donorDiagnostics.donorSource || "not resolved",
+  ]);
+  checks.push([
+    "BLOCKING_REASON",
+    donorDiagnostics.status === "ok",
+    donorDiagnostics.status === "ok" ? "none" : donorDiagnostics.blockingReason || donorDiagnostics.message,
+  ]);
+  const candidateSummary = (donorDiagnostics.candidatePaths || [])
+    .slice(0, 5)
+    .map((entry) => `${entry.source}: ${entry.path}`)
+    .join(" | ");
+  checks.push([
+    "DONOR_CANDIDATES",
+    (donorDiagnostics.candidatePaths || []).length > 0,
+    candidateSummary || "none discovered",
+  ]);
+  checks.push([
     "RESOLVED_TWOFISH_PATH",
     twofish.resolvedTwofishPath !== "",
     twofish.resolvedTwofishPath || "not found",
@@ -568,6 +613,10 @@ function main() {
       console.log("\nRemaining manual runtime checks:");
       printDoctorChecks(checks);
       const missing = checks.filter(([, ok]) => !ok).map(([name]) => name);
+      const donorCandidates = checks.find(([name]) => name === "DONOR_CANDIDATES");
+      if (donorCandidates && donorCandidates[2] && donorCandidates[2] !== "none discovered") {
+        console.log(`\nDiscovered donor candidates: ${donorCandidates[2]}`);
+      }
       if (missing.length > 0) {
         console.log("\nBootstrap finished. Packet Tracer itself and any missing runtime paths still need to be provided manually.");
       } else {

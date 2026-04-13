@@ -172,6 +172,12 @@ Important variables:
 - `PACKET_TRACER_TARGET_VERSION`
 - `PKT_TWOFISH_LIBRARY`
 
+Donor policy:
+
+- `PACKET_TRACER_COMPAT_DONOR` is an explicit override
+- if it is not set, the repo tries to auto-detect a local Packet Tracer 9.0 donor from common local locations
+- if it is set and wrong, the repo does not silently fall back to another donor
+
 Required policy:
 
 - keep `PACKET_TRACER_TARGET_VERSION` on `9.0.0.0810`
@@ -304,6 +310,21 @@ Runtime policy:
 - if you use Python `3.12`, `3.13`, `3.15`, or another ABI-incompatible build, `doctor` should report the runtime as unsupported
 
 Read `scripts/vendor/README.md` for local setup.
+
+### Common Failures
+
+- `PACKET_TRACER_COMPAT_DONOR set but missing`
+  - the configured donor path does not exist
+  - fix the path or unset it and let the repo auto-detect a donor
+- `PACKET_TRACER_COMPAT_DONOR_VERSION version_mismatch`
+  - the donor exists, but it is not a `9.0.0.0810` file
+  - do not downgrade to `5.3.0.0011`
+- `TWOFISH_LOAD_STATUS missing`
+  - no local bridge was found
+  - put `_twofish.cp314-win_amd64.pyd` next to `scripts/vendor/twofish.py` or set `PKT_TWOFISH_LIBRARY`
+- `PYTHON_SUPPORT_STATUS unsupported`
+  - your runtime is not Python `3.14.x`
+  - install Python 3.14 and rerun `--doctor`
 
 ### Screenshot
 
@@ -497,6 +518,12 @@ $env:PKT_TWOFISH_LIBRARY="$env:USERPROFILE\.codex\skills\pkt\scripts\vendor\_two
 - `PACKET_TRACER_TARGET_VERSION`
 - `PKT_TWOFISH_LIBRARY`
 
+Donor siyasəti:
+
+- `PACKET_TRACER_COMPAT_DONOR` explicit override kimi qalır
+- o verilməyibsə, repo lokal yayğın qovluqlarda uyğun Packet Tracer 9.0 donorunu avtomatik axtarmağa çalışır
+- o verilibsə və səhvdirsə, repo səssizcə başqa donora keçmir
+
 Məcburi qayda:
 
 - `PACKET_TRACER_TARGET_VERSION` dəyərini `9.0.0.0810` saxla
@@ -623,6 +650,21 @@ Bu qəsdəndir:
 - private path və build izi paylaşılmır
 
 Lokal setup üçün `scripts/vendor/README.md` faylına bax.
+
+### Tez-tez rast gəlinən xətalar
+
+- `PACKET_TRACER_COMPAT_DONOR set but missing`
+  - donor üçün verilmiş yol mövcud deyil
+  - ya yolu düzəlt, ya da dəyişəni sil ki, repo donor auto-detect etsin
+- `PACKET_TRACER_COMPAT_DONOR_VERSION version_mismatch`
+  - donor faylı var, amma `9.0.0.0810` deyil
+  - problemi `5.3.0.0011`-ə düşməklə həll etmə
+- `TWOFISH_LOAD_STATUS missing`
+  - lokal bridge tapılmadı
+  - `_twofish.cp314-win_amd64.pyd` faylını `scripts/vendor/twofish.py` yanına qoy və ya `PKT_TWOFISH_LIBRARY` göstər
+- `PYTHON_SUPPORT_STATUS unsupported`
+  - runtime Python `3.14.x` deyil
+  - Python 3.14 qur və `--doctor` yoxlamasını yenidən işlə
 
 ### Screenshot
 

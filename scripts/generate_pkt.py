@@ -14,7 +14,11 @@ import sys
 import xml.etree.ElementTree as ET
 
 from intent_parser import IntentPlan, parse_intent
-from packet_tracer_env import get_packet_tracer_compatibility_donor, require_packet_tracer_exe
+from packet_tracer_env import (
+    get_packet_tracer_compatibility_donor,
+    inspect_packet_tracer_compatibility_donor,
+    require_packet_tracer_exe,
+)
 from pkt_builder import build_packet_tracer_xml
 from pkt_codec import decode_pkt_file, decode_pkt_modern, encode_pkt_modern
 from pkt_editor import apply_plan_operations, decode_pkt_to_root, edit_pkt_file, inventory_devices, inventory_links, inventory_root
@@ -47,18 +51,15 @@ class PlanningError(RuntimeError):
         }
 
 
-STRICT_COMPATIBILITY_GAP = "Strict 9.0 generation requires PACKET_TRACER_COMPAT_DONOR to point to a local Packet Tracer 9.0 donor lab."
+STRICT_COMPATIBILITY_GAP = (
+    "Strict 9.0 generation requires a compatible local Packet Tracer 9.0 donor lab. "
+    "Set PACKET_TRACER_COMPAT_DONOR explicitly or let the repo auto-detect one."
+)
 
 
 def _compat_donor_details() -> tuple[Path | None, str | None]:
-    donor = get_packet_tracer_compatibility_donor()
-    if donor is None:
-        return None, None
-    try:
-        root = ET.fromstring(decode_pkt_modern(donor.read_bytes()))
-    except Exception:
-        return donor, None
-    return donor, root.findtext("./VERSION")
+    details = inspect_packet_tracer_compatibility_donor()
+    return details.resolved_path, details.donor_version
 
 
 def _apply_prompt_compatibility_requirements(plan: IntentPlan) -> IntentPlan:
@@ -1071,12 +1072,20 @@ def generate_from_prompt(prompt: str, output_path: Path, xml_out_path: Path | No
 
 def explain_plan(prompt: str, reference_roots: list[Path] | None = None) -> None:
     plan = _apply_prompt_compatibility_requirements(parse_intent(prompt))
-    compat_donor, compat_donor_version = _compat_donor_details()
+    donor_details = inspect_packet_tracer_compatibility_donor()
+    compat_donor, compat_donor_version = donor_details.resolved_path, donor_details.donor_version
     result: dict[str, object] = {
         "intent_plan": plan.to_dict(),
         "compatibility_mode": "donor_prune_strict_9_0",
         "compat_donor": str(compat_donor) if compat_donor is not None else None,
         "compat_donor_version": compat_donor_version,
+        "compat_donor_source": donor_details.donor_source,
+        "target_version": donor_details.target_version,
+        "blocking_reason": donor_details.blocking_reason or None,
+        "donor_candidates": [
+            {"source": source, "path": str(path)}
+            for source, path in donor_details.candidate_paths[:10]
+        ],
     }
     if not plan.blocking_gaps and plan.goal != "edit":
         blueprint, prepared = build_prompt_blueprint(plan)
@@ -1166,7 +1175,8 @@ def inventory_pkt(pkt_path: Path) -> None:
     root = ET.fromstring(decode_pkt_modern(pkt_path.read_bytes()))
     payload = inventory_root(root)
     workspace = inspect_workspace_integrity(root)
-    compat_donor, compat_donor_version = _compat_donor_details()
+    donor_details = inspect_packet_tracer_compatibility_donor()
+    compat_donor, compat_donor_version = donor_details.resolved_path, donor_details.donor_version
     payload["workspace_validation"] = {
         "workspace_mode": workspace.workspace_mode,
         "logical_status": workspace.logical_status,
@@ -1176,6 +1186,13 @@ def inventory_pkt(pkt_path: Path) -> None:
     payload["compatibility_mode"] = "strict_9_0"
     payload["compat_donor"] = str(compat_donor) if compat_donor is not None else None
     payload["compat_donor_version"] = compat_donor_version
+    payload["compat_donor_source"] = donor_details.donor_source
+    payload["target_version"] = donor_details.target_version
+    payload["blocking_reason"] = donor_details.blocking_reason or None
+    payload["donor_candidates"] = [
+        {"source": source, "path": str(path)}
+        for source, path in donor_details.candidate_paths[:10]
+    ]
     payload["pkt_version"] = root.findtext("./VERSION")
     if compat_donor is not None:
         donor_root = decode_pkt_to_root(compat_donor)
