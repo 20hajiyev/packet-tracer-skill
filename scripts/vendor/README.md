@@ -18,14 +18,21 @@ The wrapper in `twofish.py` loads the bridge from one of these locations:
 ## Recommended public-repo workflow
 
 - keep this repository free of prebuilt machine-specific binaries
-- store the bridge locally outside the repo when possible
-- point `PKT_TWOFISH_LIBRARY` at that local file
+- keep the bridge local to your machine
+- preferred: place the bridge next to `scripts/vendor/twofish.py` inside the installed skill folder
+- optional: store the bridge elsewhere and point `PKT_TWOFISH_LIBRARY` at that local file
 
 Example on Windows:
 
 ```powershell
-$env:PKT_TWOFISH_LIBRARY='C:\tools\pkt-twofish\_twofish.cp314-win_amd64.pyd'
+$env:PKT_TWOFISH_LIBRARY="$env:USERPROFILE\.codex\skills\pkt\scripts\vendor\_twofish.cp314-win_amd64.pyd"
 ```
+
+## Supported runtime
+
+- supported Python runtime: `3.14.x`
+- current bridge filename: `_twofish.cp314-win_amd64.pyd`
+- other Python ABIs are not considered supported by this public setup
 
 ## Security and privacy
 

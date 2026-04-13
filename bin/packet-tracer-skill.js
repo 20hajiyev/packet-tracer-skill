@@ -143,6 +143,7 @@ function verifyInstall(target) {
     path.join("scripts", "donor_diagnostics.py"),
     path.join("scripts", "install_skill.py"),
     path.join("scripts", "packet_tracer_env.py"),
+    path.join("scripts", "twofish_diagnostics.py"),
   ];
   const missing = required.filter((rel) => !fs.existsSync(path.join(target, rel)));
   return {
@@ -240,6 +241,84 @@ function packetTracerVersionDiagnostics() {
       donorVersion: "",
       status: "decode_error",
       message: error.message,
+    };
+  }
+}
+
+function twofishDiagnostics() {
+  const pythonCommand = firstAvailableCommand(["python", "py"]);
+  if (!pythonCommand) {
+    return {
+      pythonVersion: "",
+      pythonSupportStatus: "missing",
+      pythonSupportMessage: "python was not found in PATH",
+      resolvedTwofishPath: "",
+      twofishSource: "",
+      twofishLoadStatus: "python_missing",
+      twofishMessage: "python was not found in PATH",
+      twofishSha256: "",
+    };
+  }
+
+  const diagnosticsScript = path.join(REPO_ROOT, "scripts", "twofish_diagnostics.py");
+  const args = pythonCommand === "py" ? ["-3", diagnosticsScript] : [diagnosticsScript];
+  const result = runCaptured(pythonCommand, args);
+  if (result.error) {
+    const envPath = process.env.PKT_TWOFISH_LIBRARY || "";
+    const envExists = envPath !== "" && fs.existsSync(envPath);
+    return {
+      pythonVersion: "",
+      pythonSupportStatus: "unknown",
+      pythonSupportMessage: `inspection blocked in this host wrapper: ${result.error.message}`,
+      resolvedTwofishPath: envPath,
+      twofishSource: envPath ? "env" : "",
+      twofishLoadStatus: envExists ? "inspection_blocked" : "missing",
+      twofishMessage: envExists
+        ? `set, but load inspection is blocked in this host wrapper: ${result.error.message}`
+        : envPath
+          ? `set but missing: ${envPath}`
+          : "not set and sibling inspection is blocked in this host wrapper",
+      twofishSha256: "",
+    };
+  }
+  if (result.status !== 0) {
+    const detail =
+      (result.stderr || result.stdout || "").trim().split(/\r?\n/).filter(Boolean).pop() ||
+      `exit code ${result.status}`;
+    return {
+      pythonVersion: "",
+      pythonSupportStatus: "unknown",
+      pythonSupportMessage: detail,
+      resolvedTwofishPath: process.env.PKT_TWOFISH_LIBRARY || "",
+      twofishSource: process.env.PKT_TWOFISH_LIBRARY ? "env" : "",
+      twofishLoadStatus: "load_error",
+      twofishMessage: detail,
+      twofishSha256: "",
+    };
+  }
+
+  try {
+    const parsed = JSON.parse((result.stdout || "").trim() || "{}");
+    return {
+      pythonVersion: parsed.python_version || "",
+      pythonSupportStatus: parsed.python_support_status || "unknown",
+      pythonSupportMessage: parsed.python_support_message || "unknown",
+      resolvedTwofishPath: parsed.resolved_twofish_path || "",
+      twofishSource: parsed.twofish_source || "",
+      twofishLoadStatus: parsed.twofish_load_status || "unknown",
+      twofishMessage: parsed.twofish_message || "unknown",
+      twofishSha256: parsed.twofish_sha256 || "",
+    };
+  } catch (error) {
+    return {
+      pythonVersion: "",
+      pythonSupportStatus: "unknown",
+      pythonSupportMessage: error.message,
+      resolvedTwofishPath: process.env.PKT_TWOFISH_LIBRARY || "",
+      twofishSource: process.env.PKT_TWOFISH_LIBRARY ? "env" : "",
+      twofishLoadStatus: "load_error",
+      twofishMessage: error.message,
+      twofishSha256: "",
     };
   }
 }
@@ -355,11 +434,23 @@ function doctorChecks() {
   ];
 
   const root = envPathStatus(process.env.PACKET_TRACER_ROOT);
-  const twofish = envPathStatus(process.env.PKT_TWOFISH_LIBRARY);
   const donorDiagnostics = packetTracerVersionDiagnostics();
+  const twofish = twofishDiagnostics();
 
   const strictTargetVersion = "9.0.0.0810";
   checks.push(["PACKET_TRACER_ROOT", root.ok, root.message]);
+  checks.push([
+    "PYTHON_VERSION",
+    twofish.pythonVersion !== "",
+    twofish.pythonVersion || "unknown",
+  ]);
+  checks.push([
+    "PYTHON_SUPPORT_STATUS",
+    twofish.pythonSupportStatus === "ok",
+    twofish.pythonSupportStatus === "ok"
+      ? `supported (${twofish.pythonSupportMessage})`
+      : `${twofish.pythonSupportStatus} (${twofish.pythonSupportMessage})`,
+  ]);
   checks.push([
     "PACKET_TRACER_TARGET_VERSION",
     donorDiagnostics.targetVersion === strictTargetVersion,
@@ -377,7 +468,21 @@ function doctorChecks() {
     donorDiagnostics.status === "ok",
     donorDiagnostics.donorVersion || donorDiagnostics.status,
   ]);
-  checks.push(["PKT_TWOFISH_LIBRARY", twofish.ok, twofish.message]);
+  checks.push([
+    "RESOLVED_TWOFISH_PATH",
+    twofish.resolvedTwofishPath !== "",
+    twofish.resolvedTwofishPath || "not found",
+  ]);
+  checks.push([
+    "TWOFISH_LOAD_STATUS",
+    twofish.twofishLoadStatus === "ok",
+    `${twofish.twofishLoadStatus} (${twofish.twofishMessage})`,
+  ]);
+  checks.push([
+    "TWOFISH_SHA256",
+    twofish.twofishSha256 !== "",
+    twofish.twofishSha256 || "not available",
+  ]);
 
   return checks;
 }

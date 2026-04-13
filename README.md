@@ -143,11 +143,15 @@ It checks:
 
 - `node`
 - `python`
+- `python_version`
+- `python_support_status`
 - `PACKET_TRACER_ROOT`
 - `PACKET_TRACER_TARGET_VERSION`
 - `PACKET_TRACER_COMPAT_DONOR`
 - donor version compatibility with the target Packet Tracer version
-- `PKT_TWOFISH_LIBRARY`
+- `resolved_twofish_path`
+- `twofish_load_status`
+- `twofish_sha256`
 
 ### Runtime Configuration
 
@@ -155,8 +159,8 @@ Set the local Packet Tracer environment before real `.pkt` generation:
 
 ```powershell
 $env:PACKET_TRACER_ROOT='C:\Program Files\Cisco Packet Tracer 9.0.0'
-$env:PACKET_TRACER_COMPAT_DONOR='C:\labs\campus_donor_9_0.pkt'
-$env:PKT_TWOFISH_LIBRARY='C:\tools\pkt-twofish\_twofish.cp314-win_amd64.pyd'
+$env:PACKET_TRACER_COMPAT_DONOR='C:\path\to\your-working-9.0-donor.pkt'
+$env:PKT_TWOFISH_LIBRARY="$env:USERPROFILE\.codex\skills\pkt\scripts\vendor\_twofish.cp314-win_amd64.pyd"
 ```
 
 Important variables:
@@ -180,6 +184,12 @@ Host note:
 - the host process must inherit the same `PACKET_TRACER_*` and `PKT_TWOFISH_LIBRARY` environment variables
 - this applies to every host equally: Codex, Cursor, Claude Code, Claude Desktop, Antigravity, Gemini CLI, Kiro, and similar tools
 - if a host wrapper blocks child-process inspection, run `python .\scripts\donor_diagnostics.py` from a local clone to verify the donor directly
+
+Where to place the Twofish binary:
+
+- preferred: put `_twofish.cp314-win_amd64.pyd` next to `scripts/vendor/twofish.py` inside the installed skill folder
+- override: set `PKT_TWOFISH_LIBRARY` to the exact local binary path
+- do not point `PKT_TWOFISH_LIBRARY` at a placeholder path such as `C:\tools\pkt-twofish\...` unless that file actually exists
 
 ### What This Repo Does
 
@@ -286,6 +296,12 @@ That is intentional:
 - no machine-specific binary is committed by default
 - no unsigned local artifact is published by accident
 - no private path or build residue is shared by default
+
+Runtime policy:
+
+- supported Python runtime: `3.14.x` only
+- the current bridge filename is ABI-specific: `_twofish.cp314-win_amd64.pyd`
+- if you use Python `3.12`, `3.13`, `3.15`, or another ABI-incompatible build, `doctor` should report the runtime as unsupported
 
 Read `scripts/vendor/README.md` for local setup.
 
@@ -452,11 +468,15 @@ Yoxladığı şeylər:
 
 - `node`
 - `python`
+- `python_version`
+- `python_support_status`
 - `PACKET_TRACER_ROOT`
 - `PACKET_TRACER_TARGET_VERSION`
 - `PACKET_TRACER_COMPAT_DONOR`
 - donor faylının target Packet Tracer versiyası ilə uyğun olub-olmaması
-- `PKT_TWOFISH_LIBRARY`
+- `resolved_twofish_path`
+- `twofish_load_status`
+- `twofish_sha256`
 
 ### Runtime konfiqurasiyası
 
@@ -464,8 +484,8 @@ Real `.pkt` generate etməzdən əvvəl lokal Packet Tracer mühitini qur:
 
 ```powershell
 $env:PACKET_TRACER_ROOT='C:\Program Files\Cisco Packet Tracer 9.0.0'
-$env:PACKET_TRACER_COMPAT_DONOR='C:\labs\campus_donor_9_0.pkt'
-$env:PKT_TWOFISH_LIBRARY='C:\tools\pkt-twofish\_twofish.cp314-win_amd64.pyd'
+$env:PACKET_TRACER_COMPAT_DONOR='C:\path\to\your-working-9.0-donor.pkt'
+$env:PKT_TWOFISH_LIBRARY="$env:USERPROFILE\.codex\skills\pkt\scripts\vendor\_twofish.cp314-win_amd64.pyd"
 ```
 
 Əsas environment dəyişənləri:
@@ -489,6 +509,12 @@ Host qeydi:
 - host prosesi eyni `PACKET_TRACER_*` və `PKT_TWOFISH_LIBRARY` environment dəyişənlərini görməlidir
 - bu qayda bütün host-lara aiddir: Codex, Cursor, Claude Code, Claude Desktop, Antigravity, Gemini CLI, Kiro və oxşar alətlər
 - əgər host wrapper child-process yoxlamasını bloklayırsa, donorun özünü birbaşa yoxlamaq üçün lokal clone daxilində `python .\scripts\donor_diagnostics.py` işlət
+
+Twofish binary-ni hara qoymaq olar:
+
+- tövsiyə olunan yol: `_twofish.cp314-win_amd64.pyd` faylını quraşdırılmış skill qovluğundakı `scripts/vendor/twofish.py` faylının yanına qoy
+- override yolu: `PKT_TWOFISH_LIBRARY` dəyişəni ilə həmin lokal binary-nin dəqiq yolunu göstər
+- `C:\tools\pkt-twofish\...` kimi placeholder path yalnız həmin fayl doğrudan da orada olduqda işləyəcək
 
 ### Bu repo nə edir
 
