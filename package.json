@@ -3,7 +3,23 @@
   "version": "0.1.0",
   "private": false,
   "description": "Install and verify the pkt skill for Codex, Cursor, Claude Code, Kiro, AdaL, and custom skill hosts.",
+  "keywords": [
+    "packet-tracer",
+    "cisco",
+    "skill",
+    "codex",
+    "cursor",
+    "claude"
+  ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/20hajiyev/packet-tracer-skill.git"
+  },
+  "homepage": "https://github.com/20hajiyev/packet-tracer-skill#readme",
+  "bugs": {
+    "url": "https://github.com/20hajiyev/packet-tracer-skill/issues"
+  },
   "bin": {
     "packet-tracer-skill": "bin/packet-tracer-skill.js"
   },
@@ -18,7 +34,6 @@
     "templates",
     "references",
     "examples",
-    "tests",
     "bin"
   ],
   "engines": {

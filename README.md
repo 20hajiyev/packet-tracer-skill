@@ -41,25 +41,25 @@ Use the same repository, then install it into the skill path your host expects.
 
 | Tool | Install | First Use |
 | --- | --- | --- |
-| Claude Code | `npx github:20hajiyev/packet-tracer-skill --claude` | `Use /pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| Claude Desktop | `npx github:20hajiyev/packet-tracer-skill --path <claude-desktop-skills-dir>` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| Cursor | `npx github:20hajiyev/packet-tracer-skill --cursor` | `@pkt build a Packet Tracer lab with VLAN and DHCP` |
-| Gemini CLI | `npx github:20hajiyev/packet-tracer-skill --path <gemini-skills-dir>` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| Codex CLI | `npx github:20hajiyev/packet-tracer-skill` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| Antigravity | `npx github:20hajiyev/packet-tracer-skill --path <antigravity-skills-dir>` | `Use @pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| Kiro CLI | `npx github:20hajiyev/packet-tracer-skill --kiro` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| Kiro IDE | `npx github:20hajiyev/packet-tracer-skill --kiro` | `Use @pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Claude Code | `npx packet-tracer-skill --claude` | `Use /pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Claude Desktop | `npx packet-tracer-skill --path <claude-desktop-skills-dir>` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Cursor | `npx packet-tracer-skill --cursor` | `@pkt build a Packet Tracer lab with VLAN and DHCP` |
+| Gemini CLI | `npx packet-tracer-skill --path <gemini-skills-dir>` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Codex CLI | `npx packet-tracer-skill` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Antigravity | `npx packet-tracer-skill --path <antigravity-skills-dir>` | `Use @pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Kiro CLI | `npx packet-tracer-skill --kiro` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Kiro IDE | `npx packet-tracer-skill --kiro` | `Use @pkt to build a Packet Tracer lab with VLAN and DHCP` |
 | GitHub Copilot | Copy this repo into your local prompts/rules/skills docs | `Ask Copilot to use pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| OpenCode | `npx github:20hajiyev/packet-tracer-skill --path .agents/skills` | `opencode run @pkt build a Packet Tracer lab with VLAN and DHCP` |
-| AdaL CLI | `npx github:20hajiyev/packet-tracer-skill --adal` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| Custom path | `npx github:20hajiyev/packet-tracer-skill --path ./my-skills` | Depends on your tool |
+| OpenCode | `npx packet-tracer-skill --path .agents/skills` | `opencode run @pkt build a Packet Tracer lab with VLAN and DHCP` |
+| AdaL CLI | `npx packet-tracer-skill --adal` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Custom path | `npx packet-tracer-skill --path ./my-skills` | Depends on your tool |
 
 ### Quick Start
 
 Default install for Codex:
 
 ```powershell
-npx github:20hajiyev/packet-tracer-skill
+npx packet-tracer-skill
 ```
 
 That already installs everything shipped inside this repository.
@@ -68,7 +68,7 @@ If you want one command that installs everything this repository can install by
 itself, use bootstrap:
 
 ```powershell
-npx github:20hajiyev/packet-tracer-skill --bootstrap
+npx packet-tracer-skill --bootstrap
 ```
 
 That command:
@@ -82,23 +82,16 @@ It still does not install Cisco Packet Tracer itself.
 Common targets:
 
 ```powershell
-npx github:20hajiyev/packet-tracer-skill --path <claude-desktop-skills-dir>
-npx github:20hajiyev/packet-tracer-skill --cursor
-npx github:20hajiyev/packet-tracer-skill --claude
-npx github:20hajiyev/packet-tracer-skill --kiro
-```
-
-If you publish this package to npm later, the same commands become:
-
-```powershell
-npx packet-tracer-skill
+npx packet-tracer-skill --path <claude-desktop-skills-dir>
 npx packet-tracer-skill --cursor
+npx packet-tracer-skill --claude
+npx packet-tracer-skill --kiro
 ```
 
 If PowerShell blocks `npx.ps1`, use:
 
 ```powershell
-cmd /c npx github:20hajiyev/packet-tracer-skill --cursor
+cmd /c npx packet-tracer-skill --cursor
 ```
 
 If you want the local development setup instead:
@@ -114,9 +107,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1 -Dev
 Check that the skill was installed into the expected target path:
 
 ```powershell
-npx github:20hajiyev/packet-tracer-skill --verify
-npx github:20hajiyev/packet-tracer-skill --verify --cursor
-npx github:20hajiyev/packet-tracer-skill --verify --path .agents/skills
+npx packet-tracer-skill --verify
+npx packet-tracer-skill --verify --cursor
+npx packet-tracer-skill --verify --path .agents/skills
 ```
 
 From a local clone:
@@ -136,7 +129,7 @@ Repository install and runtime readiness are different things.
 Run:
 
 ```powershell
-npx github:20hajiyev/packet-tracer-skill --doctor
+npx packet-tracer-skill --doctor
 ```
 
 It checks:
@@ -387,25 +380,25 @@ quraşdırılır.
 
 | Alət | Quraşdırma | İlk istifadə |
 | --- | --- | --- |
-| Claude Code | `npx github:20hajiyev/packet-tracer-skill --claude` | `Use /pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| Claude Desktop | `npx github:20hajiyev/packet-tracer-skill --path <claude-desktop-skills-dir>` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| Cursor | `npx github:20hajiyev/packet-tracer-skill --cursor` | `@pkt build a Packet Tracer lab with VLAN and DHCP` |
-| Gemini CLI | `npx github:20hajiyev/packet-tracer-skill --path <gemini-skills-dir>` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| Codex CLI | `npx github:20hajiyev/packet-tracer-skill` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| Antigravity | `npx github:20hajiyev/packet-tracer-skill --path <antigravity-skills-dir>` | `Use @pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| Kiro CLI | `npx github:20hajiyev/packet-tracer-skill --kiro` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| Kiro IDE | `npx github:20hajiyev/packet-tracer-skill --kiro` | `Use @pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Claude Code | `npx packet-tracer-skill --claude` | `Use /pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Claude Desktop | `npx packet-tracer-skill --path <claude-desktop-skills-dir>` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Cursor | `npx packet-tracer-skill --cursor` | `@pkt build a Packet Tracer lab with VLAN and DHCP` |
+| Gemini CLI | `npx packet-tracer-skill --path <gemini-skills-dir>` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Codex CLI | `npx packet-tracer-skill` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Antigravity | `npx packet-tracer-skill --path <antigravity-skills-dir>` | `Use @pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Kiro CLI | `npx packet-tracer-skill --kiro` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Kiro IDE | `npx packet-tracer-skill --kiro` | `Use @pkt to build a Packet Tracer lab with VLAN and DHCP` |
 | GitHub Copilot | Bu repo-nu lokal prompts/rules/skills docs qovluğuna köçür | `Ask Copilot to use pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| OpenCode | `npx github:20hajiyev/packet-tracer-skill --path .agents/skills` | `opencode run @pkt build a Packet Tracer lab with VLAN and DHCP` |
-| AdaL CLI | `npx github:20hajiyev/packet-tracer-skill --adal` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
-| Custom path | `npx github:20hajiyev/packet-tracer-skill --path ./my-skills` | Host-a görə dəyişir |
+| OpenCode | `npx packet-tracer-skill --path .agents/skills` | `opencode run @pkt build a Packet Tracer lab with VLAN and DHCP` |
+| AdaL CLI | `npx packet-tracer-skill --adal` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
+| Custom path | `npx packet-tracer-skill --path ./my-skills` | Host-a görə dəyişir |
 
 ### Sürətli başlanğıc
 
 Codex üçün standart quraşdırma:
 
 ```powershell
-npx github:20hajiyev/packet-tracer-skill
+npx packet-tracer-skill
 ```
 
 Bu komanda repository daxilində olan bütün faylları quraşdırır.
@@ -414,7 +407,7 @@ Bu komanda repository daxilində olan bütün faylları quraşdırır.
 istəyirsənsə, `bootstrap` istifadə et:
 
 ```powershell
-npx github:20hajiyev/packet-tracer-skill --bootstrap
+npx packet-tracer-skill --bootstrap
 ```
 
 Bu komanda:
@@ -428,23 +421,16 @@ Amma Cisco Packet Tracer-in özünü quraşdırmır.
 Tez-tez lazım olan digər variantlar:
 
 ```powershell
-npx github:20hajiyev/packet-tracer-skill --path <claude-desktop-skills-dir>
-npx github:20hajiyev/packet-tracer-skill --cursor
-npx github:20hajiyev/packet-tracer-skill --claude
-npx github:20hajiyev/packet-tracer-skill --kiro
-```
-
-Əgər gələcəkdə paket npm-ə publish olunsa, eyni komandalar belə olacaq:
-
-```powershell
-npx packet-tracer-skill
+npx packet-tracer-skill --path <claude-desktop-skills-dir>
 npx packet-tracer-skill --cursor
+npx packet-tracer-skill --claude
+npx packet-tracer-skill --kiro
 ```
 
 Əgər PowerShell `npx.ps1` faylını bloklayırsa:
 
 ```powershell
-cmd /c npx github:20hajiyev/packet-tracer-skill --cursor
+cmd /c npx packet-tracer-skill --cursor
 ```
 
 Əgər repo üzərində lokal development qurmaq istəyirsənsə:
@@ -460,9 +446,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1 -Dev
 Skill-in gözlənilən host yoluna yazıldığını yoxlamaq üçün:
 
 ```powershell
-npx github:20hajiyev/packet-tracer-skill --verify
-npx github:20hajiyev/packet-tracer-skill --verify --cursor
-npx github:20hajiyev/packet-tracer-skill --verify --path .agents/skills
+npx packet-tracer-skill --verify
+npx packet-tracer-skill --verify --cursor
+npx packet-tracer-skill --verify --path .agents/skills
 ```
 
 Əgər lokal clone ilə işləyirsənsə:
@@ -482,7 +468,7 @@ Repository-nin quraşdırılması ilə runtime hazırlığı eyni şey deyil.
 İşlət:
 
 ```powershell
-npx github:20hajiyev/packet-tracer-skill --doctor
+npx packet-tracer-skill --doctor
 ```
 
 Yoxladığı şeylər:

@@ -10,3 +10,5 @@ output/
 scripts/vendor/_twofish*.pyd
 scripts/vendor/_twofish*.so
 scripts/vendor/_twofish*.dll
+.npm-cache/
+*.tgz
