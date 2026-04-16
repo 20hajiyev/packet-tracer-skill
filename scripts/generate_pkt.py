@@ -27,6 +27,34 @@ from sample_catalog import ReferencePattern, load_catalog, load_reference_catalo
 from sample_selector import rank_reference_samples, rank_samples, select_best_sample
 from workspace_repair import inspect_donor_coherence, inspect_workspace_integrity, validate_donor_coherence, validate_workspace_integrity
 
+RUNTIME_CLEANUP_MODE = "donor_preserve_visual"
+PRESERVED_VISUAL_SECTIONS = [
+    "FILTERS",
+    "CLUSTERS",
+    "GEOVIEW_GRAPHICSITEMS",
+    "RECTANGLES",
+    "ELLIPSES",
+    "POLYGONS",
+    "PHYSICALWORKSPACE/NOTES",
+    "ANSWER_TREE_SELECTED",
+    "PHYSICALALIGN",
+    "HIDEPHYSICAL",
+    "CABLE_POPUP_IN_PHYSICAL",
+]
+CLEANED_SCENARIO_SECTIONS = [
+    "SCENARIOSET",
+    "COMMAND_LOGS",
+    "CEPS",
+]
+NEUTRALIZED_VISUAL_SECTIONS = [
+    "RECTANGLES",
+    "ELLIPSES",
+    "POLYGONS",
+    "PHYSICALWORKSPACE/NOTES",
+]
+OFFSCREEN_X = 50000
+OFFSCREEN_Y = 50000
+
 
 if hasattr(sys.stdout, "reconfigure"):
     try:
@@ -353,10 +381,10 @@ def _seed_devices_from_plan(plan: IntentPlan) -> list[dict[str, object]]:
 
     if archetype == "chain" and plan.department_groups:
         if routers:
-            routers[0].setdefault("x", 180)
+            routers[0].setdefault("x", 220)
             routers[0].setdefault("y", 120)
         for index, group in enumerate(plan.department_groups):
-            base_x = 320 + index * 340
+            base_x = 420 + index * 420
             switch = next((device for device in switches if device.get("group") == group["name"]), None)
             if switch is not None:
                 switch.setdefault("x", base_x)
@@ -374,8 +402,24 @@ def _seed_devices_from_plan(plan: IntentPlan) -> list[dict[str, object]]:
             for client_index, client in enumerate(clients):
                 row = client_index // 2
                 column = client_index % 2
-                client.setdefault("x", base_x - 120 + column * 160)
+                client.setdefault("x", base_x - 140 + column * 190)
                 client.setdefault("y", 660 + row * 155)
+        standalone_servers = [device for device in devices if _device_kind(device) == "Server" and not device.get("group")]
+        if standalone_servers:
+            first_switch_x = int(switches[0].get("x", 420)) if switches else 420
+            for index, server in enumerate(standalone_servers):
+                server.setdefault("x", first_switch_x - 180 + index * 180)
+                server.setdefault("y", 500)
+        standalone_clients = [
+            device
+            for device in devices
+            if not device.get("group") and _device_kind(device) not in {"Router", "Switch", "Server", "Power Distribution Device"}
+        ]
+        if standalone_clients:
+            first_switch_x = int(switches[0].get("x", 420)) if switches else 420
+            for index, client in enumerate(standalone_clients):
+                client.setdefault("x", first_switch_x + 120 + index * 180)
+                client.setdefault("y", 640 if _device_kind(client) == "Laptop" else 760)
     else:
         if routers:
             routers[0].setdefault("x", 520)
@@ -400,7 +444,7 @@ def _seed_devices_from_plan(plan: IntentPlan) -> list[dict[str, object]]:
 
 def _plan_configs(plan: IntentPlan, devices: list[dict[str, object]]) -> dict[str, object]:
     configs: dict[str, object] = {}
-    if plan.topology_requirements.get("needs_dhcp_pool"):
+    if plan.topology_requirements.get("needs_dhcp_pool") and not any(op.get("op") == "set_server_dhcp_pool" for op in plan.server_ops):
         for device in devices:
             if _device_kind(device) == "Router":
                 port = _router_port(device, 1)
@@ -524,6 +568,7 @@ def _synthesize_vlan_and_link_ops(plan: IntentPlan, devices: list[dict[str, obje
 
     switches = [device for device in devices if _device_kind(device) == "Switch"]
     routers = [device for device in devices if _device_kind(device) == "Router"]
+    server_dhcp_requested = any(op.get("op") == "set_server_dhcp_pool" for op in plan.server_ops)
     allowed = list(plan.vlan_ids)
     core_switch = switches[0] if switches else None
 
@@ -561,7 +606,7 @@ def _synthesize_vlan_and_link_ops(plan: IntentPlan, devices: list[dict[str, obje
                     "prefix": 24,
                 },
             )
-            if plan.topology_requirements.get("needs_dhcp_pool"):
+            if plan.topology_requirements.get("needs_dhcp_pool") and not server_dhcp_requested:
                 _append_unique_op(
                     plan.router_ops,
                     {
@@ -612,6 +657,27 @@ def _synthesize_vlan_and_link_ops(plan: IntentPlan, devices: list[dict[str, obje
                             "vlan": int(vlan_id),
                         },
                     )
+        management_vlan = 99 if 99 in plan.vlan_ids else (int(plan.vlan_ids[-1]) if plan.vlan_ids else None)
+        if management_vlan is not None:
+            standalone_device_names = {
+                str(device["name"])
+                for device in devices
+                if not device.get("group") and _device_kind(device) not in {"Router", "Switch", "Power Distribution Device"}
+            }
+            for link in links:
+                if str(link["a"]["dev"]) not in standalone_device_names:
+                    continue
+                if "FastEthernet0/" not in str(link["b"]["port"]):
+                    continue
+                _append_unique_op(
+                    plan.switch_ops,
+                    {
+                        "op": "set_access_port",
+                        "device": str(link["b"]["dev"]),
+                        "port": str(link["b"]["port"]),
+                        "vlan": int(management_vlan),
+                    },
+                )
 
 
 def _build_topology_plan(plan: IntentPlan, devices: list[dict[str, object]], links: list[dict[str, object]]) -> TopologyPlan:
@@ -663,6 +729,10 @@ def _donor_group_prefix(name: str, device_type: str) -> str | None:
     return None
 
 
+def _fallback_group_member_type(device_type: str) -> bool:
+    return device_type in {"PC", "Server", "Printer", "Laptop", "Tablet", "LightWeightAccessPoint", "Smartphone"}
+
+
 def _collect_donor_groups(root: ET.Element) -> list[dict[str, object]]:
     devices = inventory_devices(root)
     groups: list[dict[str, object]] = []
@@ -691,6 +761,44 @@ def _collect_donor_groups(root: ET.Element) -> list[dict[str, object]]:
                 "members_by_type": members_by_type,
             }
         )
+    if groups:
+        groups.sort(key=lambda item: _name_sort_key(str(item["group_name"])))
+        return groups
+
+    links = inventory_links(root)
+    by_name = {str(device["name"]): device for device in devices}
+    switches = [device for device in devices if device["type"] == "Switch"]
+    switch_map = {
+        str(device["name"]): {"group_name": str(device["name"]), "switch": device, "members": [], "members_by_type": {}}
+        for device in switches
+    }
+    for link in links:
+        ports = [str(port) for port in link.get("ports", [])]
+        media = str(link.get("media") or "")
+        if media == "eRollOver" or any("console" in port.lower() for port in ports):
+            continue
+        left_name = str(link.get("from") or "")
+        right_name = str(link.get("to") or "")
+        left = by_name.get(left_name)
+        right = by_name.get(right_name)
+        if left is None or right is None:
+            continue
+        left_type = _device_kind(left)
+        right_type = _device_kind(right)
+        if left_type == "Switch" and _fallback_group_member_type(right_type):
+            switch_map[left_name]["members"].append(right)
+        elif right_type == "Switch" and _fallback_group_member_type(left_type):
+            switch_map[right_name]["members"].append(left)
+    groups = []
+    for group in switch_map.values():
+        members = sorted(group["members"], key=lambda item: _name_sort_key(str(item["name"])))
+        members_by_type: dict[str, list[dict[str, str]]] = {}
+        for member in members:
+            members_by_type.setdefault(member["type"], []).append(member)
+        group["members"] = members
+        group["members_by_type"] = members_by_type
+        groups.append(group)
+    groups.sort(key=lambda item: _name_sort_key(str(item["group_name"])))
     return groups
 
 
@@ -756,7 +864,7 @@ def _donor_capacity(root: ET.Element, donor_groups: list[dict[str, object]]) -> 
     return {"device_counts": counts, "group_count": len(donor_groups), "groups": group_counts}
 
 
-def _sanitize_runtime_sections(root: ET.Element) -> None:
+def _sanitize_scenario_runtime(root: ET.Element) -> None:
     scenario_set = root.find("./SCENARIOSET")
     if scenario_set is not None:
         scenario_set.clear()
@@ -772,6 +880,58 @@ def _sanitize_runtime_sections(root: ET.Element) -> None:
     ceps = root.find("./CEPS")
     if ceps is not None:
         ceps.clear()
+
+
+def _sanitize_visual_runtime(root: ET.Element, preserve_global_sections: bool = True) -> None:
+    if preserve_global_sections:
+        for rectangle in root.findall("./RECTANGLES/RECTANGLE"):
+            if rectangle.find("./TopLeftX") is not None:
+                rectangle.find("./TopLeftX").text = str(OFFSCREEN_X)
+            if rectangle.find("./TopLeftY") is not None:
+                rectangle.find("./TopLeftY").text = str(OFFSCREEN_Y)
+            if rectangle.find("./BottomRightX") is not None:
+                rectangle.find("./BottomRightX").text = str(OFFSCREEN_X + 1)
+            if rectangle.find("./BottomRightY") is not None:
+                rectangle.find("./BottomRightY").text = str(OFFSCREEN_Y + 1)
+        for ellipse in root.findall("./ELLIPSES/ELLIPSE"):
+            for tag, value in [
+                ("TopLeftX", str(OFFSCREEN_X)),
+                ("TopLeftY", str(OFFSCREEN_Y)),
+                ("BottomRightX", str(OFFSCREEN_X + 1)),
+                ("BottomRightY", str(OFFSCREEN_Y + 1)),
+                ("CenterX", str(OFFSCREEN_X)),
+                ("CenterY", str(OFFSCREEN_Y)),
+                ("RadiusX", "1"),
+                ("RadiusY", "1"),
+            ]:
+                node = ellipse.find(f"./{tag}")
+                if node is not None:
+                    node.text = value
+        for polygon in root.findall("./POLYGONS/POLYGON"):
+            points = polygon.find("./POINTS")
+            if points is not None:
+                points.clear()
+                point = ET.SubElement(points, "POINT")
+                ET.SubElement(point, "X").text = str(OFFSCREEN_X)
+                ET.SubElement(point, "Y").text = str(OFFSCREEN_Y)
+        for notes in root.findall("./PHYSICALWORKSPACE//NOTES"):
+            for note in notes.findall("./NOTE"):
+                for tag in ["X", "Y"]:
+                    node = note.find(f"./{tag}")
+                    if node is not None:
+                        node.text = str(OFFSCREEN_X if tag == "X" else OFFSCREEN_Y)
+                text_node = note.find("./TEXT")
+                if text_node is not None:
+                    text_node.text = ""
+        return
+    for tag in ["FILTERS", "CLUSTERS", "LINES", "RECTANGLES", "ELLIPSES", "POLYGONS", "GEOVIEW_GRAPHICSITEMS", "NOTES"]:
+        for node in root.findall(f".//{tag}"):
+            node.clear()
+
+
+def _sanitize_runtime_sections(root: ET.Element, preserve_global_sections: bool = True) -> None:
+    _sanitize_scenario_runtime(root)
+    _sanitize_visual_runtime(root, preserve_global_sections=preserve_global_sections)
 
 
 def _unexpected_workspace_issues(donor_root: ET.Element, generated_root: ET.Element) -> list[str]:
@@ -804,6 +964,7 @@ def _build_donor_prune_plan(plan: IntentPlan, blueprint: dict[str, object]) -> t
     renamed_devices: list[dict[str, str]] = []
     mutation_groups: list[dict[str, object]] = []
     rename_map: dict[str, str] = {}
+    spare_candidates_by_type: dict[str, list[dict[str, object]]] = {}
 
     def keep_name(old_name: str, new_name: str | None = None, x: int | None = None, y: int | None = None) -> None:
         kept_devices.add(old_name)
@@ -816,6 +977,23 @@ def _build_donor_prune_plan(plan: IntentPlan, blueprint: dict[str, object]) -> t
             adapted_plan.edit_operations.append({"op": "reflow_layout", "device": final_name, "x": int(x), "y": int(y)})
 
     park_cursor = {"index": 0}
+
+    def queue_spare(
+        donor_member: dict[str, object],
+        anchor_x: int,
+        anchor_y: int,
+        local_index: int,
+        group_name: str | None,
+    ) -> None:
+        spare_candidates_by_type.setdefault(_device_kind(donor_member), []).append(
+            {
+                "device": donor_member,
+                "anchor_x": anchor_x,
+                "anchor_y": anchor_y,
+                "local_index": local_index,
+                "group_name": group_name,
+            }
+        )
 
     def park_device(
         old_name: str,
@@ -865,6 +1043,27 @@ def _build_donor_prune_plan(plan: IntentPlan, blueprint: dict[str, object]) -> t
     elif donor_router is not None:
         park_device(str(donor_router["name"]))
 
+    grouped_donor_names = {
+        str(group["switch"]["name"])
+        for group in donor_groups
+    } | {
+        str(member["name"])
+        for group in donor_groups
+        for member in group["members"]
+    }
+    for donor_device in donor_devices:
+        donor_name = str(donor_device["name"])
+        donor_type = _device_kind(donor_device)
+        if donor_name in grouped_donor_names or donor_name in kept_devices:
+            continue
+        if donor_type in {"Router", "Switch"}:
+            continue
+        if donor_type == "Power Distribution Device":
+            keep_name(donor_name, donor_name, 2620, 120)
+            continue
+        queue_spare(donor_device, 1820, 180, park_cursor["index"], None)
+        park_cursor["index"] += 1
+
     for donor_group, target_group in zip(donor_groups, target_groups):
         group_kept: list[str] = []
         group_park_index = 0
@@ -900,16 +1099,14 @@ def _build_donor_prune_plan(plan: IntentPlan, blueprint: dict[str, object]) -> t
                     int(target_member.get("y", 0)),
                 )
                 group_kept.append(str(target_member["name"]))
-            for spare_offset, donor_member in enumerate(available[len(wanted) :], start=1):
-                spare_name = f"{target_group['group_name']}-SPARE-{device_type.upper()}{spare_offset}"
-                park_device(str(donor_member["name"]), park_anchor_x, park_anchor_y, group_park_index, spare_name)
+            for donor_member in available[len(wanted) :]:
+                queue_spare(donor_member, park_anchor_x, park_anchor_y, group_park_index, str(target_group["group_name"]))
                 group_park_index += 1
         for device_type, available in donor_members_by_type.items():
             if device_type in target_members_by_type:
                 continue
-            for spare_offset, donor_member in enumerate(available, start=1):
-                spare_name = f"{target_group['group_name']}-SPARE-{device_type.upper()}{spare_offset}"
-                park_device(str(donor_member["name"]), park_anchor_x, park_anchor_y, group_park_index, spare_name)
+            for donor_member in available:
+                queue_spare(donor_member, park_anchor_x, park_anchor_y, group_park_index, str(target_group["group_name"]))
                 group_park_index += 1
         mutation_groups.append(
             {
@@ -918,6 +1115,58 @@ def _build_donor_prune_plan(plan: IntentPlan, blueprint: dict[str, object]) -> t
                 "kept_devices": group_kept,
             }
         )
+
+    grouped_target_names = {
+        str(group["switch"]["name"])
+        for group in target_groups
+    } | {
+        str(member["name"])
+        for group in target_groups
+        for member in group["members"]
+    }
+    standalone_targets = [
+        dict(device)
+        for device in blueprint.get("devices", [])
+        if str(device.get("name")) not in grouped_target_names and _device_kind(device) not in {"Router", "Switch", "Power Distribution Device"}
+    ]
+    standalone_targets.sort(key=lambda item: _name_sort_key(str(item["name"])))
+    for target in standalone_targets:
+        device_type = _device_kind(target)
+        available_pool = spare_candidates_by_type.get(device_type, [])
+        if not available_pool:
+            gap = f"Compatibility donor does not have a spare {device_type} device for standalone target {target['name']}."
+            if gap not in adapted_plan.blocking_gaps:
+                adapted_plan.blocking_gaps.append(gap)
+            raise PlanningError("Prompt plan is incomplete; generation was skipped.", adapted_plan)
+        chosen = available_pool.pop(0)
+        donor_member = chosen["device"]
+        keep_name(
+            str(donor_member["name"]),
+            str(target["name"]),
+            int(target.get("x", 0)),
+            int(target.get("y", 0)),
+        )
+
+    spare_name_counts: dict[tuple[str | None, str], int] = {}
+    for device_type, candidates in spare_candidates_by_type.items():
+        for candidate in candidates:
+            donor_member = candidate["device"]
+            group_name = candidate.get("group_name")
+            count_key = (str(group_name) if group_name is not None else None, device_type)
+            spare_name_counts[count_key] = spare_name_counts.get(count_key, 0) + 1
+            spare_index = spare_name_counts[count_key]
+            spare_name = (
+                f"{group_name}-SPARE-{device_type.upper()}{spare_index}"
+                if group_name
+                else f"UNUSED-{device_type.upper()}{spare_index}"
+            )
+            park_device(
+                str(donor_member["name"]),
+                int(candidate["anchor_x"]),
+                int(candidate["anchor_y"]),
+                int(candidate["local_index"]),
+                spare_name,
+            )
 
     for donor_group in donor_groups[len(target_groups) :]:
         names = [str(donor_group["switch"]["name"]), *[str(member["name"]) for member in donor_group["members"]]]
@@ -930,14 +1179,48 @@ def _build_donor_prune_plan(plan: IntentPlan, blueprint: dict[str, object]) -> t
             group_park_index += 1
         mutation_groups.append({"donor_group": donor_group["group_name"], "target_group": None, "parked_devices": names})
 
+    desired_device_names = {str(device["name"]) for device in blueprint.get("devices", [])}
+    desired_pairs = {
+        tuple(sorted((str(link["a"]["dev"]), str(link["b"]["dev"]))))
+        for link in blueprint.get("links", [])
+    }
+    parked_name_set = set(parked_devices)
+    removed_pairs: set[tuple[str, str]] = set()
+    for donor_link in donor_links:
+        left_name = rename_map.get(str(donor_link["from"]), str(donor_link["from"]))
+        right_name = rename_map.get(str(donor_link["to"]), str(donor_link["to"]))
+        if not left_name or not right_name or left_name == right_name:
+            continue
+        pair = tuple(sorted((left_name, right_name)))
+        if pair in removed_pairs:
+            continue
+        if left_name in parked_name_set or right_name in parked_name_set:
+            adapted_plan.edit_operations.append({"op": "remove_link", "a": {"dev": left_name}, "b": {"dev": right_name}})
+            removed_pairs.add(pair)
+            continue
+        if left_name in desired_device_names and right_name in desired_device_names and pair not in desired_pairs:
+            adapted_plan.edit_operations.append({"op": "remove_link", "a": {"dev": left_name}, "b": {"dev": right_name}})
+            removed_pairs.add(pair)
+    for link in blueprint.get("links", []):
+        adapted_plan.edit_operations.append(
+            {
+                "op": "set_link",
+                "a": {"dev": str(link["a"]["dev"]), "port": str(link["a"]["port"])},
+                "b": {"dev": str(link["b"]["dev"]), "port": str(link["b"]["port"])},
+                "media": str(link.get("media", "straight-through")),
+            }
+        )
+    for parked_name in dict.fromkeys(parked_devices):
+        adapted_plan.edit_operations.append({"op": "prune_device", "device": parked_name})
+
     archetype_plan = DonorArchetypePlan(
         compat_donor=str(compat_donor),
         donor_capacity=donor_capacity,
-        kept_devices=sorted(rename_map.values(), key=_name_sort_key),
+        kept_devices=sorted([name for name in rename_map.values() if name not in set(parked_devices)], key=_name_sort_key),
         pruned_devices=sorted(dict.fromkeys(parked_devices), key=_name_sort_key),
         renamed_devices=renamed_devices,
         mutation_groups=mutation_groups,
-        layout_strategy="donor_preserve_park_unused",
+        layout_strategy="donor_prune_clean",
     )
     return adapted_plan, archetype_plan
 
@@ -1077,6 +1360,10 @@ def explain_plan(prompt: str, reference_roots: list[Path] | None = None) -> None
     result: dict[str, object] = {
         "intent_plan": plan.to_dict(),
         "compatibility_mode": "donor_prune_strict_9_0",
+        "runtime_cleanup_mode": RUNTIME_CLEANUP_MODE,
+        "preserved_visual_sections": PRESERVED_VISUAL_SECTIONS,
+        "cleaned_visual_sections": CLEANED_SCENARIO_SECTIONS,
+        "neutralized_visual_sections": NEUTRALIZED_VISUAL_SECTIONS,
         "compat_donor": str(compat_donor) if compat_donor is not None else None,
         "compat_donor_version": compat_donor_version,
         "compat_donor_source": donor_details.donor_source,
@@ -1116,6 +1403,7 @@ def explain_plan(prompt: str, reference_roots: list[Path] | None = None) -> None
                 "device_metadata_status": coherence_result.device_metadata_status,
                 "scenario_status": coherence_result.scenario_status,
                 "physical_runtime_status": coherence_result.physical_runtime_status,
+                "visual_runtime_status": coherence_result.visual_runtime_status,
                 "blocking_issues": [*workspace_result.blocking_issues, *coherence_result.blocking_issues],
             }
         except PlanningError as exc:
@@ -1184,6 +1472,10 @@ def inventory_pkt(pkt_path: Path) -> None:
         "blocking_issues": workspace.blocking_issues,
     }
     payload["compatibility_mode"] = "strict_9_0"
+    payload["runtime_cleanup_mode"] = RUNTIME_CLEANUP_MODE
+    payload["preserved_visual_sections"] = PRESERVED_VISUAL_SECTIONS
+    payload["cleaned_visual_sections"] = CLEANED_SCENARIO_SECTIONS
+    payload["neutralized_visual_sections"] = NEUTRALIZED_VISUAL_SECTIONS
     payload["compat_donor"] = str(compat_donor) if compat_donor is not None else None
     payload["compat_donor_version"] = compat_donor_version
     payload["compat_donor_source"] = donor_details.donor_source
@@ -1201,6 +1493,7 @@ def inventory_pkt(pkt_path: Path) -> None:
             "device_metadata_status": coherence.device_metadata_status,
             "scenario_status": coherence.scenario_status,
             "physical_runtime_status": coherence.physical_runtime_status,
+            "visual_runtime_status": coherence.visual_runtime_status,
             "blocking_issues": coherence.blocking_issues,
         }
     payload.update(_link_schema_summary(root))

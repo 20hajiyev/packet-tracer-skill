@@ -554,12 +554,23 @@ def _set_enabled_service(engine: ET.Element, service_name: str) -> None:
     tag, enabled_tag = mapping[service_name]
     node = engine.find(tag)
     if node is None:
-        sample_root = load_sample_root(resolve_sample_path(SERVER_SAMPLE))
-        prototype = sample_root.find(f".//DEVICES/DEVICE[ENGINE/TYPE='Server']/ENGINE/{tag}")
+        prototype = _server_engine_prototype_child(tag)
         node = copy.deepcopy(prototype) if prototype is not None else ET.SubElement(engine, tag)
     if node not in list(engine):
         engine.append(node)
     _ensure_text(node, enabled_tag, "1")
+
+
+def _server_engine_prototype_child(tag: str) -> ET.Element | None:
+    sample_root = load_sample_root(resolve_sample_path(SERVER_SAMPLE))
+    for device in sample_root.findall(".//DEVICES/DEVICE"):
+        engine = device.find("ENGINE")
+        if engine is None or _device_type(device) != "Server":
+            continue
+        child = engine.find(tag)
+        if child is not None:
+            return child
+    return None
 
 
 def _apply_server_op(device: ET.Element, operation: dict[str, object]) -> None:
@@ -569,8 +580,7 @@ def _apply_server_op(device: ET.Element, operation: dict[str, object]) -> None:
     if operation["op"] == "set_server_dns_record":
         dns_server = engine.find("DNS_SERVER")
         if dns_server is None:
-            sample_root = load_sample_root(resolve_sample_path(SERVER_SAMPLE))
-            prototype = sample_root.find(".//DEVICES/DEVICE[ENGINE/TYPE='Server']/ENGINE/DNS_SERVER")
+            prototype = _server_engine_prototype_child("DNS_SERVER")
             dns_server = copy.deepcopy(prototype) if prototype is not None else ET.SubElement(engine, "DNS_SERVER")
             engine.append(dns_server)
         _ensure_text(dns_server, "ENABLED", "1")
@@ -591,8 +601,7 @@ def _apply_server_op(device: ET.Element, operation: dict[str, object]) -> None:
     elif operation["op"] == "set_server_dhcp_pool":
         dhcp_server = engine.find("DHCP_SERVER")
         if dhcp_server is None:
-            sample_root = load_sample_root(resolve_sample_path(SERVER_SAMPLE))
-            prototype = sample_root.find(".//DEVICES/DEVICE[ENGINE/TYPE='Server']/ENGINE/DHCP_SERVER")
+            prototype = _server_engine_prototype_child("DHCP_SERVER")
             dhcp_server = copy.deepcopy(prototype) if prototype is not None else ET.SubElement(engine, "DHCP_SERVER")
             engine.append(dhcp_server)
         _ensure_text(dhcp_server, "ENABLED", "1")

@@ -74,6 +74,14 @@ def test_parse_hybrid_operations() -> None:
     assert any(op["op"] == "set_host_dns" for op in plan.end_device_ops)
 
 
+def test_parse_server_dhcp_pool_as_server_op() -> None:
+    plan = parse_intent(
+        "set Server0 dhcp pool VLAN10 network 192.168.10.0/24 gateway 192.168.10.1 dns 192.168.99.20 start 192.168.10.100 max 50"
+    )
+    assert any(op["op"] == "set_server_dhcp_pool" for op in plan.server_ops)
+    assert not any(op["op"] == "set_router_dhcp_pool" and op["device"] == "Server0" for op in plan.router_ops)
+
+
 def test_parse_azerbaijani_natural_prompt_and_blocking_gap() -> None:
     plan = parse_intent(
         "3 dene switch ve 6 komputer ve 1 router "

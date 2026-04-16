@@ -54,6 +54,26 @@ Use the same repository, then install it into the skill path your host expects.
 | AdaL CLI | `npx packet-tracer-skill --adal` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
 | Custom path | `npx packet-tracer-skill --path ./my-skills` | Depends on your tool |
 
+### Platform Support
+
+The installer command can be used on more than one OS, but real Packet Tracer
+runtime support is narrower right now.
+
+| Platform | Installer / skill copy | Real `.pkt` decode/generate/edit runtime |
+| --- | --- | --- |
+| Windows | Supported | Supported |
+| macOS | Partially supported | Not supported yet |
+| Linux | Partially supported | Not supported yet |
+
+Current reason:
+
+- the current local Twofish bridge is Windows-only: `_twofish.cp314-win_amd64.pyd`
+- donor auto-detection and runtime assumptions are still Windows-first
+- Packet Tracer runtime validation has only been hardened against the Windows 9.0 workflow so far
+
+If you run this on macOS or Linux today, installation may work, but `doctor`
+should be treated as the authority for whether real `.pkt` generation is ready.
+
 ### Quick Start
 
 Default install for Codex:
@@ -393,6 +413,26 @@ quraşdırılır.
 | AdaL CLI | `npx packet-tracer-skill --adal` | `Use pkt to build a Packet Tracer lab with VLAN and DHCP` |
 | Custom path | `npx packet-tracer-skill --path ./my-skills` | Host-a görə dəyişir |
 
+### Platforma dəstəyi
+
+Quraşdırma komandası bir neçə əməliyyat sistemində işləyə bilər, amma real
+Packet Tracer runtime dəstəyi hələ daha dardır.
+
+| Platforma | Installer / skill copy | Real `.pkt` decode/generate/edit runtime |
+| --- | --- | --- |
+| Windows | Dəstəklənir | Dəstəklənir |
+| macOS | Qismən dəstəklənir | Hələ dəstəklənmir |
+| Linux | Qismən dəstəklənir | Hələ dəstəklənmir |
+
+Cari səbəblər:
+
+- indiki lokal Twofish bridge yalnız Windows üçündür: `_twofish.cp314-win_amd64.pyd`
+- donor auto-detect və runtime fərziyyələri hələ Windows-first qurulub
+- Packet Tracer runtime validation hələ yalnız Windows 9.0 iş axını üçün sərtləşdirilib
+
+Yəni bu repo macOS və ya Linux-da quraşdırıla bilər, amma real `.pkt`
+generasiya mühitinin hazır olub-olmadığını əsasən `doctor` nəticəsi göstərir.
+
 ### Sürətli başlanğıc
 
 Codex üçün standart quraşdırma:
@@ -677,7 +717,8 @@ Public paylaşmazdan əvvəl bunları yoxla:
 ### Cari limitlər
 
 - yalnız Packet Tracer 9.x
-- Windows-first workflow
+- real `.pkt` runtime hazırda yalnız Windows-da dəstəklənir
+- macOS və Linux hazırda əsasən installer səviyyəsində qismən işləyir
 - donor-prune generate donor capacity ilə məhduddur
 - xarici lab-lar donor kimi istifadə olunmur
 - bundled template coverage qəsdən limitlidir

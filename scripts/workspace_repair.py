@@ -20,6 +20,7 @@ class DonorCoherenceResult:
     device_metadata_status: str
     scenario_status: str
     physical_runtime_status: str
+    visual_runtime_status: str
     blocking_issues: list[str]
 
 
@@ -327,6 +328,20 @@ def _section_xml(root: ET.Element, path: str) -> str:
     return ET.tostring(node, encoding="unicode")
 
 
+def _section_content_score(node: ET.Element | None) -> int:
+    if node is None:
+        return 0
+    score = len(node.attrib)
+    if (node.text or "").strip():
+        score += 1
+    score += sum(1 for _ in node.iter()) - 1
+    return score
+
+
+def _section_content_score_many(nodes: list[ET.Element]) -> int:
+    return sum(_section_content_score(node) for node in nodes)
+
+
 def _device_by_save_ref(root: ET.Element) -> dict[str, ET.Element]:
     devices: dict[str, ET.Element] = {}
     for device in root.findall(".//DEVICES/DEVICE"):
@@ -385,6 +400,30 @@ def inspect_donor_coherence(donor_root: ET.Element, generated_root: ET.Element) 
         "GEOVIEW_GRAPHICSITEMS": _section_xml(generated_root, "./GEOVIEW_GRAPHICSITEMS"),
         "CLUSTERS": _section_xml(generated_root, "./CLUSTERS"),
     }
+    global_visual_paths = {
+        "FILTERS": "./FILTERS",
+        "CLUSTERS": "./CLUSTERS",
+        "GEOVIEW_GRAPHICSITEMS": "./GEOVIEW_GRAPHICSITEMS",
+        "RECTANGLES": "./RECTANGLES",
+        "ELLIPSES": "./ELLIPSES",
+        "POLYGONS": "./POLYGONS",
+    }
+    for section_name, path in global_visual_paths.items():
+        donor_score = _section_content_score(donor_root.find(path))
+        generated_score = _section_content_score(generated_root.find(path))
+        if donor_score > 0 and generated_score == 0:
+            issues.append(f"Generated file unexpectedly emptied donor visual section {section_name}")
+
+    donor_notes_score = _section_content_score_many(donor_root.findall("./PHYSICALWORKSPACE//NOTES"))
+    generated_notes_score = _section_content_score_many(generated_root.findall("./PHYSICALWORKSPACE//NOTES"))
+    if donor_notes_score > 0 and generated_notes_score == 0:
+        issues.append("Generated file unexpectedly emptied donor visual section PHYSICALWORKSPACE/NOTES")
+
+    for tag in ["ANSWER_TREE_SELECTED", "PHYSICALALIGN", "HIDEPHYSICAL", "CABLE_POPUP_IN_PHYSICAL"]:
+        donor_value = donor_root.findtext(f"./{tag}", default="").strip()
+        generated_value = generated_root.findtext(f"./{tag}", default="").strip()
+        if donor_value != generated_value:
+            issues.append(f"Generated file changed donor physical view state {tag} from {donor_value} to {generated_value}")
 
     pruned_ids = sorted(set(donor_devices) - set(generated_devices))
     for save_ref in pruned_ids:
@@ -423,13 +462,31 @@ def inspect_donor_coherence(donor_root: ET.Element, generated_root: ET.Element) 
                     issues.append(f"Generated device {generated_name} physical leaf name is {leaf_name}")
 
     device_issues = [issue for issue in issues if "SYS_NAME" in issue or "hostname" in issue]
-    scenario_issues = [issue for issue in issues if any(section in issue for section in ["SCENARIOSET", "COMMAND_LOGS", "CEPS", "FILTERS"])]
-    physical_issues = [issue for issue in issues if any(section in issue for section in ["PHYSICALWORKSPACE", "GEOVIEW_GRAPHICSITEMS", "CLUSTERS", "physical leaf"])]
+    scenario_issues = [issue for issue in issues if any(section in issue for section in ["SCENARIOSET", "COMMAND_LOGS", "CEPS"])]
+    physical_issues = [issue for issue in issues if any(section in issue for section in ["PHYSICALWORKSPACE", "physical leaf"])]
+    visual_issues = [
+        issue
+        for issue in issues
+        if any(
+            section in issue
+            for section in [
+                "FILTERS",
+                "CLUSTERS",
+                "GEOVIEW_GRAPHICSITEMS",
+                "RECTANGLES",
+                "ELLIPSES",
+                "POLYGONS",
+                "PHYSICALWORKSPACE/NOTES",
+                "physical view state",
+            ]
+        )
+    ]
 
     return DonorCoherenceResult(
         device_metadata_status="ok" if not device_issues else "invalid",
         scenario_status="ok" if not scenario_issues else "invalid",
         physical_runtime_status="ok" if not physical_issues else "invalid",
+        visual_runtime_status="ok" if not visual_issues else "invalid",
         blocking_issues=issues,
     )
 

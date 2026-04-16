@@ -7,6 +7,7 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
+from generate_pkt import _sanitize_runtime_sections  # noqa: E402
 from workspace_repair import inspect_donor_coherence, inspect_workspace_integrity, sanitize_generated_physical_workspace  # noqa: E402
 
 
@@ -172,3 +173,85 @@ def test_inspect_donor_coherence_flags_stale_device_metadata() -> None:
     result = inspect_donor_coherence(donor_root, generated_root)
     assert result.device_metadata_status == "invalid"
     assert any("donor hostname DONOR-PC" in issue or "physical leaf name is DONOR-PC" in issue for issue in result.blocking_issues)
+
+
+def test_sanitize_runtime_sections_preserves_visual_sections_by_default() -> None:
+    root = ET.Element("PACKETTRACER5")
+    filters = ET.SubElement(root, "FILTERS")
+    ET.SubElement(filters, "FILTER")
+    clusters = ET.SubElement(root, "CLUSTERS")
+    ET.SubElement(clusters, "ROOTCLUSTER")
+    rectangles = ET.SubElement(root, "RECTANGLES")
+    rectangle = ET.SubElement(rectangles, "RECTANGLE")
+    ET.SubElement(rectangle, "TopLeftX").text = "100"
+    ET.SubElement(rectangle, "TopLeftY").text = "200"
+    ET.SubElement(rectangle, "BottomRightX").text = "300"
+    ET.SubElement(rectangle, "BottomRightY").text = "400"
+    geo = ET.SubElement(root, "GEOVIEW_GRAPHICSITEMS")
+    ET.SubElement(geo, "ParentPhyObject")
+    ET.SubElement(root, "ANSWER_TREE_SELECTED").text = "3"
+    physical = _make_donor_physical_root()
+    notes = ET.SubElement(physical, "NOTES")
+    note = ET.SubElement(notes, "NOTE")
+    ET.SubElement(note, "X").text = "50"
+    ET.SubElement(note, "Y").text = "60"
+    ET.SubElement(note, "TEXT").text = "visible note"
+    root.append(physical)
+    ET.SubElement(root, "SCENARIOSET")
+    ET.SubElement(root, "COMMAND_LOGS")
+    ET.SubElement(root, "CEPS")
+
+    _sanitize_runtime_sections(root)
+
+    assert len(root.find("./FILTERS")) == 1
+    assert len(root.find("./CLUSTERS")) == 1
+    assert len(root.find("./RECTANGLES")) == 1
+    assert len(root.find("./GEOVIEW_GRAPHICSITEMS")) == 1
+    assert len(root.findall("./PHYSICALWORKSPACE//NOTES")[0]) == 1
+    assert root.findtext("./RECTANGLES/RECTANGLE/TopLeftX") == "50000"
+    assert root.findtext("./RECTANGLES/RECTANGLE/BottomRightY") == "50001"
+    assert root.findtext("./PHYSICALWORKSPACE/NOTES/NOTE/X") == "50000"
+    assert root.findtext("./PHYSICALWORKSPACE/NOTES/NOTE/Y") == "50000"
+    assert root.findtext("./PHYSICALWORKSPACE/NOTES/NOTE/TEXT", default="marker") == ""
+    assert root.findtext("./ANSWER_TREE_SELECTED") == "3"
+    assert len(root.find("./SCENARIOSET")) == 1
+    assert len(root.find("./COMMAND_LOGS")) == 0
+    assert len(root.find("./CEPS")) == 0
+
+
+def test_inspect_donor_coherence_flags_unexpected_visual_emptying() -> None:
+    donor_root = ET.Element("PACKETTRACER5")
+    ET.SubElement(donor_root, "VERSION").text = "9.0.0.0810"
+    ET.SubElement(donor_root, "ANSWER_TREE_SELECTED").text = "3"
+    ET.SubElement(donor_root, "PHYSICALALIGN").text = "false"
+    ET.SubElement(donor_root, "HIDEPHYSICAL").text = "false"
+    ET.SubElement(donor_root, "CABLE_POPUP_IN_PHYSICAL").text = "true"
+    filters = ET.SubElement(donor_root, "FILTERS")
+    ET.SubElement(filters, "FILTER")
+    clusters = ET.SubElement(donor_root, "CLUSTERS")
+    ET.SubElement(clusters, "ROOTCLUSTER")
+    rectangles = ET.SubElement(donor_root, "RECTANGLES")
+    ET.SubElement(rectangles, "RECTANGLE")
+    geoview = ET.SubElement(donor_root, "GEOVIEW_GRAPHICSITEMS")
+    ET.SubElement(geoview, "ParentPhyObject")
+    physical = _make_donor_physical_root()
+    top_notes = ET.SubElement(physical, "NOTES")
+    ET.SubElement(top_notes, "NOTE")
+    donor_root.append(physical)
+    network = ET.SubElement(donor_root, "NETWORK")
+    devices = ET.SubElement(network, "DEVICES")
+    devices.append(_make_donor_ready_device("DONOR-PC", "save-ref-id:1", "{orig-uuid}", "{leaf-uuid}"))
+    ET.SubElement(network, "LINKS")
+
+    generated_root = ET.fromstring(ET.tostring(donor_root, encoding="unicode"))
+    generated_root.find("./FILTERS").clear()
+    generated_root.find("./CLUSTERS").clear()
+    generated_root.find("./RECTANGLES").clear()
+    generated_root.find("./GEOVIEW_GRAPHICSITEMS").clear()
+    generated_root.find("./PHYSICALWORKSPACE/NOTES").clear()
+
+    result = inspect_donor_coherence(donor_root, generated_root)
+
+    assert result.visual_runtime_status == "invalid"
+    assert any("unexpectedly emptied donor visual section FILTERS" in issue for issue in result.blocking_issues)
+    assert any("unexpectedly emptied donor visual section PHYSICALWORKSPACE/NOTES" in issue for issue in result.blocking_issues)

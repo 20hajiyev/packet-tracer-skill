@@ -455,6 +455,8 @@ def _extract_router_ops(prompt: str) -> list[dict[str, object]]:
     )
     for segment in _command_segments(prompt):
         for device, name, network, prefix, gateway, dns, start, max_users in dhcp_pattern.findall(segment):
+            if str(device).strip().lower().startswith("server"):
+                continue
             ops.append(
                 {
                     "op": "set_router_dhcp_pool",
@@ -494,12 +496,14 @@ def _extract_server_ops(prompt: str) -> list[dict[str, object]]:
         for device, record_type, name, value in dns_pattern.findall(segment):
             ops.append({"op": "set_server_dns_record", "device": device, "record_type": record_type.upper(), "name": name, "value": value})
     dhcp_pattern = re.compile(
-        r"set\s+([A-Za-z0-9_-]+)\s+server-dhcp\s+pool\s+([A-Za-z0-9_-]+)\s+network\s+(\d+\.\d+\.\d+\.\d+)/(\d+)\s+gateway\s+(\d+\.\d+\.\d+\.\d+)"
+        r"set\s+([A-Za-z0-9_-]+)\s+(server-dhcp|dhcp)\s+pool\s+([A-Za-z0-9_-]+)\s+network\s+(\d+\.\d+\.\d+\.\d+)/(\d+)\s+gateway\s+(\d+\.\d+\.\d+\.\d+)"
         r"(?:\s+dns\s+(\d+\.\d+\.\d+\.\d+))?(?:\s+start\s+(\d+\.\d+\.\d+\.\d+))?(?:\s+max\s+(\d+))?",
         flags=re.IGNORECASE,
     )
     for segment in _command_segments(prompt):
-        for device, name, network, prefix, gateway, dns, start, max_users in dhcp_pattern.findall(segment):
+        for device, mode, name, network, prefix, gateway, dns, start, max_users in dhcp_pattern.findall(segment):
+            if mode.lower() != "server-dhcp" and not str(device).strip().lower().startswith("server"):
+                continue
             ops.append(
                 {
                     "op": "set_server_dhcp_pool",

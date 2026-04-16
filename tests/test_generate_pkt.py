@@ -2,13 +2,36 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from packet_tracer_env import get_packet_tracer_compatibility_donor  # noqa: E402
-from generate_pkt import PlanningError, _build_donor_prune_plan, build_prompt_blueprint, prepare_generation_plan  # noqa: E402
+from generate_pkt import PlanningError, _build_donor_prune_plan, _collect_donor_groups, build_prompt_blueprint, prepare_generation_plan  # noqa: E402
 from intent_parser import parse_intent  # noqa: E402
+
+
+def _make_device(name: str, device_type: str, model: str = "") -> ET.Element:
+    device = ET.Element("DEVICE")
+    engine = ET.SubElement(device, "ENGINE")
+    dtype = ET.SubElement(engine, "TYPE")
+    dtype.text = device_type
+    if model:
+        dtype.set("model", model)
+    ET.SubElement(engine, "NAME").text = name
+    return device
+
+
+def _make_link(from_index: int, to_index: int, from_port: str, to_port: str, media: str = "eStraightThrough") -> ET.Element:
+    link = ET.Element("LINK")
+    cable = ET.SubElement(link, "CABLE")
+    ET.SubElement(cable, "FROM").text = str(from_index)
+    ET.SubElement(cable, "TO").text = str(to_index)
+    ET.SubElement(cable, "PORT").text = from_port
+    ET.SubElement(cable, "PORT").text = to_port
+    ET.SubElement(cable, "TYPE").text = media
+    return link
 
 
 def test_prepare_generation_plan_keeps_blocking_gap_for_missing_vlan_assignment() -> None:
@@ -95,8 +118,46 @@ def test_build_donor_prune_plan_for_department_prompt() -> None:
     )
     adapted, donor_plan = _build_donor_prune_plan(plan, blueprint)
     assert donor_plan.compat_donor
-    assert donor_plan.layout_strategy == "donor_preserve_park_unused"
+    assert donor_plan.layout_strategy == "donor_prune_clean"
     assert donor_plan.pruned_devices
     assert any(op["op"] == "rename_device" for op in adapted.edit_operations)
     assert any(op["op"] == "reflow_layout" for op in adapted.edit_operations)
-    assert not any(op["op"] == "prune_device" for op in adapted.edit_operations)
+    assert any(op["op"] == "prune_device" for op in adapted.edit_operations)
+
+
+def test_collect_donor_groups_falls_back_to_link_topology() -> None:
+    root = ET.Element("PACKETTRACER5")
+    devices = ET.SubElement(root, "DEVICES")
+    for name, device_type, model in [
+        ("Mertebe 3", "Switch", "2960-24TT"),
+        ("Mertebe 1", "Switch", "2960-24TT"),
+        ("Mertebe 2", "Switch", "2960-24TT"),
+        ("DIA-RS", "Router", "PT8200"),
+        ("DNS DHCP 192.168.20.2", "Server", "Server-PT"),
+        ("web 192.168.20.3", "Server", "Server-PT"),
+        ("SQL 192.168.20.4", "Server", "Server-PT"),
+        ("Muhasib-1", "PC", "PC-PT"),
+        ("Muhasib-2", "PC", "PC-PT"),
+        ("II-dek-01", "PC", "PC-PT"),
+        ("II-dek-02", "PC", "PC-PT"),
+    ]:
+        devices.append(_make_device(name, device_type, model))
+    links = ET.SubElement(root, "LINKS")
+    for args in [
+        (0, 3, "GigabitEthernet0/1", "GigabitEthernet0/0/1"),
+        (0, 4, "FastEthernet0/6", "FastEthernet0"),
+        (0, 5, "FastEthernet0/5", "FastEthernet0"),
+        (0, 6, "FastEthernet0/4", "FastEthernet0"),
+        (1, 7, "FastEthernet0/1", "FastEthernet0"),
+        (1, 8, "FastEthernet0/2", "FastEthernet0"),
+        (2, 9, "FastEthernet0/1", "FastEthernet0"),
+        (2, 10, "FastEthernet0/2", "FastEthernet0"),
+    ]:
+        links.append(_make_link(*args))
+
+    groups = _collect_donor_groups(root)
+
+    assert [group["group_name"] for group in groups] == ["Mertebe 1", "Mertebe 2", "Mertebe 3"]
+    mertebe3 = next(group for group in groups if group["group_name"] == "Mertebe 3")
+    assert mertebe3["members_by_type"]["Server"]
+    assert len(mertebe3["members_by_type"]["Server"]) == 3
