@@ -7,9 +7,9 @@ import json
 from packet_tracer_env import inspect_packet_tracer_compatibility_donor
 
 
-def main() -> int:
+def collect_donor_diagnostics() -> dict[str, object]:
     details = inspect_packet_tracer_compatibility_donor()
-    result = {
+    return {
         "target_version": details.target_version,
         "resolved_donor_path": str(details.resolved_path) if details.resolved_path else "",
         "donor_path": str(details.resolved_path) if details.resolved_path else "",
@@ -27,7 +27,10 @@ def main() -> int:
             for source, path in details.candidate_paths[:10]
         ],
     }
-    print(json.dumps(result))
+
+
+def main() -> int:
+    print(json.dumps(collect_donor_diagnostics()))
     return 0
 
 

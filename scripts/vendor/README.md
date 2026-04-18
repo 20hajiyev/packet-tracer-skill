@@ -10,9 +10,11 @@ modern Packet Tracer 9.x encode/decode operations.
 The wrapper in `twofish.py` loads the bridge from one of these locations:
 
 1. `PKT_TWOFISH_LIBRARY`
-2. a sibling file in this folder named like:
+2. directories listed in `PKT_TWOFISH_SEARCH_ROOTS`
+3. a sibling file in this folder named like:
    - `_twofish*.pyd`
    - `_twofish*.so`
+   - `_twofish*.dylib`
    - `_twofish*.dll`
 
 ## Recommended public-repo workflow
@@ -21,6 +23,7 @@ The wrapper in `twofish.py` loads the bridge from one of these locations:
 - keep the bridge local to your machine
 - preferred: place the bridge next to `scripts/vendor/twofish.py` inside the installed skill folder
 - optional: store the bridge elsewhere and point `PKT_TWOFISH_LIBRARY` at that local file
+- optional: store bridges in one or more local directories and set `PKT_TWOFISH_SEARCH_ROOTS`
 
 Example on Windows:
 
@@ -28,10 +31,19 @@ Example on Windows:
 $env:PKT_TWOFISH_LIBRARY="$env:USERPROFILE\.codex\skills\pkt\scripts\vendor\_twofish.cp314-win_amd64.pyd"
 ```
 
+Example for multiple local search roots:
+
+```powershell
+$env:PKT_TWOFISH_SEARCH_ROOTS="$env:USERPROFILE\.codex\skills\pkt\scripts\vendor;$env:USERPROFILE\pkt-bridges"
+```
+
 ## Supported runtime
 
 - supported Python runtime: `3.14.x`
 - current bridge filename: `_twofish.cp314-win_amd64.pyd`
+- recommended non-Windows naming contract:
+  - macOS: `_twofish.cp314-macos*.dylib`
+  - Linux: `_twofish.cp314-linux*.so`
 - other Python ABIs are not considered supported by this public setup
 
 ## Security and privacy

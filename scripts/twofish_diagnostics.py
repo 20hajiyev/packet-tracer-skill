@@ -10,30 +10,24 @@ import sys
 from ctypes import CDLL
 from pathlib import Path
 
-
-SUPPORTED_PYTHON = (3, 14)
+from twofish_runtime import (
+    SUPPORTED_PYTHON,
+    candidate_bridge_paths,
+    expected_bridge_patterns,
+    normalized_host_os,
+    recommended_search_roots,
+)
 
 
 def _vendor_dir() -> Path:
     return Path(__file__).resolve().parent / "vendor"
 
 
-def _candidate_paths() -> list[tuple[str, Path]]:
-    vendor_dir = _vendor_dir()
-    env_path = os.getenv("PKT_TWOFISH_LIBRARY")
-    candidates: list[tuple[str, Path]] = []
-    if env_path:
-        candidates.append(("env", Path(env_path).expanduser()))
-    for pattern in ("_twofish*.pyd", "_twofish*.so", "_twofish*.dll"):
-        for candidate in sorted(vendor_dir.glob(pattern)):
-            candidates.append(("sibling", candidate))
-    return candidates
-
-
-def main() -> int:
+def collect_twofish_diagnostics() -> dict[str, str]:
     python_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
     python_supported = sys.version_info[:2] == SUPPORTED_PYTHON
     result = {
+        "host_os": normalized_host_os(),
         "python_version": python_version,
         "python_support_status": "ok" if python_supported else "unsupported",
         "python_support_message": (
@@ -41,6 +35,8 @@ def main() -> int:
             if python_supported
             else f"requires Python {SUPPORTED_PYTHON[0]}.{SUPPORTED_PYTHON[1]}.x"
         ),
+        "expected_twofish_patterns": expected_bridge_patterns(),
+        "twofish_search_roots": recommended_search_roots(_vendor_dir()),
         "resolved_twofish_path": "",
         "twofish_source": "",
         "twofish_load_status": "missing",
@@ -48,7 +44,7 @@ def main() -> int:
         "twofish_sha256": "",
     }
 
-    for source, candidate in _candidate_paths():
+    for source, candidate in candidate_bridge_paths(_vendor_dir(), env_path=os.getenv("PKT_TWOFISH_LIBRARY")):
         if not candidate.exists():
             continue
         result["resolved_twofish_path"] = str(candidate)
@@ -60,21 +56,18 @@ def main() -> int:
                 f"found {candidate}, but this bridge is only supported with Python "
                 f"{SUPPORTED_PYTHON[0]}.{SUPPORTED_PYTHON[1]}.x"
             )
-            print(json.dumps(result))
-            return 0
+            return result
         try:
             library = CDLL(str(candidate))
             getattr(library, "exp_Twofish_encrypt")
             getattr(library, "exp_Twofish_decrypt")
             result["twofish_load_status"] = "ok"
             result["twofish_message"] = f"loaded {candidate}"
-            print(json.dumps(result))
-            return 0
+            return result
         except Exception as exc:  # pragma: no cover - runtime diagnostics
             result["twofish_load_status"] = "load_error"
             result["twofish_message"] = f"{candidate}: {exc}"
-            print(json.dumps(result))
-            return 0
+            return result
 
     env_path = os.getenv("PKT_TWOFISH_LIBRARY")
     if env_path:
@@ -83,7 +76,11 @@ def main() -> int:
         result["twofish_load_status"] = "missing"
         result["twofish_message"] = f"set but missing: {env_path}"
 
-    print(json.dumps(result))
+    return result
+
+
+def main() -> int:
+    print(json.dumps(collect_twofish_diagnostics()))
     return 0
 
 

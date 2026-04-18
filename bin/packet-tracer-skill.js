@@ -143,6 +143,7 @@ function verifyInstall(target) {
     path.join("scripts", "donor_diagnostics.py"),
     path.join("scripts", "install_skill.py"),
     path.join("scripts", "packet_tracer_env.py"),
+    path.join("scripts", "runtime_doctor.py"),
     path.join("scripts", "twofish_diagnostics.py"),
   ];
   const missing = required.filter((rel) => !fs.existsSync(path.join(target, rel)));
@@ -154,9 +155,28 @@ function verifyInstall(target) {
 }
 
 function commandExists(command) {
+  if (path.isAbsolute(command) || command.includes(path.sep)) {
+    return fs.existsSync(command);
+  }
   const probe = process.platform === "win32" ? "where" : "which";
   const result = spawnSync(probe, [command], { stdio: "ignore" });
   return result.status === 0;
+}
+
+function preferredPythonCommand() {
+  const candidates = [
+    process.env.PACKET_TRACER_SKILL_PYTHON,
+    process.env.PYTHON,
+    process.platform === "win32" ? path.join("C:\\", "Python314", "python.exe") : "",
+    "python",
+    "py",
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    if (commandExists(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
 }
 
 function envPathStatus(value) {
@@ -170,7 +190,7 @@ function envPathStatus(value) {
 }
 
 function packetTracerVersionDiagnostics() {
-  const pythonCommand = firstAvailableCommand(["python", "py"]);
+  const pythonCommand = preferredPythonCommand();
   if (!pythonCommand) {
     return {
       targetVersion: process.env.PACKET_TRACER_TARGET_VERSION || "9.0.0.0810",
@@ -267,12 +287,14 @@ function packetTracerVersionDiagnostics() {
 }
 
 function twofishDiagnostics() {
-  const pythonCommand = firstAvailableCommand(["python", "py"]);
+  const pythonCommand = preferredPythonCommand();
   if (!pythonCommand) {
     return {
       pythonVersion: "",
       pythonSupportStatus: "missing",
       pythonSupportMessage: "python was not found in PATH",
+      expectedTwofishPatterns: [],
+      twofishSearchRoots: [],
       resolvedTwofishPath: "",
       twofishSource: "",
       twofishLoadStatus: "python_missing",
@@ -291,6 +313,8 @@ function twofishDiagnostics() {
       pythonVersion: "",
       pythonSupportStatus: "unknown",
       pythonSupportMessage: `inspection blocked in this host wrapper: ${result.error.message}`,
+      expectedTwofishPatterns: [],
+      twofishSearchRoots: [],
       resolvedTwofishPath: envPath,
       twofishSource: envPath ? "env" : "",
       twofishLoadStatus: envExists ? "inspection_blocked" : "missing",
@@ -310,6 +334,8 @@ function twofishDiagnostics() {
       pythonVersion: "",
       pythonSupportStatus: "unknown",
       pythonSupportMessage: detail,
+      expectedTwofishPatterns: [],
+      twofishSearchRoots: [],
       resolvedTwofishPath: process.env.PKT_TWOFISH_LIBRARY || "",
       twofishSource: process.env.PKT_TWOFISH_LIBRARY ? "env" : "",
       twofishLoadStatus: "load_error",
@@ -324,6 +350,8 @@ function twofishDiagnostics() {
       pythonVersion: parsed.python_version || "",
       pythonSupportStatus: parsed.python_support_status || "unknown",
       pythonSupportMessage: parsed.python_support_message || "unknown",
+      expectedTwofishPatterns: parsed.expected_twofish_patterns || [],
+      twofishSearchRoots: parsed.twofish_search_roots || [],
       resolvedTwofishPath: parsed.resolved_twofish_path || "",
       twofishSource: parsed.twofish_source || "",
       twofishLoadStatus: parsed.twofish_load_status || "unknown",
@@ -335,11 +363,107 @@ function twofishDiagnostics() {
       pythonVersion: "",
       pythonSupportStatus: "unknown",
       pythonSupportMessage: error.message,
+      expectedTwofishPatterns: [],
+      twofishSearchRoots: [],
       resolvedTwofishPath: process.env.PKT_TWOFISH_LIBRARY || "",
       twofishSource: process.env.PKT_TWOFISH_LIBRARY ? "env" : "",
       twofishLoadStatus: "load_error",
       twofishMessage: error.message,
       twofishSha256: "",
+    };
+  }
+}
+
+function runtimeDoctorDiagnostics() {
+  const pythonCommand = preferredPythonCommand();
+  if (!pythonCommand) {
+    return {
+      available: false,
+      error: "python_missing",
+      hostOs: process.platform,
+      installerSupport: { status: "supported", message: "supported" },
+      realPktRuntimeSupport: {
+        status: "windows_first",
+        message: "python was not found in PATH",
+      },
+      envExamples: [],
+      detectedLayoutType: "missing",
+      recommendedPacketTracerRoot: "",
+      recommendedPacketTracerSavesRoot: "",
+      pythonVersion: "",
+      pythonSupportStatus: "missing",
+      pythonSupportMessage: "python was not found in PATH",
+      expectedTwofishPatterns: [],
+      twofishSearchRoots: [],
+      packetTracerRoot: process.env.PACKET_TRACER_ROOT || "",
+      packetTracerSavesRoot: "",
+      packetTracerExe: "",
+      resolvedTwofishPath: process.env.PKT_TWOFISH_LIBRARY || "",
+      twofishSource: process.env.PKT_TWOFISH_LIBRARY ? "env" : "",
+      twofishLoadStatus: "python_missing",
+      twofishMessage: "python was not found in PATH",
+      twofishSha256: "",
+      targetVersion: process.env.PACKET_TRACER_TARGET_VERSION || "9.0.0.0810",
+      resolvedDonorPath: process.env.PACKET_TRACER_COMPAT_DONOR || "",
+      donorVersion: "",
+      donorSource: process.env.PACKET_TRACER_COMPAT_DONOR ? "env" : "",
+      donorStatus: process.env.PACKET_TRACER_COMPAT_DONOR ? "unknown" : "missing",
+      donorMessage: process.env.PACKET_TRACER_COMPAT_DONOR ? "python missing" : "not set",
+      donorBlockingReason: "python was not found in PATH",
+      donorCandidates: [],
+      blockingReason: "python was not found in PATH",
+    };
+  }
+
+  const diagnosticsScript = path.join(REPO_ROOT, "scripts", "runtime_doctor.py");
+  const args = pythonCommand === "py" ? ["-3", diagnosticsScript] : [diagnosticsScript];
+  const result = runCaptured(pythonCommand, args);
+  if (result.error || result.status !== 0) {
+    return {
+      available: false,
+      error: result.error ? result.error.message : `exit code ${result.status}`,
+    };
+  }
+
+  try {
+    const parsed = JSON.parse((result.stdout || "").trim() || "{}");
+    return {
+      available: true,
+      hostOs: parsed.host_os || process.platform,
+      installerSupport: parsed.installer_support || { status: "unknown", message: "unknown" },
+      realPktRuntimeSupport: parsed.real_pkt_runtime_support || { status: "unknown", message: "unknown" },
+      envExamples: parsed.env_examples || [],
+      detectedLayoutType: parsed.detected_layout_type || "unknown",
+      recommendedPacketTracerRoot: parsed.recommended_packet_tracer_root || "",
+      recommendedPacketTracerSavesRoot: parsed.recommended_packet_tracer_saves_root || "",
+      recommendedNextSteps: parsed.recommended_next_steps || [],
+      packetTracerRoot: parsed.packet_tracer_root || process.env.PACKET_TRACER_ROOT || "",
+      packetTracerSavesRoot: parsed.packet_tracer_saves_root || "",
+      packetTracerExe: parsed.packet_tracer_exe || "",
+      pythonVersion: parsed.python_version || "",
+      pythonSupportStatus: parsed.python_support_status || "unknown",
+      pythonSupportMessage: parsed.python_support_message || "unknown",
+      expectedTwofishPatterns: parsed.expected_twofish_patterns || [],
+      twofishSearchRoots: parsed.twofish_search_roots || [],
+      resolvedTwofishPath: parsed.resolved_twofish_path || "",
+      twofishSource: parsed.twofish_source || "",
+      twofishLoadStatus: parsed.twofish_load_status || "unknown",
+      twofishMessage: parsed.twofish_message || "unknown",
+      twofishSha256: parsed.twofish_sha256 || "",
+      targetVersion: parsed.target_version || process.env.PACKET_TRACER_TARGET_VERSION || "9.0.0.0810",
+      resolvedDonorPath: parsed.resolved_donor_path || process.env.PACKET_TRACER_COMPAT_DONOR || "",
+      donorVersion: parsed.donor_version || "",
+      donorSource: parsed.donor_source || "",
+      donorStatus: parsed.donor_status || "unknown",
+      donorMessage: parsed.donor_message || "unknown",
+      donorBlockingReason: parsed.donor_blocking_reason || "",
+      donorCandidates: parsed.donor_candidates || [],
+      blockingReason: parsed.blocking_reason || "",
+    };
+  } catch (error) {
+    return {
+      available: false,
+      error: error.message,
     };
   }
 }
@@ -385,7 +509,7 @@ function firstAvailableCommand(candidates) {
 }
 
 function bootstrapEnvironment(target, includeDev) {
-  const pythonCommand = firstAvailableCommand(["python", "py"]);
+  const pythonCommand = preferredPythonCommand();
   if (!pythonCommand) {
     return {
       ok: false,
@@ -453,13 +577,104 @@ function doctorChecks() {
     ["node", nodeOk, nodeOk ? "found" : "missing"],
     ["python", pythonOk, pythonOk ? "found" : "missing"],
   ];
-
-  const root = envPathStatus(process.env.PACKET_TRACER_ROOT);
-  const donorDiagnostics = packetTracerVersionDiagnostics();
-  const twofish = twofishDiagnostics();
+  const runtimeDoctor = runtimeDoctorDiagnostics();
+  const donorDiagnostics = runtimeDoctor.available
+    ? {
+        targetVersion: runtimeDoctor.targetVersion,
+        donorPath: runtimeDoctor.resolvedDonorPath,
+        donorVersion: runtimeDoctor.donorVersion,
+        donorSource: runtimeDoctor.donorSource,
+        status: runtimeDoctor.donorStatus,
+        message: runtimeDoctor.donorMessage,
+        blockingReason: runtimeDoctor.donorBlockingReason,
+        candidatePaths: runtimeDoctor.donorCandidates,
+      }
+    : packetTracerVersionDiagnostics();
+  const twofish = runtimeDoctor.available
+    ? {
+        pythonVersion: runtimeDoctor.pythonVersion,
+      pythonSupportStatus: runtimeDoctor.pythonSupportStatus,
+      pythonSupportMessage: runtimeDoctor.pythonSupportMessage,
+      expectedTwofishPatterns: runtimeDoctor.expectedTwofishPatterns,
+      twofishSearchRoots: runtimeDoctor.twofishSearchRoots,
+      resolvedTwofishPath: runtimeDoctor.resolvedTwofishPath,
+        twofishSource: runtimeDoctor.twofishSource,
+        twofishLoadStatus: runtimeDoctor.twofishLoadStatus,
+        twofishMessage: runtimeDoctor.twofishMessage,
+        twofishSha256: runtimeDoctor.twofishSha256,
+      }
+    : twofishDiagnostics();
+  const hostOs = runtimeDoctor.available ? runtimeDoctor.hostOs : process.platform;
+  const detectedLayoutType = runtimeDoctor.available ? runtimeDoctor.detectedLayoutType : "fallback_unknown";
+  const recommendedPacketTracerRoot = runtimeDoctor.available
+    ? runtimeDoctor.recommendedPacketTracerRoot
+    : fallbackRecommendedPacketTracerRoot(process.platform);
+  const recommendedPacketTracerSavesRoot = runtimeDoctor.available
+    ? runtimeDoctor.recommendedPacketTracerSavesRoot
+    : fallbackRecommendedPacketTracerSavesRoot(process.platform);
+  const installerSupported = runtimeDoctor.available
+    ? runtimeDoctor.installerSupport.status === "supported"
+    : ["win32", "darwin", "linux"].includes(process.platform);
+  const runtimeSupported = runtimeDoctor.available
+    ? runtimeDoctor.realPktRuntimeSupport.status === "validated"
+    : process.platform === "win32";
+  const runtimeMessage = runtimeDoctor.available
+    ? runtimeDoctor.realPktRuntimeSupport.message
+    : runtimeSupported
+      ? "validated Windows Packet Tracer 9.0 runtime path"
+      : twofish.resolvedTwofishPath
+        ? "custom native runtime may work, but bundled validation is still Windows-first"
+        : "needs custom Packet Tracer paths and a non-Windows native Twofish bridge";
+  const packetTracerRoot = runtimeDoctor.available
+    ? runtimeDoctor.packetTracerRoot
+    : process.env.PACKET_TRACER_ROOT || "";
+  const root = runtimeDoctor.available
+    ? {
+        ok: packetTracerRoot !== "",
+        message: packetTracerRoot || "not set",
+      }
+    : envPathStatus(process.env.PACKET_TRACER_ROOT);
 
   const strictTargetVersion = "9.0.0.0810";
+  checks.push(["HOST_OS", true, hostOs]);
+  checks.push([
+    "INSTALLER_SUPPORT",
+    installerSupported,
+    runtimeDoctor.available ? runtimeDoctor.installerSupport.message : installerSupported ? "supported" : "unknown host platform",
+  ]);
+  checks.push([
+    "DETECTED_LAYOUT_TYPE",
+    true,
+    detectedLayoutType || "unknown",
+  ]);
+  checks.push([
+    "RECOMMENDED_PACKET_TRACER_ROOT",
+    recommendedPacketTracerRoot !== "",
+    recommendedPacketTracerRoot || "not available",
+  ]);
+  checks.push([
+    "RECOMMENDED_PACKET_TRACER_SAVES_ROOT",
+    recommendedPacketTracerSavesRoot !== "",
+    recommendedPacketTracerSavesRoot || "not available",
+  ]);
+  checks.push([
+    "REAL_PKT_RUNTIME_SUPPORT",
+    runtimeSupported,
+    runtimeMessage,
+  ]);
   checks.push(["PACKET_TRACER_ROOT", root.ok, root.message]);
+  if (runtimeDoctor.available) {
+    checks.push([
+      "PACKET_TRACER_SAVES_ROOT",
+      runtimeDoctor.packetTracerSavesRoot !== "",
+      runtimeDoctor.packetTracerSavesRoot || "not resolved",
+    ]);
+    checks.push([
+      "PACKET_TRACER_EXE",
+      runtimeDoctor.packetTracerExe !== "",
+      runtimeDoctor.packetTracerExe || "not resolved",
+    ]);
+  }
   checks.push([
     "PYTHON_VERSION",
     twofish.pythonVersion !== "",
@@ -528,6 +743,16 @@ function doctorChecks() {
     twofish.twofishSha256 !== "",
     twofish.twofishSha256 || "not available",
   ]);
+  checks.push([
+    "TWOFISH_EXPECTED_PATTERNS",
+    (twofish.expectedTwofishPatterns || []).length > 0,
+    (twofish.expectedTwofishPatterns || []).join(" | ") || "not available",
+  ]);
+  checks.push([
+    "TWOFISH_SEARCH_ROOTS",
+    (twofish.twofishSearchRoots || []).length > 0,
+    (twofish.twofishSearchRoots || []).join(" | ") || "not available",
+  ]);
 
   return checks;
 }
@@ -535,6 +760,127 @@ function doctorChecks() {
 function printDoctorChecks(checks) {
   for (const [name, ok, detail] of checks) {
     console.log(`${ok ? "OK" : "MISSING"}  ${name}  ${detail}`);
+  }
+}
+
+function checkMap(checks) {
+  return new Map(checks.map(([name, ok, detail]) => [name, { ok, detail }]));
+}
+
+function doctorGuidance(checks) {
+  const map = checkMap(checks);
+  const guidance = [];
+  const pythonSupport = map.get("PYTHON_SUPPORT_STATUS");
+  const root = map.get("PACKET_TRACER_ROOT");
+  const donor = map.get("PACKET_TRACER_COMPAT_DONOR");
+  const donorCandidates = map.get("DONOR_CANDIDATES");
+  const savesRoot = map.get("RECOMMENDED_PACKET_TRACER_SAVES_ROOT");
+  const twofish = map.get("TWOFISH_LOAD_STATUS");
+  const patterns = map.get("TWOFISH_EXPECTED_PATTERNS");
+  const searchRoots = map.get("TWOFISH_SEARCH_ROOTS");
+  const runtimeSupport = map.get("REAL_PKT_RUNTIME_SUPPORT");
+
+  if (runtimeSupport && !runtimeSupport.ok) {
+    guidance.push(`Real runtime is still Windows-first: ${runtimeSupport.detail}`);
+  }
+  if (pythonSupport && !pythonSupport.ok) {
+    guidance.push("Use Python 3.14.x for Packet Tracer 9.0 encode/decode.");
+  }
+  if (root && !root.ok) {
+    const suffix =
+      map.get("RECOMMENDED_PACKET_TRACER_ROOT")?.detail &&
+      map.get("RECOMMENDED_PACKET_TRACER_ROOT")?.detail !== "not available"
+        ? ` Suggested root: ${map.get("RECOMMENDED_PACKET_TRACER_ROOT").detail}.`
+        : "";
+    guidance.push(`Set PACKET_TRACER_ROOT to your local Cisco Packet Tracer 9.0 install directory.${suffix}`);
+  }
+  if (donor && !donor.ok) {
+    const savesHint =
+      savesRoot && savesRoot.detail && savesRoot.detail !== "not available"
+        ? ` Packet Tracer saves are typically under ${savesRoot.detail}.`
+        : "";
+    if (donorCandidates && donorCandidates.ok) {
+      guidance.push(`Pick one discovered donor or export PACKET_TRACER_COMPAT_DONOR explicitly: ${donorCandidates.detail}.${savesHint}`);
+    } else {
+      guidance.push(`Provide a working 9.0 donor lab with PACKET_TRACER_COMPAT_DONOR or place one in Downloads/Documents/Desktop/Packet Tracer saves.${savesHint}`);
+    }
+  }
+  if (twofish && !twofish.ok) {
+    const parts = ["Provide a local Twofish bridge"];
+    if (patterns && patterns.detail && patterns.detail !== "not available") {
+      parts.push(`matching one of: ${patterns.detail}`);
+    }
+    if (searchRoots && searchRoots.detail && searchRoots.detail !== "not available") {
+      parts.push(`in one of these roots: ${searchRoots.detail}`);
+    }
+    parts.push("or set PKT_TWOFISH_LIBRARY / PKT_TWOFISH_SEARCH_ROOTS.");
+    guidance.push(parts.join(" "));
+  }
+  return guidance;
+}
+
+function fallbackEnvExamples(platformName) {
+  if (platformName === "win32") {
+    return [
+      "$env:PACKET_TRACER_ROOT='C:\\Program Files\\Cisco Packet Tracer 9.0.0'",
+      "$env:PACKET_TRACER_COMPAT_DONOR='C:\\path\\to\\your-working-9.0-donor.pkt'",
+      '$env:PKT_TWOFISH_LIBRARY="$env:USERPROFILE\\.codex\\skills\\pkt\\scripts\\vendor\\_twofish.cp314-win_amd64.pyd"',
+    ];
+  }
+  if (platformName === "darwin") {
+    return [
+      "export PACKET_TRACER_ROOT='/Applications/Cisco Packet Tracer.app/Contents/Resources'",
+      "export PACKET_TRACER_COMPAT_DONOR=\"$HOME/path/to/your-working-9.0-donor.pkt\"",
+      "export PKT_TWOFISH_SEARCH_ROOTS=\"$HOME/.codex/skills/pkt/scripts/vendor:$HOME/pkt-bridges\"",
+    ];
+  }
+  if (platformName === "linux") {
+    return [
+      "export PACKET_TRACER_ROOT='/opt/pt'",
+      "export PACKET_TRACER_COMPAT_DONOR=\"$HOME/path/to/your-working-9.0-donor.pkt\"",
+      "export PKT_TWOFISH_SEARCH_ROOTS=\"$HOME/.codex/skills/pkt/scripts/vendor:$HOME/pkt-bridges\"",
+    ];
+  }
+  return [];
+}
+
+function fallbackRecommendedPacketTracerRoot(platformName) {
+  if (platformName === "win32") {
+    return "C:\\Program Files\\Cisco Packet Tracer 9.0.0";
+  }
+  if (platformName === "darwin") {
+    return "/Applications/Cisco Packet Tracer.app/Contents/Resources";
+  }
+  if (platformName === "linux") {
+    return "/opt/pt";
+  }
+  return "";
+}
+
+function fallbackRecommendedPacketTracerSavesRoot(platformName) {
+  if (platformName === "win32") {
+    return "C:\\Program Files\\Cisco Packet Tracer 9.0.0\\saves";
+  }
+  if (platformName === "darwin") {
+    return "/Applications/Cisco Packet Tracer.app/Contents/Resources/saves";
+  }
+  if (platformName === "linux") {
+    return "/opt/pt/saves";
+  }
+  return "";
+}
+
+function printEnvExamples(runtimeDoctor) {
+  const examples =
+    runtimeDoctor && runtimeDoctor.available && (runtimeDoctor.envExamples || []).length
+      ? runtimeDoctor.envExamples
+      : fallbackEnvExamples(process.platform);
+  if (!examples.length) {
+    return;
+  }
+  console.log("\nSuggested environment setup:");
+  for (const line of examples) {
+    console.log(`- ${line}`);
   }
 }
 
@@ -547,8 +893,17 @@ function main() {
     }
 
     if (args.doctor) {
+      const runtimeDoctor = runtimeDoctorDiagnostics();
       const checks = doctorChecks();
       printDoctorChecks(checks);
+      const guidance = doctorGuidance(checks);
+      if (guidance.length > 0) {
+        console.log("\nRecommended next steps:");
+        for (const line of guidance) {
+          console.log(`- ${line}`);
+        }
+      }
+      printEnvExamples(runtimeDoctor);
       const failed = checks.some(([, ok]) => !ok);
       if (failed) {
         console.error("\nRuntime is not fully ready. Install copies are fine, but Packet Tracer generation still needs the missing items above.");
@@ -610,8 +965,17 @@ function main() {
       }
 
       const checks = doctorChecks();
+      const runtimeDoctor = runtimeDoctorDiagnostics();
       console.log("\nRemaining manual runtime checks:");
       printDoctorChecks(checks);
+      const guidance = doctorGuidance(checks);
+      if (guidance.length > 0) {
+        console.log("\nRecommended next steps:");
+        for (const line of guidance) {
+          console.log(`- ${line}`);
+        }
+      }
+      printEnvExamples(runtimeDoctor);
       const missing = checks.filter(([, ok]) => !ok).map(([name]) => name);
       const donorCandidates = checks.find(([name]) => name === "DONOR_CANDIDATES");
       if (donorCandidates && donorCandidates[2] && donorCandidates[2] !== "none discovered") {

@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import json
 from functools import lru_cache
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 import xml.etree.ElementTree as ET
 
-from packet_tracer_env import get_packet_tracer_saves_root
+from packet_tracer_env import get_packet_tracer_saves_root, get_packet_tracer_target_version
 from pkt_codec import decode_pkt_modern
+from workspace_repair import inspect_workspace_integrity
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 SKILL_ROOT = SCRIPT_DIR.parent
@@ -57,6 +58,9 @@ TYPE_NORMALIZATION = {
     "switch": "Switch",
     "multilayerswitch": "Switch",
     "wirelessrouter": "WirelessRouter",
+    "wirelessrouternewgeneration": "WirelessRouter",
+    "homegateway": "WirelessRouter",
+    "wirelesslancontroller": "LightWeightAccessPoint",
     "lightweightaccesspoint": "LightWeightAccessPoint",
     "accesspoint": "LightWeightAccessPoint",
     "pda": "Tablet",
@@ -65,7 +69,17 @@ TYPE_NORMALIZATION = {
     "laptop": "Laptop",
     "printer": "Printer",
     "smartphone": "Smartphone",
+    "mcucomponent": "IoT",
 }
+
+LICENSE_FILENAMES = [
+    "LICENSE",
+    "LICENSE.txt",
+    "LICENSE.md",
+    "COPYING",
+    "COPYING.txt",
+    "NOTICE",
+]
 
 
 @dataclass
@@ -84,6 +98,20 @@ class SampleDescriptor:
     origin: str = "cisco-local"
     role: str = "primary"
     prototype_eligible: bool = True
+    license_or_permission: str = "local-cisco"
+    promotion_status: str = "validated_primary"
+    validation_status: str = "validated"
+    packet_tracer_version: str = ""
+    wireless_mode_tags: list[str] = field(default_factory=list)
+    donor_eligible: bool = True
+    device_families: list[str] = field(default_factory=list)
+    model_families: list[str] = field(default_factory=list)
+    port_media_types: list[str] = field(default_factory=list)
+    service_support: list[str] = field(default_factory=list)
+    iot_roles: list[str] = field(default_factory=list)
+    runtime_features: list[str] = field(default_factory=list)
+    donor_graph_fingerprint: dict[str, Any] = field(default_factory=dict)
+    apply_safety_level: str = "reference-known"
 
     def normalized_device_counts(self) -> dict[str, int]:
         counts: dict[str, int] = {}
@@ -110,6 +138,22 @@ class ReferencePattern:
     capability_tags: list[str]
     topology_tags: list[str]
     device_summary: dict[str, int]
+    wireless_mode_tags: list[str] = field(default_factory=list)
+
+
+@dataclass
+class DonorValidationResult:
+    packet_tracer_version: str
+    validation_status: str
+    promotion_status: str
+    donor_eligible: bool
+    issues: list[str]
+
+
+@dataclass
+class CuratedDonorRecord:
+    sample: SampleDescriptor
+    validation: DonorValidationResult
 
 
 def normalize_device_type(raw_type: str) -> str:
@@ -216,6 +260,239 @@ def infer_preferred_roles(item: dict[str, Any]) -> list[str]:
     return roles
 
 
+def infer_wireless_mode_tags(item: dict[str, Any]) -> list[str]:
+    normalized_types = [normalize_device_type(device.get("type", "")) for device in item.get("devices", [])]
+    tags: set[str] = set()
+    if "LightWeightAccessPoint" in normalized_types:
+        tags.add("ap_bridge")
+    if "WirelessRouter" in normalized_types:
+        tags.add("home_router_edge")
+    if len(tags) > 1:
+        tags.add("mixed")
+    return sorted(tags)
+
+
+def infer_device_families(item: dict[str, Any]) -> list[str]:
+    family_map = {
+        "Router": "routers",
+        "Switch": "switches",
+        "MultiLayerSwitch": "multilayer switches",
+        "Server": "servers",
+        "PC": "end devices",
+        "Laptop": "end devices",
+        "Tablet": "end devices",
+        "Smartphone": "end devices",
+        "Printer": "end devices",
+        "LightWeightAccessPoint": "access points",
+        "WirelessRouter": "home/wireless routers",
+        "WirelessRouterNewGeneration": "home/wireless routers",
+        "HomeGateway": "home/wireless routers",
+        "WirelessLanController": "access points",
+        "Power Distribution Device": "pt-specific edge/utility devices",
+        "Cloud": "wan/cloud/dsl/cable devices",
+        "Cable Modem": "wan/cloud/dsl/cable devices",
+        "Dsl Modem": "wan/cloud/dsl/cable devices",
+        "Security Appliance": "security devices",
+        "ASA": "security devices",
+        "IoT": "iot devices",
+        "Sensor": "iot devices",
+        "Actuator": "iot devices",
+        "MCUComponent": "iot devices",
+    }
+    families = {
+        family_map.get(normalize_device_type(device.get("type", "")), "pt-specific edge/utility devices")
+        for device in item.get("devices", [])
+        if device.get("type")
+    }
+    return sorted(families)
+
+
+def infer_model_families(item: dict[str, Any]) -> list[str]:
+    return sorted(
+        {
+            str(device.get("model", "")).strip()
+            for device in item.get("devices", [])
+            if str(device.get("model", "")).strip()
+        }
+    )
+
+
+def infer_port_media_types(item: dict[str, Any]) -> list[str]:
+    media = {
+        str(link.get("cable_type") or link.get("media") or link.get("type") or "").strip()
+        for link in item.get("links", [])
+        if str(link.get("cable_type") or link.get("media") or link.get("type") or "").strip()
+    }
+    return sorted(media)
+
+
+def infer_service_support(item: dict[str, Any]) -> list[str]:
+    tags = set(item.get("capability_tags", []))
+    services: set[str] = set()
+    service_map = {
+        "server_dhcp": "dhcp",
+        "dhcp_pool": "dhcp",
+        "dns": "dns",
+        "server_dns": "dns",
+        "server_http": "http",
+        "server_https": "https",
+        "server_ftp": "ftp",
+        "server_tftp": "tftp",
+        "ntp": "ntp",
+        "server_email": "email",
+        "server_syslog": "syslog",
+        "server_aaa": "aaa",
+        "ftp_http_https": "http",
+        "telnet": "telnet",
+        "management_vlan": "management",
+    }
+    for tag in tags:
+        service = service_map.get(tag)
+        if service:
+            services.add(service)
+    return sorted(services)
+
+
+def infer_runtime_features(item: dict[str, Any]) -> list[str]:
+    features: set[str] = set()
+    if item.get("wireless_mode_tags"):
+        features.add("wireless_runtime")
+    if item.get("service_support"):
+        features.add("service_runtime")
+    if item.get("iot_roles"):
+        features.add("iot_runtime")
+    if item.get("workspace_validation"):
+        features.add("workspace_validated")
+    if any(str(link.get("from", "")) and str(link.get("to", "")) for link in item.get("links", [])):
+        features.add("named_link_graph")
+    return sorted(features)
+
+
+def infer_donor_graph_fingerprint(item: dict[str, Any]) -> dict[str, Any]:
+    pairs: list[str] = []
+    media_types = infer_port_media_types(item)
+    for link in item.get("links", []):
+        left = str(link.get("from", "")).strip()
+        right = str(link.get("to", "")).strip()
+        if left and right:
+            pairs.append(" <-> ".join(sorted((left, right))))
+    return {
+        "link_count": int(item.get("link_count", 0)),
+        "named_pairs": sorted(dict.fromkeys(pairs)),
+        "media_types": media_types,
+    }
+
+
+def infer_apply_safety_level(item: dict[str, Any]) -> str:
+    if item.get("origin") == "cisco-local" and item.get("prototype_eligible", True) and str(item.get("version", "")).startswith("9."):
+        return "acceptance-verified"
+    if item.get("donor_eligible") and item.get("prototype_eligible", False):
+        return "safe-open-generate-supported"
+    if item.get("capability_tags"):
+        return "config-mutation-supported"
+    if item.get("devices"):
+        return "inventory-supported"
+    return "reference-known"
+
+
+def _detect_license_or_permission(root: Path) -> str:
+    for filename in LICENSE_FILENAMES:
+        candidate = root / filename
+        if not candidate.exists():
+            continue
+        try:
+            text = candidate.read_text(encoding="utf-8", errors="ignore").lower()
+        except Exception:
+            return f"present:{candidate.name}"
+        if "mit license" in text:
+            return "MIT"
+        if "apache license" in text and "version 2.0" in text:
+            return "Apache-2.0"
+        if "bsd" in text:
+            return "BSD"
+        if "creative commons" in text and "noncommercial" in text:
+            return "CC-BY-NC"
+        if "creative commons" in text:
+            return "CC"
+        return f"present:{candidate.name}"
+    return "unknown"
+
+
+def validate_external_sample_summary(item: dict[str, Any], curated: bool) -> DonorValidationResult:
+    target_version = get_packet_tracer_target_version()
+    packet_tracer_version = str(item.get("version", ""))
+    issues: list[str] = []
+    if packet_tracer_version != target_version:
+        issues.append(f"version_mismatch:{packet_tracer_version or 'unknown'}")
+    if int(item.get("device_count", 0)) < 2:
+        issues.append("insufficient_devices")
+    if int(item.get("link_count", 0)) < 1:
+        issues.append("insufficient_links")
+    counts = _normalized_counts_for_item(item)
+    if curated and not any(counts.get(kind, 0) for kind in ("Switch", "Router")):
+        issues.append("missing_network_core")
+    workspace_validation = item.get("workspace_validation", {})
+    if curated and isinstance(workspace_validation, dict):
+        workspace_mode = str(workspace_validation.get("workspace_mode", ""))
+        logical_status = str(workspace_validation.get("logical_status", ""))
+        physical_status = str(workspace_validation.get("physical_status", ""))
+        blocking_issues = [str(issue) for issue in workspace_validation.get("blocking_issues", []) if str(issue)]
+        legacy_memaddr_only = (
+            workspace_mode == "legacy_uuid_physical"
+            and physical_status == "ok"
+            and logical_status == "invalid"
+            and bool(blocking_issues)
+            and all(issue == "Link device MEM_ADDR references do not match device workspace records" for issue in blocking_issues)
+        )
+        if physical_status != "ok":
+            issues.append("workspace_physical_invalid")
+        elif logical_status != "ok" and not legacy_memaddr_only:
+            issues.append("workspace_logical_invalid")
+    donor_eligible = curated and not issues
+    validation_status = "validated" if not issues else "blocked"
+    promotion_status = "validated_curated" if donor_eligible else "reference_only"
+    return DonorValidationResult(
+        packet_tracer_version=packet_tracer_version,
+        validation_status=validation_status,
+        promotion_status=promotion_status,
+        donor_eligible=donor_eligible,
+        issues=issues,
+    )
+
+
+def _descriptor_from_item(item: dict[str, Any]) -> SampleDescriptor:
+    return SampleDescriptor(
+        path=item["path"],
+        relative_path=item["relative_path"],
+        version=item.get("version", ""),
+        device_count=item.get("device_count", 0),
+        link_count=item.get("link_count", 0),
+        devices=item.get("devices", []),
+        links=item.get("links", []),
+        capability_tags=item.get("capability_tags", []),
+        topology_tags=item.get("topology_tags", []),
+        preferred_roles=item.get("preferred_roles", []),
+        trust_level=item.get("trust_level", "trusted"),
+        origin=item.get("origin", "cisco-local"),
+        role=item.get("role", "primary"),
+        prototype_eligible=bool(item.get("prototype_eligible", True)),
+        license_or_permission=item.get("license_or_permission", "local-cisco"),
+        promotion_status=item.get("promotion_status", "validated_primary"),
+        validation_status=item.get("validation_status", "validated"),
+        packet_tracer_version=item.get("packet_tracer_version", item.get("version", "")),
+        wireless_mode_tags=item.get("wireless_mode_tags", []),
+        donor_eligible=bool(item.get("donor_eligible", item.get("prototype_eligible", True))),
+        device_families=item.get("device_families", []),
+        model_families=item.get("model_families", []),
+        port_media_types=item.get("port_media_types", []),
+        service_support=item.get("service_support", []),
+        iot_roles=item.get("iot_roles", []),
+        runtime_features=item.get("runtime_features", []),
+        donor_graph_fingerprint=item.get("donor_graph_fingerprint", {}),
+        apply_safety_level=item.get("apply_safety_level", "reference-known"),
+    )
+
+
 def enrich_catalog_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     enriched: list[dict[str, Any]] = []
     for item in items:
@@ -226,10 +503,23 @@ def enrich_catalog_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         new_item["capability_tags"] = infer_capability_tags(new_item)
         new_item["topology_tags"] = infer_topology_tags(new_item)
         new_item["preferred_roles"] = infer_preferred_roles(new_item)
+        new_item["wireless_mode_tags"] = infer_wireless_mode_tags(new_item)
         new_item.setdefault("trust_level", "trusted")
         new_item.setdefault("origin", "cisco-local")
         new_item.setdefault("role", "primary")
         new_item.setdefault("prototype_eligible", True)
+        new_item.setdefault("license_or_permission", "local-cisco")
+        new_item.setdefault("promotion_status", "validated_primary")
+        new_item.setdefault("validation_status", "validated")
+        new_item.setdefault("packet_tracer_version", new_item.get("version", ""))
+        new_item.setdefault("donor_eligible", bool(new_item.get("prototype_eligible", True)))
+        new_item.setdefault("device_families", infer_device_families(new_item))
+        new_item.setdefault("model_families", infer_model_families(new_item))
+        new_item.setdefault("port_media_types", infer_port_media_types(new_item))
+        new_item.setdefault("service_support", infer_service_support(new_item))
+        new_item.setdefault("runtime_features", infer_runtime_features(new_item))
+        new_item.setdefault("donor_graph_fingerprint", infer_donor_graph_fingerprint(new_item))
+        new_item.setdefault("apply_safety_level", infer_apply_safety_level(new_item))
         enriched.append(new_item)
     return enriched
 
@@ -240,21 +530,11 @@ def _load_catalog_cached(path_str: str) -> tuple[SampleDescriptor, ...]:
     items = enrich_catalog_items(raw_items)
     saves_root = get_packet_tracer_saves_root()
     return tuple(
-        SampleDescriptor(
-            path=str((saves_root / item["relative_path"]) if saves_root is not None else item.get("path", item["relative_path"])),
-            relative_path=item["relative_path"],
-            version=item.get("version", ""),
-            device_count=item.get("device_count", 0),
-            link_count=item.get("link_count", 0),
-            devices=item.get("devices", []),
-            links=item.get("links", []),
-            capability_tags=item.get("capability_tags", []),
-            topology_tags=item.get("topology_tags", []),
-            preferred_roles=item.get("preferred_roles", []),
-            trust_level=item.get("trust_level", "trusted"),
-            origin=item.get("origin", "cisco-local"),
-            role=item.get("role", "primary"),
-            prototype_eligible=bool(item.get("prototype_eligible", True)),
+        _descriptor_from_item(
+            {
+                **item,
+                "path": str((saves_root / item["relative_path"]) if saves_root is not None else item.get("path", item["relative_path"])),
+            }
         )
         for item in items
         if "error" not in item
@@ -268,7 +548,18 @@ def load_catalog(path: Path | None = None) -> list[SampleDescriptor]:
 def _summarize_pkt(path: Path, relative_path: str, origin: str, prototype_eligible: bool) -> dict[str, Any]:
     xml = decode_pkt_modern(path.read_bytes())
     root = ET.fromstring(xml)
+    from pkt_editor import inventory_root
+
+    inventory = inventory_root(root)
+    workspace_result = inspect_workspace_integrity(root)
     devices = []
+    indexed_devices = root.findall(".//DEVICES/DEVICE")
+    index_to_name = {str(index): device.findtext("./ENGINE/NAME", default="") for index, device in enumerate(indexed_devices)}
+    save_ref_to_name = {
+        device.findtext("./ENGINE/SAVE_REF_ID", default=""): device.findtext("./ENGINE/NAME", default="")
+        for device in indexed_devices
+        if device.findtext("./ENGINE/SAVE_REF_ID", default="")
+    }
     for device in root.findall(".//DEVICES/DEVICE"):
         type_node = device.find("./ENGINE/TYPE")
         devices.append(
@@ -282,13 +573,39 @@ def _summarize_pkt(path: Path, relative_path: str, origin: str, prototype_eligib
     for link in root.findall(".//LINKS/LINK"):
         cable = link.find("./CABLE")
         ports = cable.findall("PORT") if cable is not None else []
+        from_ref = cable.findtext("FROM", default="") if cable is not None else ""
+        to_ref = cable.findtext("TO", default="") if cable is not None else ""
         links.append(
             {
+                "from": save_ref_to_name.get(from_ref, index_to_name.get(from_ref, "")),
+                "to": save_ref_to_name.get(to_ref, index_to_name.get(to_ref, "")),
                 "type": link.findtext("./TYPE", default=""),
                 "cable_type": cable.findtext("./TYPE", default="") if cable is not None else "",
+                "media": cable.findtext("./TYPE", default="") if cable is not None else "",
                 "ports": [port.text or "" for port in ports[:2]],
             }
         )
+    service_aliases = {
+        "dhcp_server": "dhcp",
+        "dns_server": "dns",
+        "http_server": "http",
+        "https_server": "https",
+        "ftp_server": "ftp",
+        "tftp_server": "tftp",
+        "ntp_server": "ntp",
+        "email_server": "email",
+        "syslog_server": "syslog",
+        "acs_server": "aaa",
+    }
+    service_support = sorted(
+        {
+            service_aliases[service]
+            for services in inventory.get("services", {}).values()
+            for service in services
+            if service in service_aliases
+        }
+    )
+    iot_roles = sorted({str(entry.get("role", "")).strip() for entry in inventory.get("iot", {}).values() if str(entry.get("role", "")).strip()})
     return {
         "path": str(path),
         "relative_path": relative_path,
@@ -301,7 +618,46 @@ def _summarize_pkt(path: Path, relative_path: str, origin: str, prototype_eligib
         "trust_level": "reference-only" if origin != "cisco-local" else "trusted",
         "role": "reference" if origin != "cisco-local" else "primary",
         "prototype_eligible": prototype_eligible,
+        "service_support": service_support,
+        "iot_roles": iot_roles,
+        "workspace_validation": {
+            "workspace_mode": workspace_result.workspace_mode,
+            "logical_status": workspace_result.logical_status,
+            "physical_status": workspace_result.physical_status,
+            "blocking_issue_count": len(workspace_result.blocking_issues),
+            "blocking_issues": workspace_result.blocking_issues,
+        },
     }
+
+
+def summarize_pkt_descriptor(
+    path: Path,
+    relative_path: str | None = None,
+    *,
+    origin: str = "external-reference",
+    prototype_eligible: bool = False,
+    trust_level: str | None = None,
+    role: str | None = None,
+    license_or_permission: str | None = None,
+    promotion_status: str | None = None,
+    validation_status: str | None = None,
+    donor_eligible: bool | None = None,
+) -> SampleDescriptor:
+    item = _summarize_pkt(path, relative_path or path.name, origin, prototype_eligible)
+    if trust_level is not None:
+        item["trust_level"] = trust_level
+    if role is not None:
+        item["role"] = role
+    if license_or_permission is not None:
+        item["license_or_permission"] = license_or_permission
+    if promotion_status is not None:
+        item["promotion_status"] = promotion_status
+    if validation_status is not None:
+        item["validation_status"] = validation_status
+    if donor_eligible is not None:
+        item["donor_eligible"] = donor_eligible
+    enriched = enrich_catalog_items([item])[0]
+    return _descriptor_from_item(enriched)
 
 
 @lru_cache(maxsize=4)
@@ -314,29 +670,17 @@ def _load_reference_catalog_cached(roots_key: tuple[str, ...]) -> tuple[SampleDe
         for pkt_path in sorted(root.rglob("*.pkt")):
             try:
                 rel = str(pkt_path.relative_to(root))
-                items.append(_summarize_pkt(pkt_path, rel, "external-reference", False))
+                item = _summarize_pkt(pkt_path, rel, "external-reference", False)
+                validation = validate_external_sample_summary(item, curated=False)
+                item["license_or_permission"] = _detect_license_or_permission(root)
+                item["validation_status"] = validation.validation_status
+                item["promotion_status"] = validation.promotion_status
+                item["donor_eligible"] = validation.donor_eligible
+                items.append(item)
             except Exception:
                 continue
     enriched = enrich_catalog_items(items)
-    return tuple(
-        SampleDescriptor(
-            path=item["path"],
-            relative_path=item["relative_path"],
-            version=item.get("version", ""),
-            device_count=item.get("device_count", 0),
-            link_count=item.get("link_count", 0),
-            devices=item.get("devices", []),
-            links=item.get("links", []),
-            capability_tags=item.get("capability_tags", []),
-            topology_tags=item.get("topology_tags", []),
-            preferred_roles=item.get("preferred_roles", []),
-            trust_level=item.get("trust_level", "reference-only"),
-            origin=item.get("origin", "external-reference"),
-            role=item.get("role", "reference"),
-            prototype_eligible=bool(item.get("prototype_eligible", False)),
-        )
-        for item in enriched
-    )
+    return tuple(_descriptor_from_item(item) for item in enriched)
 
 
 def load_reference_catalog(reference_roots: list[Path] | None = None) -> list[SampleDescriptor]:
@@ -344,6 +688,41 @@ def load_reference_catalog(reference_roots: list[Path] | None = None) -> list[Sa
         return []
     roots_key = tuple(sorted(str(path) for path in reference_roots))
     return list(_load_reference_catalog_cached(roots_key))
+
+
+@lru_cache(maxsize=4)
+def _load_curated_donor_catalog_cached(roots_key: tuple[str, ...]) -> tuple[SampleDescriptor, ...]:
+    items: list[dict[str, Any]] = []
+    for root_str in roots_key:
+        root = Path(root_str)
+        if not root.exists():
+            continue
+        license_or_permission = _detect_license_or_permission(root)
+        for pkt_path in sorted(root.rglob("*.pkt")):
+            try:
+                rel = str(pkt_path.relative_to(root))
+                item = _summarize_pkt(pkt_path, rel, "external-curated", True)
+                validation = validate_external_sample_summary(item, curated=True)
+                item["trust_level"] = "curated" if validation.donor_eligible else "reference-only"
+                item["role"] = "secondary" if validation.donor_eligible else "reference"
+                item["prototype_eligible"] = validation.donor_eligible
+                item["license_or_permission"] = license_or_permission
+                item["validation_status"] = validation.validation_status
+                item["promotion_status"] = validation.promotion_status
+                item["packet_tracer_version"] = validation.packet_tracer_version
+                item["donor_eligible"] = validation.donor_eligible
+                items.append(item)
+            except Exception:
+                continue
+    enriched = enrich_catalog_items(items)
+    return tuple(_descriptor_from_item(item) for item in enriched)
+
+
+def load_curated_donor_catalog(donor_roots: list[Path] | None = None) -> list[SampleDescriptor]:
+    if not donor_roots:
+        return []
+    roots_key = tuple(sorted(str(path) for path in donor_roots))
+    return list(_load_curated_donor_catalog_cached(roots_key))
 
 
 def extract_reference_patterns(samples: list[SampleDescriptor]) -> list[ReferencePattern]:
@@ -356,6 +735,7 @@ def extract_reference_patterns(samples: list[SampleDescriptor]) -> list[Referenc
                 capability_tags=sample.capability_tags,
                 topology_tags=sample.topology_tags,
                 device_summary=sample.normalized_device_counts(),
+                wireless_mode_tags=sample.wireless_mode_tags,
             )
         )
     return patterns

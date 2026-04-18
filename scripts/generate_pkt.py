@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import copy
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 import json
 import os
 from pathlib import Path
@@ -13,6 +13,18 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ET
 
+from coverage_matrix import (
+    BlueprintPlan,
+    CoverageGapReport,
+    _expanded_sample_capabilities,
+    asdict_list as coverage_asdict_list,
+    build_blueprint_plan,
+    build_capability_matrix,
+    build_coverage_gap_report,
+    build_donor_graph_fit,
+    build_inventory_capability_report,
+    select_capability_matrix_hits,
+)
 from intent_parser import IntentPlan, parse_intent
 from packet_tracer_env import (
     get_packet_tracer_compatibility_donor,
@@ -23,11 +35,13 @@ from pkt_builder import build_packet_tracer_xml
 from pkt_codec import decode_pkt_file, decode_pkt_modern, encode_pkt_modern
 from pkt_editor import apply_plan_operations, decode_pkt_to_root, edit_pkt_file, inventory_devices, inventory_links, inventory_root
 from pkt_transformer import transform_from_blueprint
-from sample_catalog import ReferencePattern, load_catalog, load_reference_catalog
-from sample_selector import rank_reference_samples, rank_samples, select_best_sample
+from remote_search import asdict_list as remote_asdict_list, auto_import_remote_candidates, search_remote_candidates
+from sample_catalog import ReferencePattern, SampleCandidate, SampleDescriptor, load_catalog, load_curated_donor_catalog, load_reference_catalog, summarize_pkt_descriptor
+from sample_selector import rank_curated_donor_samples, rank_reference_samples, rank_samples, select_best_sample
 from workspace_repair import inspect_donor_coherence, inspect_workspace_integrity, validate_donor_coherence, validate_workspace_integrity
 
-RUNTIME_CLEANUP_MODE = "donor_preserve_visual"
+RUNTIME_CLEANUP_MODE = "donor_preserve_runtime"
+SAFE_OPEN_COMPATIBILITY_MODE = "safe_open_strict_9_0"
 PRESERVED_VISUAL_SECTIONS = [
     "FILTERS",
     "CLUSTERS",
@@ -41,7 +55,8 @@ PRESERVED_VISUAL_SECTIONS = [
     "HIDEPHYSICAL",
     "CABLE_POPUP_IN_PHYSICAL",
 ]
-CLEANED_SCENARIO_SECTIONS = [
+CLEANED_SCENARIO_SECTIONS: list[str] = []
+PRESERVED_SCENARIO_SECTIONS = [
     "SCENARIOSET",
     "COMMAND_LOGS",
     "CEPS",
@@ -54,6 +69,34 @@ NEUTRALIZED_VISUAL_SECTIONS = [
 ]
 OFFSCREEN_X = 50000
 OFFSCREEN_Y = 50000
+
+DEVICE_FAMILY_MAP = {
+    "Router": "routers",
+    "Switch": "switches",
+    "MultiLayerSwitch": "multilayer switches",
+    "Server": "servers",
+    "PC": "end devices",
+    "Laptop": "end devices",
+    "Tablet": "end devices",
+    "Smartphone": "end devices",
+    "Printer": "end devices",
+    "LightWeightAccessPoint": "access points",
+    "WirelessRouter": "home/wireless routers",
+    "WirelessRouterNewGeneration": "home/wireless routers",
+    "HomeGateway": "home/wireless routers",
+    "WirelessLanController": "access points",
+    "Power Distribution Device": "pt-specific edge/utility devices",
+    "Cloud": "wan/cloud/dsl/cable devices",
+    "Cable Modem": "wan/cloud/dsl/cable devices",
+    "Dsl Modem": "wan/cloud/dsl/cable devices",
+    "Security Appliance": "security devices",
+    "ASA": "security devices",
+    "IoT": "iot devices",
+    "Board": "iot devices",
+    "Sensor": "iot devices",
+    "Actuator": "iot devices",
+    "MCUComponent": "iot devices",
+}
 
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -76,12 +119,21 @@ class PlanningError(RuntimeError):
             "device_requirements": self.plan.device_requirements,
             "vlan_ids": self.plan.vlan_ids,
             "topology_requirements": self.plan.topology_requirements,
+            "compatibility_profile": self.plan.compatibility_profile,
+            "unsafe_mutations_requested": self.plan.unsafe_mutations_requested,
+            "blocked_mutations": self.plan.blocked_mutations,
+            "acceptance_stage_plan": self.plan.acceptance_stage_plan,
+            "capability_matrix_hits": self.plan.capability_matrix_hits,
+            "unsupported_capabilities": self.plan.unsupported_capabilities,
+            "coverage_gap_report": self.plan.coverage_gap_report,
+            "blueprint_plan": self.plan.blueprint_plan,
+            "remote_search_results": self.plan.remote_search_results,
         }
 
 
 STRICT_COMPATIBILITY_GAP = (
-    "Strict 9.0 generation requires a compatible local Packet Tracer 9.0 donor lab. "
-    "Set PACKET_TRACER_COMPAT_DONOR explicitly or let the repo auto-detect one."
+    "Strict 9.0 generation requires a compatible Packet Tracer 9.0 donor lab. "
+    "Set PACKET_TRACER_COMPAT_DONOR explicitly, let the repo auto-detect one, or provide --donor-root with validated local donor labs."
 )
 
 
@@ -90,11 +142,419 @@ def _compat_donor_details() -> tuple[Path | None, str | None]:
     return details.resolved_path, details.donor_version
 
 
-def _apply_prompt_compatibility_requirements(plan: IntentPlan) -> IntentPlan:
+def _existing_ranked_candidates(ranked: list[SampleCandidate]) -> list[SampleCandidate]:
+    return [candidate for candidate in ranked if Path(candidate.sample.path).exists()]
+
+
+def _compat_donor_candidate() -> SampleCandidate | None:
+    compat_donor, compat_donor_version = _compat_donor_details()
+    if compat_donor is None or not compat_donor.exists():
+        return None
+    sample = summarize_pkt_descriptor(
+        compat_donor,
+        relative_path=compat_donor.name,
+        origin="compat-donor",
+        prototype_eligible=True,
+        trust_level="trusted",
+        role="compatibility",
+        license_or_permission="local-user",
+        promotion_status="validated_compat",
+        validation_status="validated",
+        donor_eligible=True,
+    )
+    if compat_donor_version:
+        sample.version = compat_donor_version
+        sample.packet_tracer_version = compat_donor_version
+    return SampleCandidate(
+        sample=sample,
+        capability_score=100,
+        topology_score=0,
+        total_score=100,
+        reasons=["compatibility-donor"],
+    )
+
+
+def _rank_generation_donors(
+    plan: IntentPlan,
+    topology_tags: list[str],
+    donor_roots: list[Path] | None = None,
+) -> tuple[list[SampleCandidate], list[SampleCandidate], list[SampleCandidate]]:
+    requested_services = [str(service) for service in plan.service_requirements.get("services", []) if service]
+    cisco_ranked = _existing_ranked_candidates(
+        rank_samples(
+            load_catalog(),
+            plan.capabilities,
+            plan.device_requirements,
+            topology_tags=topology_tags,
+            prototype_only=True,
+            wireless_mode=plan.wireless_mode,
+            requested_services=requested_services,
+        )
+    )
+    curated_ranked = _existing_ranked_candidates(
+        rank_curated_donor_samples(
+            load_curated_donor_catalog(donor_roots),
+            plan.capabilities,
+            plan.device_requirements,
+            topology_tags=topology_tags,
+            wireless_mode=plan.wireless_mode,
+            requested_services=requested_services,
+        )
+    )
+    ordered: list[SampleCandidate] = []
+    seen_paths: set[str] = set()
+    for bucket in [[candidate] if (candidate := _compat_donor_candidate()) is not None else [], cisco_ranked, curated_ranked]:
+        for donor_candidate in bucket:
+            key = str(Path(donor_candidate.sample.path).resolve()).lower()
+            if key in seen_paths:
+                continue
+            seen_paths.add(key)
+            ordered.append(donor_candidate)
+    return cisco_ranked, curated_ranked, ordered
+
+
+def _default_import_cache_root() -> Path:
+    return Path(__file__).resolve().parents[1] / "output" / "remote-import-cache"
+
+
+def _resolve_remote_sources(
+    plan: IntentPlan,
+    reference_roots: list[Path] | None,
+    donor_roots: list[Path] | None,
+    *,
+    search_remote: bool = False,
+    remote_provider: str = "github",
+    import_cache_root: Path | None = None,
+    max_remote_results: int = 10,
+) -> tuple[list[Path], list[Path], list[dict[str, object]]]:
+    resolved_reference_roots = list(reference_roots or [])
+    resolved_donor_roots = list(donor_roots or [])
+    if not search_remote:
+        return resolved_reference_roots, resolved_donor_roots, []
+    remote_candidates = search_remote_candidates(plan, provider=remote_provider, max_results=max_remote_results)
+    cache_root = import_cache_root or _default_import_cache_root()
+    imported_candidates = auto_import_remote_candidates(remote_candidates, cache_root, max_results=max_remote_results)
+    for candidate in imported_candidates:
+        if candidate.path:
+            imported_root = Path(candidate.path)
+            if imported_root not in resolved_reference_roots:
+                resolved_reference_roots.append(imported_root)
+            if imported_root not in resolved_donor_roots:
+                resolved_donor_roots.append(imported_root)
+    return resolved_reference_roots, resolved_donor_roots, remote_asdict_list(imported_candidates)
+
+
+def _candidate_to_dict(candidate: SampleCandidate, blueprint: dict[str, object] | None = None) -> dict[str, object]:
+    donor_graph_fit = build_donor_graph_fit(candidate.sample, blueprint)
+    acceptance_penalty, acceptance_risk_reasons = _candidate_acceptance_penalty(candidate, blueprint)
+    preferred_archetypes = [str(item) for item in list((blueprint or {}).get("preferred_donor_archetypes", [])) if item]
+    archetype_match_score, archetype_reasons, sample_archetypes = _candidate_archetype_alignment(
+        candidate.sample,
+        preferred_archetypes,
+    )
+    return {
+        "relative_path": candidate.sample.relative_path,
+        "origin": candidate.sample.origin,
+        "license_or_permission": candidate.sample.license_or_permission,
+        "promotion_status": candidate.sample.promotion_status,
+        "validation_status": candidate.sample.validation_status,
+        "wireless_mode_tags": candidate.sample.wireless_mode_tags,
+        "device_families": candidate.sample.device_families,
+        "service_support": candidate.sample.service_support,
+        "apply_safety_level": candidate.sample.apply_safety_level,
+        "total_score": candidate.total_score,
+        "capability_score": candidate.capability_score,
+        "topology_score": candidate.topology_score,
+        "reasons": candidate.reasons[:8],
+        "donor_graph_fit": asdict(donor_graph_fit),
+        "preferred_donor_archetypes": preferred_archetypes,
+        "sample_archetypes": sample_archetypes,
+        "archetype_match_score": archetype_match_score,
+        "archetype_match_reasons": archetype_reasons,
+        "acceptance_penalty": acceptance_penalty,
+        "acceptance_risk_reasons": acceptance_risk_reasons,
+        "adjusted_total_score": candidate.total_score - acceptance_penalty,
+    }
+
+
+def _sample_device_families(sample: SampleDescriptor) -> list[str]:
+    if sample.device_families:
+        return sample.device_families
+    families = {
+        DEVICE_FAMILY_MAP.get(str(device.get("type", "")), "pt-specific edge/utility devices")
+        for device in sample.devices
+        if device.get("type")
+    }
+    return sorted(families)
+
+
+def _preferred_donor_archetypes_for_plan(plan: IntentPlan, topology_tags: list[str] | None = None) -> list[str]:
+    preferred: list[str] = []
+    requested_services = {str(service) for service in plan.service_requirements.get("services", []) if service}
+    device_families = {
+        DEVICE_FAMILY_MAP.get(device_type, "pt-specific edge/utility devices")
+        for device_type, count in plan.device_requirements.items()
+        if count
+    }
+    capabilities = set(plan.capabilities)
+    tags = set(topology_tags or [])
+    if plan.department_groups or tags & {"chain", "core_access", "router_on_a_stick", "acl_policy"}:
+        preferred.append("campus/core")
+    elif device_families & {"routers", "switches", "multilayer switches"} and capabilities & {
+        "vlan",
+        "router_on_a_stick",
+        "management_vlan",
+        "telnet",
+    }:
+        preferred.append("campus/core")
+    if requested_services & {"dhcp", "dns", "http", "https", "ftp", "tftp", "email", "syslog", "aaa", "ntp"} or "servers" in device_families:
+        preferred.append("service-heavy")
+    if plan.wireless_mode or capabilities & {
+        "wireless_ap",
+        "wireless_client",
+        "wireless_mutation",
+        "wireless_client_association",
+    }:
+        preferred.append("wireless-heavy")
+    if capabilities & {"iot", "iot_registration", "iot_control"} or "iot devices" in device_families:
+        preferred.append("IoT/home gateway")
+    if device_families & {"wan/cloud/dsl/cable devices", "security devices"} or capabilities & {"vpn", "nat", "pat", "acl"}:
+        preferred.append("WAN/security edge")
+    return preferred
+
+
+def _sample_archetypes(sample: SampleDescriptor) -> list[str]:
+    families = set(_sample_device_families(sample))
+    capabilities = set(_expanded_sample_capabilities(sample, list(families)))
+    topology_tags = set(sample.topology_tags)
+    archetypes: list[str] = []
+    if topology_tags & {"chain", "core_access", "department_lan", "router_on_a_stick"} or (
+        families & {"routers", "switches", "multilayer switches"}
+        and capabilities & {"vlan", "router_on_a_stick", "management_vlan", "telnet"}
+    ):
+        archetypes.append("campus/core")
+    if sample.service_support or "servers" in families or "server_services" in topology_tags:
+        archetypes.append("service-heavy")
+    if sample.wireless_mode_tags or families & {"access points", "home/wireless routers"}:
+        archetypes.append("wireless-heavy")
+    if sample.iot_roles or "iot devices" in families or "HomeGateway" in sample.model_families:
+        archetypes.append("IoT/home gateway")
+    if families & {"wan/cloud/dsl/cable devices", "security devices"} or capabilities & {"vpn", "nat", "pat", "acl"}:
+        archetypes.append("WAN/security edge")
+    return archetypes
+
+
+def _candidate_archetype_alignment(
+    sample: SampleDescriptor,
+    preferred_archetypes: list[str],
+) -> tuple[int, list[str], list[str]]:
+    sample_archetypes = _sample_archetypes(sample)
+    matches = [item for item in preferred_archetypes if item in sample_archetypes]
+    score = len(matches) * 9
+    reasons = [f"archetype:{item}" for item in matches]
+    return score, reasons, sample_archetypes
+
+
+def _build_support_reports(
+    plan: IntentPlan,
+    *,
+    blueprint: dict[str, object] | None = None,
+    cisco_ranked: list[SampleCandidate] | None = None,
+    curated_ranked: list[SampleCandidate] | None = None,
+    reference_catalog: list[SampleDescriptor] | None = None,
+    selected_donor: str | None = None,
+) -> tuple[list[dict[str, object]], dict[str, object], dict[str, object]]:
+    samples: list[SampleDescriptor] = []
+    for bucket in [cisco_ranked or [], curated_ranked or []]:
+        for candidate in bucket:
+            samples.append(candidate.sample)
+    for sample in reference_catalog or []:
+        samples.append(sample)
+    matrix_entries = coverage_asdict_list(select_capability_matrix_hits(plan, samples))
+    coverage_gap = asdict(build_coverage_gap_report(plan, samples, selected_donor=selected_donor))
+    blueprint_plan = asdict(build_blueprint_plan(plan, blueprint))
+    return matrix_entries, coverage_gap, blueprint_plan
+
+
+def _candidate_acceptance_penalty(candidate: SampleCandidate, blueprint: dict[str, object] | None) -> tuple[int, list[str]]:
+    if blueprint is None:
+        return 0, []
+    fit = build_donor_graph_fit(candidate.sample, blueprint)
+    penalty = 0
+    reasons: list[str] = []
+    requested_capabilities = {str(item) for item in list(blueprint.get("capabilities", []))}
+    supported_capabilities = set(_expanded_sample_capabilities(candidate.sample, _sample_device_families(candidate.sample)))
+    preferred_archetypes = [str(item) for item in list(blueprint.get("preferred_donor_archetypes", [])) if item]
+    archetype_score, _, sample_archetypes = _candidate_archetype_alignment(candidate.sample, preferred_archetypes)
+    if fit.missing_pairs:
+        penalty += len(fit.missing_pairs) * 20
+        reasons.append(f"missing_link_pairs:{len(fit.missing_pairs)}")
+    if fit.port_media_conflicts:
+        penalty += len(fit.port_media_conflicts) * 12
+        reasons.append(f"port_media_conflicts:{len(fit.port_media_conflicts)}")
+    for capability, penalty_value in {
+        "wireless_mutation": 18,
+        "wireless_client_association": 22,
+        "end_device_mutation": 12,
+    }.items():
+        if capability in requested_capabilities and capability not in supported_capabilities:
+            penalty += penalty_value
+            reasons.append(f"capability_gap:{capability}")
+    if candidate.sample.apply_safety_level not in {"safe-open-generate-supported", "acceptance-verified"}:
+        penalty += 15
+        reasons.append(f"apply_safety:{candidate.sample.apply_safety_level}")
+    if preferred_archetypes and not archetype_score:
+        penalty += 8
+        reasons.append(f"archetype_gap:{','.join(sample_archetypes) if sample_archetypes else 'none'}")
+    return penalty, reasons
+
+
+def _filter_candidates_for_blueprint(
+    candidates: list[SampleCandidate],
+    blueprint: dict[str, object] | None,
+) -> tuple[list[SampleCandidate], list[dict[str, object]]]:
+    if blueprint is None:
+        return candidates, []
+    required_link_count = len(list(blueprint.get("links", [])))
+    required_capabilities = {str(item) for item in list(blueprint.get("capabilities", []))}
+    viable: list[SampleCandidate] = []
+    filtered_diagnostics: list[dict[str, object]] = []
+    for candidate in candidates:
+        fit = build_donor_graph_fit(candidate.sample, blueprint)
+        acceptance_penalty, penalty_reasons = _candidate_acceptance_penalty(candidate, blueprint)
+        adjusted_total_score = candidate.total_score - acceptance_penalty
+        preferred_archetypes = [str(item) for item in list(blueprint.get("preferred_donor_archetypes", [])) if item]
+        archetype_match_score, archetype_reasons, sample_archetypes = _candidate_archetype_alignment(
+            candidate.sample,
+            preferred_archetypes,
+        )
+        supported_capabilities = set(_expanded_sample_capabilities(candidate.sample, _sample_device_families(candidate.sample)))
+        filter_reasons: list[str] = []
+        if required_link_count and len(fit.missing_pairs) >= required_link_count and not fit.matched_pairs:
+            filter_reasons.append("donor graph has no reusable link pairs for the requested topology")
+        if "wireless_client_association" in required_capabilities and "wireless_client_association" not in supported_capabilities:
+            filter_reasons.append("sample lacks donor-backed support for requested wireless client association")
+        if "wireless_mutation" in required_capabilities and "wireless_mutation" not in supported_capabilities:
+            filter_reasons.append("sample lacks donor-backed support for requested wireless mutation")
+        if "end_device_mutation" in required_capabilities and "end_device_mutation" not in supported_capabilities:
+            filter_reasons.append("sample lacks donor-backed support for requested end-device mutation")
+        if adjusted_total_score <= 0:
+            filter_reasons.append("acceptance penalty reduced the donor score below zero")
+        if filter_reasons:
+            filtered_diagnostics.append(
+                {
+                    "relative_path": candidate.sample.relative_path,
+                    "origin": candidate.sample.origin,
+                    "total_score": candidate.total_score,
+                    "adjusted_total_score": adjusted_total_score,
+                    "reasons": candidate.reasons[:8],
+                    "donor_graph_fit": asdict(fit),
+                    "preferred_donor_archetypes": preferred_archetypes,
+                    "sample_archetypes": sample_archetypes,
+                    "archetype_match_score": archetype_match_score,
+                    "archetype_match_reasons": archetype_reasons,
+                    "status": "filtered",
+                    "rejection_reasons": [*filter_reasons, *penalty_reasons],
+                }
+            )
+            continue
+        viable.append(candidate)
+    return viable, filtered_diagnostics
+
+
+def _rerank_candidates_for_blueprint(candidates: list[SampleCandidate], blueprint: dict[str, object]) -> list[SampleCandidate]:
+    def _sort_key(candidate: SampleCandidate) -> tuple[int, int, int, int, int, int]:
+        fit = build_donor_graph_fit(candidate.sample, blueprint)
+        acceptance_penalty, _ = _candidate_acceptance_penalty(candidate, blueprint)
+        adjusted_score = candidate.total_score - acceptance_penalty
+        preferred_archetypes = [str(item) for item in list(blueprint.get("preferred_donor_archetypes", [])) if item]
+        archetype_match_score, _, _ = _candidate_archetype_alignment(candidate.sample, preferred_archetypes)
+        return (
+            fit.layout_reuse_score,
+            archetype_match_score,
+            fit.fit_score - acceptance_penalty,
+            -len(fit.port_media_conflicts),
+            -len(fit.missing_pairs),
+            adjusted_score,
+        )
+
+    return sorted(
+        candidates,
+        key=_sort_key,
+        reverse=True,
+    )
+
+
+def _summarize_rejection_issues(issues: list[str]) -> list[str]:
+    summarized: list[str] = []
+    seen: set[str] = set()
+    for issue in issues:
+        normalized = str(issue).strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        summarized.append(normalized)
+        if len(summarized) >= 5:
+            break
+    return summarized
+
+
+def _evaluate_donor_prune_candidates(
+    plan: IntentPlan,
+    blueprint: dict[str, object],
+    donor_candidates: list[SampleCandidate],
+) -> tuple[
+    tuple[IntentPlan, DonorArchetypePlan, ET.Element, SampleCandidate] | None,
+    list[dict[str, object]],
+    ]:
+    diagnostics: list[dict[str, object]] = []
+    latest_plan: IntentPlan | None = None
+    viable_candidates, filtered_diagnostics = _filter_candidates_for_blueprint(donor_candidates, blueprint)
+    diagnostics.extend(filtered_diagnostics)
+    for donor_candidate in viable_candidates:
+        donor_path = Path(donor_candidate.sample.path)
+        diagnostic: dict[str, object] = {
+            "relative_path": donor_candidate.sample.relative_path,
+            "origin": donor_candidate.sample.origin,
+            "total_score": donor_candidate.total_score,
+            "reasons": donor_candidate.reasons[:8],
+            "donor_graph_fit": asdict(build_donor_graph_fit(donor_candidate.sample, blueprint)),
+        }
+        try:
+            adapted_plan, archetype_plan = _build_donor_prune_plan_for_donor(plan, blueprint, donor_path)
+            donor_root = decode_pkt_to_root(donor_path)
+            candidate_root = apply_plan_operations(donor_root, adapted_plan)
+            _sanitize_runtime_sections(candidate_root)
+            unexpected_workspace_issues = _unexpected_workspace_issues(donor_root, candidate_root)
+            if unexpected_workspace_issues:
+                raise ValueError("; ".join(unexpected_workspace_issues))
+            validate_donor_coherence(donor_root, candidate_root)
+            archetype_plan.compat_donor_origin = donor_candidate.sample.origin
+            archetype_plan.compat_donor_relative_path = donor_candidate.sample.relative_path
+            archetype_plan.selection_reasons = donor_candidate.reasons[:8]
+            diagnostic["status"] = "selected"
+            diagnostic["rejection_reasons"] = []
+            diagnostics.append(diagnostic)
+            return (adapted_plan, archetype_plan, donor_root, donor_candidate), diagnostics
+        except PlanningError as exc:
+            latest_plan = exc.plan
+            diagnostic["status"] = "rejected"
+            diagnostic["rejection_reasons"] = _summarize_rejection_issues(exc.plan.blocking_gaps)
+        except Exception as exc:
+            diagnostic["status"] = "rejected"
+            diagnostic["rejection_reasons"] = _summarize_rejection_issues([str(exc)])
+        diagnostics.append(diagnostic)
+    if latest_plan is not None:
+        plan.blocking_gaps = list(dict.fromkeys([*plan.blocking_gaps, *latest_plan.blocking_gaps]))
+    return None, diagnostics
+
+
+def _apply_prompt_compatibility_requirements(plan: IntentPlan, donor_roots: list[Path] | None = None) -> IntentPlan:
     prepared = prepare_generation_plan(plan)
     if prepared.goal != "edit":
-        donor, _ = _compat_donor_details()
-        if donor is None and STRICT_COMPATIBILITY_GAP not in prepared.blocking_gaps:
+        topology_tags = _topology_tags_for_plan(prepared, _choose_topology_archetype(prepared))
+        _, _, donor_candidates = _rank_generation_donors(prepared, topology_tags, donor_roots)
+        if not donor_candidates and STRICT_COMPATIBILITY_GAP not in prepared.blocking_gaps:
             prepared.blocking_gaps.append(STRICT_COMPATIBILITY_GAP)
     return prepared
 
@@ -141,6 +601,72 @@ class DonorArchetypePlan:
     renamed_devices: list[dict[str, str]]
     mutation_groups: list[dict[str, object]]
     layout_strategy: str
+    compat_donor_origin: str | None = None
+    compat_donor_relative_path: str | None = None
+    selection_reasons: list[str] = field(default_factory=list)
+
+
+@dataclass
+class CompatibilityProfile:
+    mode: str
+    allowed_operations: list[str]
+    blocked_operations: list[str]
+    requires_acceptance: bool
+
+
+@dataclass
+class MutationStageResult:
+    stage_name: str
+    applied_operations: list[str]
+    changed_devices: list[str]
+    changed_links: list[str]
+    blocked_mutations: list[str]
+    suspect_sections: list[str]
+
+
+@dataclass
+class SubtreeDiffReport:
+    device_name: str
+    changed_paths: list[str]
+    runtime_suspects: list[str]
+
+
+SAFE_OPEN_ALLOWED_MUTATIONS = [
+    "device_rename",
+    "layout_reposition",
+    "config_mutation",
+    "service_mutation",
+]
+SAFE_OPEN_BLOCKED_MUTATIONS = [
+    "link_rewrite",
+    "port_reassignment",
+    "device_prune",
+    "donor_group_reduction",
+    "wireless_mutation",
+    "wireless_client_association",
+    "end_device_mutation",
+    "workspace_physical_mutation",
+]
+MUTATION_STAGE_ORDER = [
+    "baseline",
+    "rename_only",
+    "layout_only",
+    "config_only",
+    "service_only",
+    "link_remove_only",
+    "link_add_only",
+    "wireless_only",
+]
+STAGE_SUSPECT_SECTION_HINTS = {
+    "baseline": [],
+    "rename_only": ["ENGINE/NAME", "ENGINE/SYS_NAME", "ENGINE/RUNNINGCONFIG", "PHYSICALWORKSPACE"],
+    "layout_only": ["WORKSPACE/LOGICAL", "COORD_SETTINGS"],
+    "config_only": ["ENGINE/RUNNINGCONFIG", "ENGINE/STARTUPCONFIG", "FILE_CONTENT/CONFIG"],
+    "service_only": ["ENGINE/DNS_SERVER", "ENGINE/DHCP_SERVER", "ENGINE/HTTP_SERVER", "ENGINE/FTP_SERVER", "ENGINE/NTP_SERVER"],
+    "link_remove_only": ["LINK/CABLE", "ENGINE/MODULE", "ENGINE/SLOT", "ENGINE/PORT", "CUSTOM_INTERFACE"],
+    "link_add_only": ["LINK/CABLE", "ENGINE/MODULE", "ENGINE/SLOT", "ENGINE/PORT", "CUSTOM_INTERFACE"],
+    "wireless_only": ["WIRELESS_SERVER", "WIRELESS_CLIENT", "USER_APPS", "CUSTOM_INTERFACE"],
+}
 
 
 def _estimate_plan(topology_plan: TopologyPlan, config_plan: ConfigPlan) -> dict[str, object]:
@@ -291,6 +817,369 @@ def _append_unique_op(bucket: list[dict[str, object]], operation: dict[str, obje
 
 def _copy_plan(plan: IntentPlan) -> IntentPlan:
     return copy.deepcopy(plan)
+
+
+def _empty_plan_like(plan: IntentPlan) -> IntentPlan:
+    staged = _copy_plan(plan)
+    staged.edit_operations = []
+    staged.switch_ops = []
+    staged.router_ops = []
+    staged.server_ops = []
+    staged.wireless_ops = []
+    staged.end_device_ops = []
+    staged.management_ops = []
+    staged.verification_ops = []
+    return staged
+
+
+def _operation_category(bucket_name: str, operation: dict[str, object]) -> str:
+    op_name = str(operation.get("op") or "")
+    if bucket_name == "edit_operations":
+        if op_name == "rename_device":
+            return "device_rename"
+        if op_name == "reflow_layout":
+            return "layout_reposition"
+        if op_name == "prune_device":
+            return "device_prune"
+        if op_name == "set_link":
+            return "link_rewrite"
+        if op_name == "remove_link":
+            return "port_reassignment"
+        return "workspace_physical_mutation"
+    if bucket_name in {"switch_ops", "router_ops", "management_ops"}:
+        return "config_mutation"
+    if bucket_name == "server_ops":
+        return "service_mutation"
+    if bucket_name == "wireless_ops":
+        if op_name == "associate_wireless_client":
+            return "wireless_client_association"
+        return "wireless_mutation"
+    if bucket_name == "end_device_ops":
+        return "end_device_mutation"
+    if bucket_name == "verification_ops":
+        return "verification_only"
+    return "workspace_physical_mutation"
+
+
+def _bucket_operations(plan: IntentPlan) -> list[tuple[str, dict[str, object]]]:
+    ordered: list[tuple[str, dict[str, object]]] = []
+    for bucket_name in [
+        "edit_operations",
+        "switch_ops",
+        "router_ops",
+        "server_ops",
+        "wireless_ops",
+        "end_device_ops",
+        "management_ops",
+        "verification_ops",
+    ]:
+        for operation in getattr(plan, bucket_name):
+            ordered.append((bucket_name, operation))
+    return ordered
+
+
+def _operation_device_names(operation: dict[str, object]) -> list[str]:
+    names: list[str] = []
+    if isinstance(operation.get("device"), str):
+        names.append(str(operation["device"]))
+    for endpoint in ("a", "b"):
+        endpoint_value = operation.get(endpoint)
+        if isinstance(endpoint_value, dict) and endpoint_value.get("dev"):
+            names.append(str(endpoint_value["dev"]))
+    if isinstance(operation.get("new_name"), str):
+        names.append(str(operation["new_name"]))
+    return sorted(dict.fromkeys(names), key=str.lower)
+
+
+def _operation_link_labels(operation: dict[str, object]) -> list[str]:
+    op_name = str(operation.get("op") or "")
+    if op_name not in {"set_link", "remove_link"}:
+        return []
+    left = operation.get("a") or {}
+    right = operation.get("b") or {}
+    left_label = str(left.get("dev", ""))
+    right_label = str(right.get("dev", ""))
+    if op_name == "set_link":
+        left_port = str(left.get("port", ""))
+        right_port = str(right.get("port", ""))
+        return [f"{left_label}:{left_port} <-> {right_label}:{right_port}"]
+    return [f"{left_label} <-> {right_label}"]
+
+
+def _device_by_save_ref(root: ET.Element) -> dict[str, ET.Element]:
+    devices: dict[str, ET.Element] = {}
+    for device in root.findall(".//DEVICES/DEVICE"):
+        save_ref = device.findtext("./ENGINE/SAVE_REF_ID", default="").strip()
+        if save_ref:
+            devices[save_ref] = device
+    return devices
+
+
+def _save_ref_by_name(root: ET.Element) -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    for device in root.findall(".//DEVICES/DEVICE"):
+        name = device.findtext("./ENGINE/NAME", default="").strip()
+        save_ref = device.findtext("./ENGINE/SAVE_REF_ID", default="").strip()
+        if name and save_ref:
+            mapping[name] = save_ref
+    return mapping
+
+
+def _collect_subtree_values(node: ET.Element, path: str | None = None, sink: dict[str, str] | None = None) -> dict[str, str]:
+    target = sink if sink is not None else {}
+    current_path = path or node.tag
+    text = (node.text or "").strip()
+    if text:
+        target[f"{current_path}#text"] = text
+    for key, value in sorted(node.attrib.items()):
+        target[f"{current_path}@{key}"] = value
+    child_counts: dict[str, int] = {}
+    for child in list(node):
+        index = child_counts.get(child.tag, 0)
+        child_counts[child.tag] = index + 1
+        _collect_subtree_values(child, f"{current_path}/{child.tag}[{index}]", target)
+    return target
+
+
+def _subtree_diff_report(device_name: str, donor_device: ET.Element, generated_device: ET.Element) -> SubtreeDiffReport:
+    donor_values = _collect_subtree_values(donor_device)
+    generated_values = _collect_subtree_values(generated_device)
+    changed_paths = sorted(
+        {
+            key
+            for key in set(donor_values) | set(generated_values)
+            if donor_values.get(key) != generated_values.get(key)
+        }
+    )
+    suspect_prefixes = [
+        "DEVICE/ENGINE/MODULE",
+        "DEVICE/ENGINE/SLOT",
+        "DEVICE/ENGINE/PORT",
+        "DEVICE/ENGINE/USER_APPS",
+        "DEVICE/ENGINE/CUSTOM_INTERFACE",
+        "DEVICE/WORKSPACE/LOGICAL",
+        "DEVICE/ENGINE/WIRELESS_SERVER",
+        "DEVICE/ENGINE/WIRELESS_CLIENT",
+        "DEVICE/ENGINE/COORD_SETTINGS",
+    ]
+    runtime_suspects = [prefix for prefix in suspect_prefixes if any(path.startswith(prefix) for path in changed_paths)]
+    return SubtreeDiffReport(
+        device_name=device_name,
+        changed_paths=changed_paths[:40],
+        runtime_suspects=runtime_suspects,
+    )
+
+
+def _stage_plan(plan: IntentPlan, stage_name: str) -> IntentPlan:
+    staged = _empty_plan_like(plan)
+    if stage_name == "baseline":
+        return staged
+    if stage_name == "rename_only":
+        staged.edit_operations = [op for op in plan.edit_operations if op.get("op") == "rename_device"]
+        return staged
+    if stage_name == "layout_only":
+        staged.edit_operations = [
+            op for op in plan.edit_operations if op.get("op") in {"rename_device", "reflow_layout"}
+        ]
+        return staged
+    if stage_name == "config_only":
+        staged.edit_operations = [
+            op for op in plan.edit_operations if op.get("op") in {"rename_device", "reflow_layout"}
+        ]
+        staged.switch_ops = copy.deepcopy(plan.switch_ops)
+        staged.router_ops = copy.deepcopy(plan.router_ops)
+        staged.management_ops = copy.deepcopy(plan.management_ops)
+        return staged
+    if stage_name == "service_only":
+        staged.edit_operations = [
+            op for op in plan.edit_operations if op.get("op") in {"rename_device", "reflow_layout"}
+        ]
+        staged.switch_ops = copy.deepcopy(plan.switch_ops)
+        staged.router_ops = copy.deepcopy(plan.router_ops)
+        staged.management_ops = copy.deepcopy(plan.management_ops)
+        staged.server_ops = copy.deepcopy(plan.server_ops)
+        return staged
+    if stage_name == "link_remove_only":
+        staged.edit_operations = [
+            op
+            for op in plan.edit_operations
+            if op.get("op") in {"rename_device", "reflow_layout", "remove_link"}
+        ]
+        staged.switch_ops = copy.deepcopy(plan.switch_ops)
+        staged.router_ops = copy.deepcopy(plan.router_ops)
+        staged.management_ops = copy.deepcopy(plan.management_ops)
+        staged.server_ops = copy.deepcopy(plan.server_ops)
+        return staged
+    if stage_name == "link_add_only":
+        staged.edit_operations = [
+            op
+            for op in plan.edit_operations
+            if op.get("op") in {"rename_device", "reflow_layout", "remove_link", "set_link"}
+        ]
+        staged.switch_ops = copy.deepcopy(plan.switch_ops)
+        staged.router_ops = copy.deepcopy(plan.router_ops)
+        staged.management_ops = copy.deepcopy(plan.management_ops)
+        staged.server_ops = copy.deepcopy(plan.server_ops)
+        return staged
+    if stage_name == "wireless_only":
+        staged.edit_operations = copy.deepcopy(plan.edit_operations)
+        staged.switch_ops = copy.deepcopy(plan.switch_ops)
+        staged.router_ops = copy.deepcopy(plan.router_ops)
+        staged.management_ops = copy.deepcopy(plan.management_ops)
+        staged.server_ops = copy.deepcopy(plan.server_ops)
+        staged.wireless_ops = copy.deepcopy(plan.wireless_ops)
+        staged.end_device_ops = copy.deepcopy(plan.end_device_ops)
+        return staged
+    return staged
+
+
+def _plan_has_mutations(plan: IntentPlan) -> bool:
+    return any(
+        getattr(plan, bucket_name)
+        for bucket_name in [
+            "edit_operations",
+            "switch_ops",
+            "router_ops",
+            "server_ops",
+            "wireless_ops",
+            "end_device_ops",
+            "management_ops",
+        ]
+    )
+
+
+def _compatibility_profile() -> CompatibilityProfile:
+    return CompatibilityProfile(
+        mode=SAFE_OPEN_COMPATIBILITY_MODE,
+        allowed_operations=SAFE_OPEN_ALLOWED_MUTATIONS,
+        blocked_operations=SAFE_OPEN_BLOCKED_MUTATIONS,
+        requires_acceptance=True,
+    )
+
+
+def _safe_open_plan(plan: IntentPlan) -> tuple[IntentPlan, list[str]]:
+    safe_plan = _empty_plan_like(plan)
+    blocked: list[str] = []
+    for bucket_name, operation in _bucket_operations(plan):
+        category = _operation_category(bucket_name, operation)
+        if category in SAFE_OPEN_ALLOWED_MUTATIONS:
+            getattr(safe_plan, bucket_name).append(copy.deepcopy(operation))
+        elif category == "verification_only":
+            continue
+        elif category in SAFE_OPEN_BLOCKED_MUTATIONS:
+            blocked.append(category)
+        else:
+            blocked.append("workspace_physical_mutation")
+    return safe_plan, sorted(dict.fromkeys(blocked))
+
+
+def _stage_result(
+    stage_name: str,
+    donor_root: ET.Element,
+    stage_plan: IntentPlan,
+    blocked_mutations: list[str],
+) -> MutationStageResult:
+    if stage_name == "baseline":
+        return MutationStageResult(
+            stage_name=stage_name,
+            applied_operations=[],
+            changed_devices=[],
+            changed_links=[],
+            blocked_mutations=[],
+            suspect_sections=[],
+        )
+    generated_root = apply_plan_operations(donor_root, stage_plan)
+    donor_name_to_ref = _save_ref_by_name(donor_root)
+    generated_name_to_ref = _save_ref_by_name(generated_root)
+    donor_devices = _device_by_save_ref(donor_root)
+    generated_devices = _device_by_save_ref(generated_root)
+    changed_device_names: list[str] = []
+    changed_links: list[str] = []
+    touched_refs: set[str] = set()
+    applied_operations: list[str] = []
+    for bucket_name, operation in _bucket_operations(stage_plan):
+        applied_operations.append(str(operation.get("op") or bucket_name))
+        changed_device_names.extend(_operation_device_names(operation))
+        changed_links.extend(_operation_link_labels(operation))
+        for name in _operation_device_names(operation):
+            save_ref = donor_name_to_ref.get(name) or generated_name_to_ref.get(name)
+            if save_ref:
+                touched_refs.add(save_ref)
+    suspect_sections = list(STAGE_SUSPECT_SECTION_HINTS.get(stage_name, []))
+    for save_ref in sorted(touched_refs):
+        donor_device = donor_devices.get(save_ref)
+        generated_device = generated_devices.get(save_ref)
+        if donor_device is None or generated_device is None:
+            continue
+        device_name = generated_device.findtext("./ENGINE/NAME", default="").strip() or donor_device.findtext("./ENGINE/NAME", default=save_ref).strip()
+        report = _subtree_diff_report(device_name, donor_device, generated_device)
+        for section in report.runtime_suspects:
+            if section not in suspect_sections:
+                suspect_sections.append(section)
+    return MutationStageResult(
+        stage_name=stage_name,
+        applied_operations=sorted(dict.fromkeys(applied_operations)),
+        changed_devices=sorted(dict.fromkeys(changed_device_names), key=str.lower),
+        changed_links=sorted(dict.fromkeys(changed_links), key=str.lower),
+        blocked_mutations=blocked_mutations if stage_name in {"link_remove_only", "link_add_only", "wireless_only"} else [],
+        suspect_sections=suspect_sections,
+    )
+
+
+def _build_acceptance_stage_plan(donor_root: ET.Element, adapted_plan: IntentPlan, blocked_mutations: list[str]) -> list[dict[str, object]]:
+    stage_results: list[dict[str, object]] = []
+    for stage_name in MUTATION_STAGE_ORDER:
+        stage_plan = _stage_plan(adapted_plan, stage_name)
+        stage_result = _stage_result(stage_name, donor_root, stage_plan, blocked_mutations)
+        if stage_name == "baseline" or stage_result.applied_operations or stage_result.changed_devices or stage_result.changed_links:
+            stage_results.append(asdict(stage_result))
+    return stage_results
+
+
+def _apply_safe_open_profile(
+    donor_root: ET.Element,
+    adapted_plan: IntentPlan,
+) -> tuple[IntentPlan, IntentPlan]:
+    safe_plan, blocked_mutations = _safe_open_plan(adapted_plan)
+    profiled_plan = _copy_plan(adapted_plan)
+    profile = asdict(_compatibility_profile())
+    profiled_plan.compatibility_profile = profile
+    profiled_plan.unsafe_mutations_requested = blocked_mutations
+    profiled_plan.blocked_mutations = blocked_mutations
+    profiled_plan.acceptance_stage_plan = _build_acceptance_stage_plan(donor_root, adapted_plan, blocked_mutations)
+    for mutation in blocked_mutations:
+        message = f"Open-first mode blocked unsafe mutation: {mutation}."
+        if message not in profiled_plan.blocking_gaps:
+            profiled_plan.blocking_gaps.append(message)
+    safe_plan.compatibility_profile = profile
+    safe_plan.unsafe_mutations_requested = blocked_mutations
+    safe_plan.blocked_mutations = blocked_mutations
+    safe_plan.acceptance_stage_plan = copy.deepcopy(profiled_plan.acceptance_stage_plan)
+    return safe_plan, profiled_plan
+
+
+def _apply_safe_open_preview(plan: IntentPlan) -> IntentPlan:
+    preview_plan = _copy_plan(plan)
+    _, blocked_mutations = _safe_open_plan(plan)
+    profile = asdict(_compatibility_profile())
+    preview_plan.compatibility_profile = profile
+    preview_plan.unsafe_mutations_requested = blocked_mutations
+    preview_plan.blocked_mutations = blocked_mutations
+    preview_plan.acceptance_stage_plan = []
+    for mutation in blocked_mutations:
+        message = f"Open-first mode blocked unsafe mutation: {mutation}."
+        if message not in preview_plan.blocking_gaps:
+            preview_plan.blocking_gaps.append(message)
+    return preview_plan
+
+
+def _write_pkt_root(root: ET.Element, pkt_path: Path, xml_path: Path | None = None) -> None:
+    xml_bytes = ET.tostring(root, encoding="utf-8", xml_declaration=False)
+    pkt_path.parent.mkdir(parents=True, exist_ok=True)
+    pkt_path.write_bytes(encode_pkt_modern(xml_bytes))
+    if xml_path is not None:
+        xml_path.parent.mkdir(parents=True, exist_ok=True)
+        xml_path.write_bytes(xml_bytes)
 
 
 def _choose_topology_archetype(plan: IntentPlan) -> str:
@@ -865,21 +1754,10 @@ def _donor_capacity(root: ET.Element, donor_groups: list[dict[str, object]]) -> 
 
 
 def _sanitize_scenario_runtime(root: ET.Element) -> None:
-    scenario_set = root.find("./SCENARIOSET")
-    if scenario_set is not None:
-        scenario_set.clear()
-        scenario = ET.SubElement(scenario_set, "SCENARIO")
-        name = ET.SubElement(scenario, "NAME")
-        name.set("translate", "true")
-        name.text = "Scenario 0"
-        description = ET.SubElement(scenario, "DESCRIPTION")
-        description.set("translate", "true")
-    command_logs = root.find("./COMMAND_LOGS")
-    if command_logs is not None:
-        command_logs.clear()
-    ceps = root.find("./CEPS")
-    if ceps is not None:
-        ceps.clear()
+    # Packet Tracer 9.0 is sensitive to donor scenario/runtime state. Preserve
+    # these sections verbatim for donor-prune generation unless a future
+    # sanitizer proves a narrower cleanup is safe.
+    return
 
 
 def _sanitize_visual_runtime(root: ET.Element, preserve_global_sections: bool = True) -> None:
@@ -941,10 +1819,7 @@ def _unexpected_workspace_issues(donor_root: ET.Element, generated_root: ET.Elem
     return [issue for issue in generated_result.blocking_issues if issue not in donor_issue_set]
 
 
-def _build_donor_prune_plan(plan: IntentPlan, blueprint: dict[str, object]) -> tuple[IntentPlan, DonorArchetypePlan]:
-    compat_donor, _ = _compat_donor_details()
-    if compat_donor is None:
-        raise PlanningError("Prompt plan is incomplete; generation was skipped.", plan)
+def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, object], compat_donor: Path) -> tuple[IntentPlan, DonorArchetypePlan]:
     donor_root = decode_pkt_to_root(compat_donor)
     donor_groups = _collect_donor_groups(donor_root)
     target_groups = _target_groups_from_blueprint(plan, blueprint)
@@ -1017,9 +1892,9 @@ def _build_donor_prune_plan(plan: IntentPlan, blueprint: dict[str, object]) -> t
             park_index = local_index
         parked_devices.append(final_name)
         if anchor_x is None:
-            anchor_x = 1820
+            anchor_x = 9000
         if anchor_y is None:
-            anchor_y = 180
+            anchor_y = 500
         col = park_index % 3
         row = park_index // 3
         adapted_plan.edit_operations.append(
@@ -1061,7 +1936,7 @@ def _build_donor_prune_plan(plan: IntentPlan, blueprint: dict[str, object]) -> t
         if donor_type == "Power Distribution Device":
             keep_name(donor_name, donor_name, 2620, 120)
             continue
-        queue_spare(donor_device, 1820, 180, park_cursor["index"], None)
+        queue_spare(donor_device, 9000, 500, park_cursor["index"], None)
         park_cursor["index"] += 1
 
     for donor_group, target_group in zip(donor_groups, target_groups):
@@ -1071,8 +1946,8 @@ def _build_donor_prune_plan(plan: IntentPlan, blueprint: dict[str, object]) -> t
         target_switch = target_group["switch"]
         switch_x = int(target_switch.get("x", 0))
         switch_y = int(target_switch.get("y", 0))
-        park_anchor_x = switch_x
-        park_anchor_y = switch_y + 650
+        park_anchor_x = 9000 + max(0, int((switch_x - 420) / 2))
+        park_anchor_y = 500 + max(0, int((switch_y - 310) / 2))
         keep_name(str(donor_switch["name"]), str(target_switch["name"]), int(target_switch.get("x", 0)), int(target_switch.get("y", 0)))
         group_kept.append(str(target_switch["name"]))
         target_members_by_type: dict[str, list[dict[str, object]]] = {}
@@ -1171,8 +2046,8 @@ def _build_donor_prune_plan(plan: IntentPlan, blueprint: dict[str, object]) -> t
     for donor_group in donor_groups[len(target_groups) :]:
         names = [str(donor_group["switch"]["name"]), *[str(member["name"]) for member in donor_group["members"]]]
         donor_switch = donor_group["switch"]
-        switch_x = int(donor_switch.get("x", 0))
-        switch_y = int(donor_switch.get("y", 0))
+        switch_x = 9800
+        switch_y = 900
         group_park_index = 0
         for name in names:
             park_device(name, switch_x, switch_y + 650, group_park_index)
@@ -1184,6 +2059,14 @@ def _build_donor_prune_plan(plan: IntentPlan, blueprint: dict[str, object]) -> t
         tuple(sorted((str(link["a"]["dev"]), str(link["b"]["dev"]))))
         for link in blueprint.get("links", [])
     }
+    existing_links: dict[tuple[str, str], dict[str, object]] = {}
+    for donor_link in donor_links:
+        left_name = rename_map.get(str(donor_link["from"]), str(donor_link["from"]))
+        right_name = rename_map.get(str(donor_link["to"]), str(donor_link["to"]))
+        if not left_name or not right_name or left_name == right_name:
+            continue
+        pair = tuple(sorted((left_name, right_name)))
+        existing_links[pair] = donor_link
     parked_name_set = set(parked_devices)
     removed_pairs: set[tuple[str, str]] = set()
     for donor_link in donor_links:
@@ -1201,18 +2084,37 @@ def _build_donor_prune_plan(plan: IntentPlan, blueprint: dict[str, object]) -> t
         if left_name in desired_device_names and right_name in desired_device_names and pair not in desired_pairs:
             adapted_plan.edit_operations.append({"op": "remove_link", "a": {"dev": left_name}, "b": {"dev": right_name}})
             removed_pairs.add(pair)
+    link_reuse_gaps: list[str] = []
     for link in blueprint.get("links", []):
-        adapted_plan.edit_operations.append(
-            {
-                "op": "set_link",
-                "a": {"dev": str(link["a"]["dev"]), "port": str(link["a"]["port"])},
-                "b": {"dev": str(link["b"]["dev"]), "port": str(link["b"]["port"])},
-                "media": str(link.get("media", "straight-through")),
-            }
-        )
-    for parked_name in dict.fromkeys(parked_devices):
-        adapted_plan.edit_operations.append({"op": "prune_device", "device": parked_name})
-
+        desired_left = str(link["a"]["dev"])
+        desired_right = str(link["b"]["dev"])
+        desired_pair = tuple(sorted((desired_left, desired_right)))
+        existing = existing_links.get(desired_pair)
+        desired_ports = [str(link["a"]["port"]), str(link["b"]["port"])]
+        desired_media = str(link.get("media", "straight-through"))
+        if existing is None:
+            link_reuse_gaps.append(
+                f"Open-first mode cannot create new donor link pair {desired_left} <-> {desired_right}; "
+                "this donor does not contain that device-to-device link."
+            )
+            continue
+        existing_ports = [str(port) for port in existing.get("ports", [])]
+        existing_media = str(existing.get("media", ""))
+        if not (
+            len(existing_ports) >= 2
+            and sorted(existing_ports[:2]) == sorted(desired_ports)
+            and existing_media == desired_media
+        ):
+            link_reuse_gaps.append(
+                f"Open-first mode requires donor link reuse for {desired_left} <-> {desired_right}; "
+                f"donor ports/media are {existing_ports[:2]} / {existing_media}, requested {desired_ports} / {desired_media}."
+            )
+            continue
+    if link_reuse_gaps:
+        for gap in link_reuse_gaps:
+            if gap not in adapted_plan.blocking_gaps:
+                adapted_plan.blocking_gaps.append(gap)
+        raise PlanningError("Prompt plan is incomplete; generation was skipped.", adapted_plan)
     archetype_plan = DonorArchetypePlan(
         compat_donor=str(compat_donor),
         donor_capacity=donor_capacity,
@@ -1220,9 +2122,69 @@ def _build_donor_prune_plan(plan: IntentPlan, blueprint: dict[str, object]) -> t
         pruned_devices=sorted(dict.fromkeys(parked_devices), key=_name_sort_key),
         renamed_devices=renamed_devices,
         mutation_groups=mutation_groups,
-        layout_strategy="donor_prune_clean",
+        layout_strategy="donor_park_clean",
     )
     return adapted_plan, archetype_plan
+
+
+def _build_donor_prune_plan(
+    plan: IntentPlan,
+    blueprint: dict[str, object],
+    donor_roots: list[Path] | None = None,
+) -> tuple[IntentPlan, DonorArchetypePlan]:
+    topology_tags = _topology_tags_for_plan(plan, str(blueprint.get("topology_archetype", "general")))
+    _, _, donor_candidates = _rank_generation_donors(plan, topology_tags, donor_roots)
+    donor_candidates = _rerank_candidates_for_blueprint(donor_candidates, blueprint)
+    if not donor_candidates:
+        blocked_plan = _copy_plan(plan)
+        if STRICT_COMPATIBILITY_GAP not in blocked_plan.blocking_gaps:
+            blocked_plan.blocking_gaps.append(STRICT_COMPATIBILITY_GAP)
+        raise PlanningError("Prompt plan is incomplete; generation was skipped.", blocked_plan)
+
+    evaluation, diagnostics = _evaluate_donor_prune_candidates(plan, blueprint, donor_candidates)
+    if evaluation is not None:
+        adapted_plan, archetype_plan, _, _ = evaluation
+        return adapted_plan, archetype_plan
+
+    blocked_plan = _copy_plan(plan)
+    summary = "No ranked donor candidate passed donor-prune compatibility validation."
+    failure_messages = [
+        f"{item['relative_path']}: {'; '.join(item.get('rejection_reasons', [])[:3])}"
+        for item in diagnostics
+        if item.get("status") in {"rejected", "filtered"} and item.get("rejection_reasons")
+    ]
+    details = "; ".join(message for message in failure_messages[:5] if message)
+    combined = f"{summary} {details}".strip()
+    if combined not in blocked_plan.blocking_gaps:
+        blocked_plan.blocking_gaps.append(combined)
+    raise PlanningError("Prompt plan is incomplete; generation was skipped.", blocked_plan)
+
+
+def _augment_coverage_gap_actions(
+    coverage_gap: dict[str, object],
+    *,
+    donor_diagnostics: list[dict[str, object]] | None = None,
+    donor_blocking_reason: str | None = None,
+) -> dict[str, object]:
+    updated = copy.deepcopy(coverage_gap)
+    actions = [str(item) for item in updated.get("recommended_next_actions", []) if str(item).strip()]
+    if donor_blocking_reason and "Twofish" in donor_blocking_reason:
+        actions.append("Configure PKT_TWOFISH_LIBRARY and use Python 3.14 so Packet Tracer 9.0 donor files can be decoded.")
+    diagnostics = donor_diagnostics or []
+    if any(
+        any("cannot create new donor link pair" in str(reason) or "requires donor link reuse" in str(reason) for reason in item.get("rejection_reasons", []))
+        for item in diagnostics
+    ):
+        actions.append("Choose or import a donor whose existing link skeleton already contains the required device-to-device pairs.")
+    if any(
+        any("ports/media" in str(reason) or "port mismatch" in str(reason) or "media mismatch" in str(reason) for reason in item.get("rejection_reasons", []))
+        for item in diagnostics
+    ):
+        actions.append("Adjust requested ports/media or select a donor whose existing cable and port layout already matches the prompt.")
+    if updated.get("unsupported_capabilities"):
+        actions.append("Use --blueprint-out to review unsupported capabilities, then import a donor that explicitly covers them.")
+    updated["recommended_next_actions"] = list(dict.fromkeys(actions))
+    return updated
 
 
 def prepare_generation_plan(plan: IntentPlan) -> IntentPlan:
@@ -1279,9 +2241,10 @@ def prepare_generation_plan(plan: IntentPlan) -> IntentPlan:
     return enriched
 
 
-def build_prompt_blueprint(plan: IntentPlan) -> tuple[dict[str, object], IntentPlan]:
-    prepared = _apply_prompt_compatibility_requirements(plan)
+def build_prompt_blueprint(plan: IntentPlan, donor_roots: list[Path] | None = None) -> tuple[dict[str, object], IntentPlan]:
+    prepared = _apply_prompt_compatibility_requirements(plan, donor_roots)
     if prepared.blocking_gaps:
+        prepared.blueprint_plan = asdict(build_blueprint_plan(prepared))
         raise PlanningError("Prompt plan is incomplete; generation was skipped.", prepared)
 
     devices = _seed_devices_from_plan(prepared)
@@ -1291,6 +2254,10 @@ def build_prompt_blueprint(plan: IntentPlan) -> tuple[dict[str, object], IntentP
     prepared.capabilities = sorted(dict.fromkeys(prepared.capabilities))
     topology_plan = _build_topology_plan(prepared, devices, links)
     config_plan = _build_config_plan(prepared)
+    preferred_donor_archetypes = _preferred_donor_archetypes_for_plan(
+        prepared,
+        _topology_tags_for_plan(prepared, topology_plan.topology_archetype),
+    )
 
     blueprint = {
         "name": "Generated from prompt",
@@ -1299,10 +2266,12 @@ def build_prompt_blueprint(plan: IntentPlan) -> tuple[dict[str, object], IntentP
         "links": links,
         "configs": _plan_configs(prepared, devices),
         "topology_archetype": topology_plan.topology_archetype,
+        "preferred_donor_archetypes": preferred_donor_archetypes,
         "topology_plan": asdict(topology_plan),
         "config_plan": asdict(config_plan),
         "workspace_mode": "logical_only_safe",
     }
+    prepared.blueprint_plan = asdict(build_blueprint_plan(prepared, blueprint))
     return blueprint, prepared
 
 
@@ -1320,17 +2289,89 @@ def generate_from_blueprint(blueprint_path: Path, output_path: Path, xml_out_pat
     print(f"PKT bytes: {len(pkt_bytes)}")
 
 
-def generate_from_prompt(prompt: str, output_path: Path, xml_out_path: Path | None = None, reference_roots: list[Path] | None = None) -> None:
+def generate_from_prompt(
+    prompt: str,
+    output_path: Path,
+    xml_out_path: Path | None = None,
+    reference_roots: list[Path] | None = None,
+    donor_roots: list[Path] | None = None,
+    *,
+    search_remote: bool = False,
+    remote_provider: str = "github",
+    import_cache_root: Path | None = None,
+    max_remote_results: int = 10,
+    blueprint_out_path: Path | None = None,
+) -> None:
     raw_plan = parse_intent(prompt)
+    resolved_reference_roots, resolved_donor_roots, remote_results = _resolve_remote_sources(
+        raw_plan,
+        reference_roots,
+        donor_roots,
+        search_remote=search_remote,
+        remote_provider=remote_provider,
+        import_cache_root=import_cache_root,
+        max_remote_results=max_remote_results,
+    )
+    raw_plan.remote_search_results = remote_results
     if raw_plan.goal == "edit" and raw_plan.pkt_path:
         edit_pkt_file(raw_plan.pkt_path, raw_plan, output_path, xml_out_path)
         print(f"Edited PKT file created: {output_path}")
         return
 
-    blueprint, prepared_plan = build_prompt_blueprint(raw_plan)
-    adapted_plan, donor_archetype = _build_donor_prune_plan(prepared_plan, blueprint)
+    try:
+        blueprint, prepared_plan = build_prompt_blueprint(raw_plan, resolved_donor_roots)
+    except PlanningError as exc:
+        exc.plan.remote_search_results = remote_results
+        if blueprint_out_path is not None and exc.plan.blueprint_plan:
+            blueprint_out_path.parent.mkdir(parents=True, exist_ok=True)
+            blueprint_out_path.write_text(json.dumps(exc.plan.blueprint_plan, indent=2, ensure_ascii=False), encoding="utf-8")
+        raise
+    reference_catalog = load_reference_catalog(resolved_reference_roots) if resolved_reference_roots else []
+    topology_tags = _topology_tags_for_plan(prepared_plan, str(blueprint.get("topology_archetype", "general")))
+    cisco_ranked, curated_ranked, _ = _rank_generation_donors(prepared_plan, topology_tags, resolved_donor_roots)
+    cisco_ranked = _rerank_candidates_for_blueprint(cisco_ranked, blueprint)
+    curated_ranked = _rerank_candidates_for_blueprint(curated_ranked, blueprint)
+    matrix_hits, coverage_gap, blueprint_plan = _build_support_reports(
+        prepared_plan,
+        blueprint=blueprint,
+        cisco_ranked=cisco_ranked,
+        curated_ranked=curated_ranked,
+        reference_catalog=reference_catalog,
+    )
+    coverage_gap = _augment_coverage_gap_actions(
+        coverage_gap,
+        donor_blocking_reason=inspect_packet_tracer_compatibility_donor().blocking_reason,
+    )
+    prepared_plan.remote_search_results = remote_results
+    prepared_plan.capability_matrix_hits = matrix_hits
+    prepared_plan.coverage_gap_report = coverage_gap
+    prepared_plan.unsupported_capabilities = list(coverage_gap.get("unsupported_capabilities", []))
+    prepared_plan.blueprint_plan = blueprint_plan
+    try:
+        adapted_plan, donor_archetype = _build_donor_prune_plan(prepared_plan, blueprint, resolved_donor_roots)
+    except PlanningError as exc:
+        exc.plan.remote_search_results = remote_results
+        exc.plan.capability_matrix_hits = matrix_hits
+        exc.plan.coverage_gap_report = coverage_gap
+        exc.plan.unsupported_capabilities = list(coverage_gap.get("unsupported_capabilities", []))
+        exc.plan.blueprint_plan = blueprint_plan
+        if blueprint_out_path is not None:
+            blueprint_out_path.parent.mkdir(parents=True, exist_ok=True)
+            blueprint_out_path.write_text(json.dumps(blueprint_plan, indent=2, ensure_ascii=False), encoding="utf-8")
+        raise
     donor_root = decode_pkt_to_root(donor_archetype.compat_donor)
-    root = apply_plan_operations(donor_root, adapted_plan)
+    safe_plan, profiled_plan = _apply_safe_open_profile(donor_root, adapted_plan)
+    profiled_plan.remote_search_results = remote_results
+    profiled_plan.capability_matrix_hits = matrix_hits
+    profiled_plan.coverage_gap_report = coverage_gap
+    profiled_plan.unsupported_capabilities = list(coverage_gap.get("unsupported_capabilities", []))
+    profiled_plan.blueprint_plan = blueprint_plan
+    if profiled_plan.blocked_mutations:
+        if blueprint_out_path is not None:
+            blueprint_out_path.parent.mkdir(parents=True, exist_ok=True)
+            blueprint_out_path.write_text(json.dumps(blueprint_plan, indent=2, ensure_ascii=False), encoding="utf-8")
+        raise PlanningError("Prompt plan requires unsafe donor mutations; generation was skipped in open-first mode.", profiled_plan)
+    root = apply_plan_operations(donor_root, safe_plan)
     _sanitize_runtime_sections(root)
     unexpected_workspace_issues = _unexpected_workspace_issues(donor_root, root)
     if unexpected_workspace_issues:
@@ -1347,19 +2388,60 @@ def generate_from_prompt(prompt: str, output_path: Path, xml_out_path: Path | No
     compat_donor, compat_donor_version = _compat_donor_details()
     if compat_donor is not None:
         print(f"Compatibility donor: {compat_donor} ({compat_donor_version or 'unknown'})")
-    if reference_roots:
-        references = load_reference_catalog(reference_roots)
+    if blueprint_out_path is not None:
+        blueprint_out_path.parent.mkdir(parents=True, exist_ok=True)
+        blueprint_out_path.write_text(json.dumps(blueprint_plan, indent=2, ensure_ascii=False), encoding="utf-8")
+    if resolved_reference_roots:
+        references = load_reference_catalog(resolved_reference_roots)
         print(f"Loaded reference-only samples: {len(references)}")
-    print(f"PKT file created: {output_path}")
 
 
-def explain_plan(prompt: str, reference_roots: list[Path] | None = None) -> None:
-    plan = _apply_prompt_compatibility_requirements(parse_intent(prompt))
+def edit_from_prompt(
+    pkt_path: Path,
+    prompt: str,
+    output_path: Path,
+    xml_out_path: Path | None = None,
+) -> None:
+    plan = parse_intent(prompt)
+    plan.goal = "edit"
+    plan.pkt_path = str(pkt_path)
+    edit_pkt_file(pkt_path, plan, output_path, xml_out_path)
+    print(f"Edited PKT file created: {output_path}")
+
+
+def explain_plan(
+    prompt: str,
+    reference_roots: list[Path] | None = None,
+    donor_roots: list[Path] | None = None,
+    *,
+    search_remote: bool = False,
+    remote_provider: str = "github",
+    import_cache_root: Path | None = None,
+    max_remote_results: int = 10,
+) -> None:
+    raw_plan = parse_intent(prompt)
+    resolved_reference_roots, resolved_donor_roots, remote_results = _resolve_remote_sources(
+        raw_plan,
+        reference_roots,
+        donor_roots,
+        search_remote=search_remote,
+        remote_provider=remote_provider,
+        import_cache_root=import_cache_root,
+        max_remote_results=max_remote_results,
+    )
+    plan = _apply_prompt_compatibility_requirements(raw_plan, resolved_donor_roots)
+    plan.remote_search_results = remote_results
     donor_details = inspect_packet_tracer_compatibility_donor()
     compat_donor, compat_donor_version = donor_details.resolved_path, donor_details.donor_version
+    topology_tags = _topology_tags_for_plan(plan, _choose_topology_archetype(plan))
     result: dict[str, object] = {
         "intent_plan": plan.to_dict(),
-        "compatibility_mode": "donor_prune_strict_9_0",
+        "compatibility_mode": SAFE_OPEN_COMPATIBILITY_MODE,
+        "compatibility_profile": asdict(_compatibility_profile()),
+        "preferred_donor_archetypes": _preferred_donor_archetypes_for_plan(plan, topology_tags),
+        "blocked_mutations": [],
+        "unsafe_mutations_requested": [],
+        "acceptance_stage_plan": [],
         "runtime_cleanup_mode": RUNTIME_CLEANUP_MODE,
         "preserved_visual_sections": PRESERVED_VISUAL_SECTIONS,
         "cleaned_visual_sections": CLEANED_SCENARIO_SECTIONS,
@@ -1373,40 +2455,122 @@ def explain_plan(prompt: str, reference_roots: list[Path] | None = None) -> None
             {"source": source, "path": str(path)}
             for source, path in donor_details.candidate_paths[:10]
         ],
+        "donor_candidate_diagnostics": [],
+        "donor_rejection_reasons": [],
+        "remote_search_results": remote_results,
     }
+    cisco_ranked, curated_ranked, _ = _rank_generation_donors(plan, topology_tags, resolved_donor_roots)
+    reference_catalog = load_reference_catalog(resolved_reference_roots) if resolved_reference_roots else []
+    matrix_hits, coverage_gap, blueprint_plan = _build_support_reports(
+        plan,
+        cisco_ranked=cisco_ranked,
+        curated_ranked=curated_ranked,
+        reference_catalog=reference_catalog,
+    )
+    coverage_gap = _augment_coverage_gap_actions(
+        coverage_gap,
+        donor_blocking_reason=donor_details.blocking_reason,
+    )
+    plan.capability_matrix_hits = matrix_hits
+    plan.coverage_gap_report = coverage_gap
+    plan.unsupported_capabilities = list(coverage_gap.get("unsupported_capabilities", []))
+    plan.blueprint_plan = blueprint_plan
+    result["intent_plan"] = plan.to_dict()
     if not plan.blocking_gaps and plan.goal != "edit":
-        blueprint, prepared = build_prompt_blueprint(plan)
+        blueprint, prepared = build_prompt_blueprint(plan, resolved_donor_roots)
+        prepared = _apply_safe_open_preview(prepared)
         topology_plan = TopologyPlan(**blueprint.get("topology_plan", {}))
         config_plan = ConfigPlan(**blueprint.get("config_plan", {}))
         topology_tags = _topology_tags_for_plan(prepared, str(blueprint.get("topology_archetype", "general")))
-        ranked = rank_samples(load_catalog(), prepared.capabilities, prepared.device_requirements, topology_tags=topology_tags, prototype_only=True)
+        cisco_ranked, curated_ranked, donor_ranked = _rank_generation_donors(prepared, topology_tags, resolved_donor_roots)
+        cisco_ranked = _rerank_candidates_for_blueprint(cisco_ranked, blueprint)
+        curated_ranked = _rerank_candidates_for_blueprint(curated_ranked, blueprint)
+        donor_ranked = _rerank_candidates_for_blueprint(donor_ranked, blueprint)
+        reference_catalog = load_reference_catalog(resolved_reference_roots) if resolved_reference_roots else []
+        matrix_hits, coverage_gap, blueprint_plan = _build_support_reports(
+            prepared,
+            blueprint=blueprint,
+            cisco_ranked=cisco_ranked,
+            curated_ranked=curated_ranked,
+            reference_catalog=reference_catalog,
+        )
+        prepared.capability_matrix_hits = matrix_hits
+        prepared.coverage_gap_report = coverage_gap
+        prepared.unsupported_capabilities = list(coverage_gap.get("unsupported_capabilities", []))
+        prepared.blueprint_plan = blueprint_plan
+        result["intent_plan"] = prepared.to_dict()
+        result["compatibility_profile"] = prepared.compatibility_profile
+        result["preferred_donor_archetypes"] = blueprint.get("preferred_donor_archetypes", [])
+        result["blocked_mutations"] = prepared.blocked_mutations
+        result["unsafe_mutations_requested"] = prepared.unsafe_mutations_requested
         validation = _preflight_validation(prepared, topology_plan, config_plan)
         selected_donor = None
         donor_capacity = None
         prune_plan = None
+        evaluation, diagnostics = _evaluate_donor_prune_candidates(prepared, blueprint, donor_ranked)
+        coverage_gap = _augment_coverage_gap_actions(
+            coverage_gap,
+            donor_diagnostics=diagnostics,
+            donor_blocking_reason=donor_details.blocking_reason,
+        )
+        prepared.coverage_gap_report = coverage_gap
+        result["donor_candidate_diagnostics"] = diagnostics[:10]
+        result["donor_rejection_reasons"] = [
+            {
+                "relative_path": item["relative_path"],
+                "rejection_reasons": item.get("rejection_reasons", []),
+            }
+            for item in diagnostics
+            if item.get("status") == "rejected" and item.get("rejection_reasons")
+        ][:10]
         try:
-            adapted_plan, donor_archetype = _build_donor_prune_plan(prepared, blueprint)
+            if evaluation is None:
+                raise PlanningError("Prompt plan is incomplete; generation was skipped.", prepared)
+            adapted_plan, donor_archetype, donor_root, _ = evaluation
+            safe_plan, profiled_plan = _apply_safe_open_profile(donor_root, adapted_plan)
+            profiled_plan.remote_search_results = remote_results
+            profiled_plan.capability_matrix_hits = matrix_hits
+            profiled_plan.coverage_gap_report = coverage_gap
+            profiled_plan.unsupported_capabilities = list(coverage_gap.get("unsupported_capabilities", []))
+            profiled_plan.blueprint_plan = blueprint_plan
+            result["intent_plan"] = profiled_plan.to_dict()
+            result["compatibility_profile"] = profiled_plan.compatibility_profile
+            result["blocked_mutations"] = profiled_plan.blocked_mutations
+            result["unsafe_mutations_requested"] = profiled_plan.unsafe_mutations_requested
+            result["acceptance_stage_plan"] = profiled_plan.acceptance_stage_plan
             selected_donor = donor_archetype.compat_donor
             donor_capacity = donor_archetype.donor_capacity
             prune_plan = asdict(donor_archetype)
-            donor_root = decode_pkt_to_root(donor_archetype.compat_donor)
-            candidate_root = apply_plan_operations(donor_root, adapted_plan)
-            _sanitize_runtime_sections(candidate_root)
-            workspace_result = inspect_workspace_integrity(candidate_root)
-            workspace_result.blocking_issues = _unexpected_workspace_issues(donor_root, candidate_root)
-            workspace_result.logical_status = "invalid" if workspace_result.blocking_issues else "ok"
-            coherence_result = inspect_donor_coherence(donor_root, candidate_root)
-            result["validation_report"] = {
-                "workspace_mode": workspace_result.workspace_mode,
-                "logical_status": workspace_result.logical_status,
-                "physical_status": workspace_result.physical_status,
-                "device_metadata_status": coherence_result.device_metadata_status,
-                "scenario_status": coherence_result.scenario_status,
-                "physical_runtime_status": coherence_result.physical_runtime_status,
-                "visual_runtime_status": coherence_result.visual_runtime_status,
-                "blocking_issues": [*workspace_result.blocking_issues, *coherence_result.blocking_issues],
-            }
+            if profiled_plan.blocked_mutations:
+                result["validation_report"] = {
+                    "status": "blocked",
+                    "blocking_issues": profiled_plan.blocking_gaps,
+                }
+            else:
+                candidate_root = apply_plan_operations(donor_root, safe_plan)
+                _sanitize_runtime_sections(candidate_root)
+                workspace_result = inspect_workspace_integrity(candidate_root)
+                workspace_result.blocking_issues = _unexpected_workspace_issues(donor_root, candidate_root)
+                workspace_result.logical_status = "invalid" if workspace_result.blocking_issues else "ok"
+                coherence_result = inspect_donor_coherence(donor_root, candidate_root)
+                result["validation_report"] = {
+                    "workspace_mode": workspace_result.workspace_mode,
+                    "logical_status": workspace_result.logical_status,
+                    "physical_status": workspace_result.physical_status,
+                    "device_metadata_status": coherence_result.device_metadata_status,
+                    "scenario_status": coherence_result.scenario_status,
+                    "physical_runtime_status": coherence_result.physical_runtime_status,
+                    "visual_runtime_status": coherence_result.visual_runtime_status,
+                    "blocking_issues": [*workspace_result.blocking_issues, *coherence_result.blocking_issues],
+                }
         except PlanningError as exc:
+            if result["donor_rejection_reasons"]:
+                for item in result["donor_rejection_reasons"]:
+                    reasons = [str(reason) for reason in item.get("rejection_reasons", []) if reason]
+                    if reasons:
+                        combined = f"{item['relative_path']}: {'; '.join(reasons[:3])}"
+                        if combined not in exc.plan.blocking_gaps:
+                            exc.plan.blocking_gaps.append(combined)
             result["intent_plan"] = exc.plan.to_dict()
         except ValueError as exc:
             result["validation_report"] = {"status": "invalid", "blocking_issues": str(exc).split("; ")}
@@ -1420,26 +2584,30 @@ def explain_plan(prompt: str, reference_roots: list[Path] | None = None) -> None
         result["selected_donor"] = selected_donor
         result["donor_capacity"] = donor_capacity
         result["prune_plan"] = prune_plan
-        candidates = [
-            {
-                "relative_path": candidate.sample.relative_path,
-                "origin": candidate.sample.origin,
-                "total_score": candidate.total_score,
-                "capability_score": candidate.capability_score,
-                "topology_score": candidate.topology_score,
-                "reasons": candidate.reasons[:8],
-            }
-            for candidate in ranked[:5]
-        ]
+        result["capability_matrix_hits"] = matrix_hits
+        result["unsupported_capabilities"] = coverage_gap.get("unsupported_capabilities", [])
+        result["coverage_gaps"] = coverage_gap
+        result["blueprint_plan"] = blueprint_plan
+        candidates = [_candidate_to_dict(candidate, blueprint) for candidate in cisco_ranked[:5]]
         result["cisco_sample_candidates"] = candidates
         result["sample_candidates"] = candidates
-    if reference_roots:
-        reference_catalog = load_reference_catalog(reference_roots)
+        result["curated_external_donor_candidates"] = [_candidate_to_dict(candidate, blueprint) for candidate in curated_ranked[:5]]
+    else:
+        result["capability_matrix_hits"] = matrix_hits
+        result["unsupported_capabilities"] = coverage_gap.get("unsupported_capabilities", [])
+        result["coverage_gaps"] = coverage_gap
+        result["blueprint_plan"] = blueprint_plan
+        result["cisco_sample_candidates"] = [_candidate_to_dict(candidate) for candidate in cisco_ranked[:5]]
+        result["sample_candidates"] = result["cisco_sample_candidates"]
+        result["curated_external_donor_candidates"] = [_candidate_to_dict(candidate) for candidate in curated_ranked[:5]]
+    if resolved_reference_roots:
         reference_ranked = rank_reference_samples(
             reference_catalog,
             plan.capabilities,
             plan.device_requirements,
             topology_tags=_topology_tags_for_plan(plan, str(result.get("topology_plan", {}).get("topology_archetype", "general"))) if result.get("topology_plan") else None,
+            wireless_mode=plan.wireless_mode,
+            requested_services=[str(service) for service in plan.service_requirements.get("services", []) if service],
         )
         patterns = []
         for candidate in reference_ranked[:10]:
@@ -1449,6 +2617,7 @@ def explain_plan(prompt: str, reference_roots: list[Path] | None = None) -> None
                 capability_tags=candidate.sample.capability_tags,
                 topology_tags=candidate.sample.topology_tags,
                 device_summary=candidate.sample.normalized_device_counts(),
+                wireless_mode_tags=candidate.sample.wireless_mode_tags,
             )
             pattern_dict = asdict(pattern)
             pattern_dict["score"] = candidate.total_score
@@ -1459,7 +2628,7 @@ def explain_plan(prompt: str, reference_roots: list[Path] | None = None) -> None
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
-def inventory_pkt(pkt_path: Path) -> None:
+def inventory_pkt(pkt_path: Path, donor_roots: list[Path] | None = None, *, include_capabilities: bool = False) -> None:
     root = ET.fromstring(decode_pkt_modern(pkt_path.read_bytes()))
     payload = inventory_root(root)
     workspace = inspect_workspace_integrity(root)
@@ -1471,8 +2640,9 @@ def inventory_pkt(pkt_path: Path) -> None:
         "physical_status": workspace.physical_status,
         "blocking_issues": workspace.blocking_issues,
     }
-    payload["compatibility_mode"] = "strict_9_0"
+    payload["compatibility_mode"] = SAFE_OPEN_COMPATIBILITY_MODE
     payload["runtime_cleanup_mode"] = RUNTIME_CLEANUP_MODE
+    payload["preserved_scenario_sections"] = PRESERVED_SCENARIO_SECTIONS
     payload["preserved_visual_sections"] = PRESERVED_VISUAL_SECTIONS
     payload["cleaned_visual_sections"] = CLEANED_SCENARIO_SECTIONS
     payload["neutralized_visual_sections"] = NEUTRALIZED_VISUAL_SECTIONS
@@ -1486,7 +2656,7 @@ def inventory_pkt(pkt_path: Path) -> None:
         for source, path in donor_details.candidate_paths[:10]
     ]
     payload["pkt_version"] = root.findtext("./VERSION")
-    if compat_donor is not None:
+    if compat_donor is not None and compat_donor.resolve() == pkt_path.resolve():
         donor_root = decode_pkt_to_root(compat_donor)
         coherence = inspect_donor_coherence(donor_root, root)
         payload["validation_report"] = {
@@ -1496,6 +2666,48 @@ def inventory_pkt(pkt_path: Path) -> None:
             "visual_runtime_status": coherence.visual_runtime_status,
             "blocking_issues": coherence.blocking_issues,
         }
+    elif compat_donor is not None:
+        payload["validation_report_note"] = "Skipped donor coherence report because the resolved compatibility donor does not match this file."
+    if donor_roots:
+        curated_match = next(
+            (
+                sample
+                for sample in load_curated_donor_catalog(donor_roots)
+                if Path(sample.path).resolve() == pkt_path.resolve()
+            ),
+            None,
+        )
+        if curated_match is None:
+            for donor_root in donor_roots:
+                try:
+                    pkt_path.resolve().relative_to(donor_root.resolve())
+                except Exception:
+                    continue
+                curated_match = summarize_pkt_descriptor(
+                    pkt_path,
+                    relative_path=str(pkt_path.name),
+                    origin="external-curated",
+                    prototype_eligible=True,
+                    trust_level="curated",
+                    role="secondary",
+                    license_or_permission="local-import",
+                    promotion_status="validated_curated",
+                    validation_status="validated",
+                    donor_eligible=True,
+                )
+                break
+        if curated_match is not None:
+            payload["curated_donor_validation"] = {
+                "origin": curated_match.origin,
+                "license_or_permission": curated_match.license_or_permission,
+                "promotion_status": curated_match.promotion_status,
+                "validation_status": curated_match.validation_status,
+                "packet_tracer_version": curated_match.packet_tracer_version or curated_match.version,
+                "donor_eligible": curated_match.donor_eligible,
+                "wireless_mode_tags": curated_match.wireless_mode_tags,
+            }
+    if include_capabilities:
+        payload["inventory_capabilities"] = build_inventory_capability_report(payload)
     payload.update(_link_schema_summary(root))
     print(json.dumps(payload, indent=2, ensure_ascii=False))
 
@@ -1506,6 +2718,82 @@ def validate_open(pkt_path: Path) -> None:
     print(json.dumps({"status": "launched", "pid": process.pid, "pkt": str(pkt_path)}, ensure_ascii=False))
 
 
+def validate_open_debug(prompt: str, output_path: Path | None = None, donor_roots: list[Path] | None = None) -> None:
+    raw_plan = parse_intent(prompt)
+    if raw_plan.goal == "edit":
+        raise PlanningError("Open-debug currently supports prompt generation only.", raw_plan)
+    blueprint, prepared_plan = build_prompt_blueprint(raw_plan, donor_roots)
+    adapted_plan, donor_archetype = _build_donor_prune_plan(prepared_plan, blueprint, donor_roots)
+    donor_root = decode_pkt_to_root(donor_archetype.compat_donor)
+    safe_plan, profiled_plan = _apply_safe_open_profile(donor_root, adapted_plan)
+    report: dict[str, object] = {
+        "compatibility_profile": profiled_plan.compatibility_profile,
+        "selected_donor": donor_archetype.compat_donor,
+        "blocked_mutations": profiled_plan.blocked_mutations,
+        "unsafe_mutations_requested": profiled_plan.unsafe_mutations_requested,
+        "acceptance_stage_plan": profiled_plan.acceptance_stage_plan,
+        "changed_devices": sorted(
+            {
+                device_name
+                for stage in profiled_plan.acceptance_stage_plan
+                for device_name in stage.get("changed_devices", [])
+            },
+            key=str.lower,
+        ),
+        "changed_links": sorted(
+            {
+                link_name
+                for stage in profiled_plan.acceptance_stage_plan
+                for link_name in stage.get("changed_links", [])
+            },
+            key=str.lower,
+        ),
+    }
+    if output_path is not None:
+        base_dir = output_path.parent
+        stem = output_path.stem if output_path.suffix else output_path.name
+        report_path = output_path if output_path.suffix else base_dir / f"{stem}.json"
+        baseline_pkt = base_dir / f"{stem}_baseline_roundtrip.pkt"
+        baseline_xml = base_dir / f"{stem}_baseline_roundtrip.xml"
+        _write_pkt_root(donor_root, baseline_pkt, baseline_xml)
+        report["baseline_pkt"] = str(baseline_pkt)
+        report["baseline_xml"] = str(baseline_xml)
+        stage_files: list[dict[str, object]] = []
+        for stage_name in MUTATION_STAGE_ORDER[1:]:
+            stage_plan = _stage_plan(adapted_plan, stage_name)
+            if not _plan_has_mutations(stage_plan):
+                continue
+            stage_root = apply_plan_operations(donor_root, stage_plan)
+            _sanitize_runtime_sections(stage_root)
+            stage_pkt = base_dir / f"{stem}_{stage_name}.pkt"
+            stage_xml = base_dir / f"{stem}_{stage_name}.xml"
+            _write_pkt_root(stage_root, stage_pkt, stage_xml)
+            stage_files.append({"stage_name": stage_name, "pkt": str(stage_pkt), "xml": str(stage_xml)})
+        report["stage_files"] = stage_files
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(json.dumps(report, indent=2, ensure_ascii=False))
+
+
+def coverage_report(
+    reference_roots: list[Path] | None = None,
+    donor_roots: list[Path] | None = None,
+    *,
+    device_family: str | None = None,
+) -> None:
+    samples: list[SampleDescriptor] = []
+    samples.extend(load_catalog())
+    if donor_roots:
+        samples.extend(load_curated_donor_catalog(donor_roots))
+    if reference_roots:
+        samples.extend(load_reference_catalog(reference_roots))
+    entries = coverage_asdict_list(build_capability_matrix(samples))
+    if device_family:
+        family_lower = device_family.strip().lower()
+        entries = [entry for entry in entries if str(entry.get("device_family", "")).lower() == family_lower]
+    print(json.dumps({"coverage_matrix": entries, "count": len(entries)}, indent=2, ensure_ascii=False))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate or inspect Cisco Packet Tracer 9.0 .pkt files")
     parser.add_argument("--blueprint", help="Path to the topology blueprint JSON")
@@ -1514,20 +2802,51 @@ def main() -> None:
     parser.add_argument("--xml-out", help="Optional XML output path for generated or decoded XML")
     parser.add_argument("--decode", help="Decode an existing .pkt file")
     parser.add_argument("--inventory", help="Print device/link/service inventory for an existing .pkt file")
+    parser.add_argument("--edit", help="Edit an existing .pkt file with --prompt and write the result to --output")
     parser.add_argument("--explain-plan", help="Print the parsed prompt plan as JSON")
     parser.add_argument("--validate-open", help="Launch Packet Tracer with the given .pkt file")
+    parser.add_argument("--validate-open-debug", help="Build staged donor compatibility debug report for a prompt")
     parser.add_argument("--compat-donor", help="Explicit Packet Tracer 9.0 donor .pkt path for strict compatibility mode")
     parser.add_argument("--reference-root", action="append", help="Optional local folder of imported external sample .pkt files")
+    parser.add_argument("--donor-root", action="append", help="Optional local folder of curated external donor .pkt files")
+    parser.add_argument("--search-remote", action="store_true", help="Search remote repositories for Packet Tracer labs and auto-import them into the local cache")
+    parser.add_argument("--remote-provider", default="github", help="Remote search provider name (default: github)")
+    parser.add_argument("--import-cache-root", help="Local cache folder used for remote search auto-imports")
+    parser.add_argument("--max-remote-results", type=int, default=10, help="Maximum number of remote search results to fetch/import")
+    parser.add_argument("--blueprint-out", help="Optional JSON output path for the generated blueprint plan or refusal blueprint")
+    parser.add_argument("--coverage-report", action="store_true", help="Print the aggregated capability coverage matrix")
+    parser.add_argument("--inventory-capabilities", action="store_true", help="Include inferred capability inventory when using --inventory")
+    parser.add_argument("--device-family", help="Optional device family filter for --coverage-report")
     args = parser.parse_args()
     if args.compat_donor:
         os.environ["PACKET_TRACER_COMPAT_DONOR"] = args.compat_donor
     reference_roots = [Path(path) for path in (args.reference_root or [])]
+    donor_roots = [Path(path) for path in (args.donor_root or [])]
+    import_cache_root = Path(args.import_cache_root) if args.import_cache_root else None
 
     if args.explain_plan:
-        explain_plan(args.explain_plan, reference_roots)
+        explain_plan(
+            args.explain_plan,
+            reference_roots,
+            donor_roots,
+            search_remote=args.search_remote,
+            remote_provider=args.remote_provider,
+            import_cache_root=import_cache_root,
+            max_remote_results=args.max_remote_results,
+        )
         return
     if args.inventory:
-        inventory_pkt(Path(args.inventory))
+        inventory_pkt(Path(args.inventory), donor_roots, include_capabilities=args.inventory_capabilities)
+        return
+    if args.edit:
+        if not args.prompt:
+            parser.error("--edit requires --prompt")
+        if not args.output:
+            parser.error("--edit requires --output")
+        edit_from_prompt(Path(args.edit), args.prompt, Path(args.output), Path(args.xml_out) if args.xml_out else None)
+        return
+    if args.coverage_report:
+        coverage_report(reference_roots, donor_roots, device_family=args.device_family)
         return
     if args.decode:
         if not args.xml_out:
@@ -1538,12 +2857,30 @@ def main() -> None:
     if args.validate_open:
         validate_open(Path(args.validate_open))
         return
+    if args.validate_open_debug:
+        try:
+            validate_open_debug(args.validate_open_debug, Path(args.output) if args.output else None, donor_roots)
+        except PlanningError as exc:
+            print(json.dumps(exc.to_dict(), indent=2, ensure_ascii=False))
+            raise SystemExit(2) from exc
+        return
 
     if not args.output:
         parser.error("generation requires --output")
     if args.prompt:
         try:
-            generate_from_prompt(args.prompt, Path(args.output), Path(args.xml_out) if args.xml_out else None, reference_roots)
+            generate_from_prompt(
+                args.prompt,
+                Path(args.output),
+                Path(args.xml_out) if args.xml_out else None,
+                reference_roots,
+                donor_roots,
+                search_remote=args.search_remote,
+                remote_provider=args.remote_provider,
+                import_cache_root=import_cache_root,
+                max_remote_results=args.max_remote_results,
+                blueprint_out_path=Path(args.blueprint_out) if args.blueprint_out else None,
+            )
         except PlanningError as exc:
             print(json.dumps(exc.to_dict(), indent=2, ensure_ascii=False))
             raise SystemExit(2) from exc

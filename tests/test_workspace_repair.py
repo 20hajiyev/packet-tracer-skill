@@ -197,9 +197,13 @@ def test_sanitize_runtime_sections_preserves_visual_sections_by_default() -> Non
     ET.SubElement(note, "Y").text = "60"
     ET.SubElement(note, "TEXT").text = "visible note"
     root.append(physical)
-    ET.SubElement(root, "SCENARIOSET")
-    ET.SubElement(root, "COMMAND_LOGS")
-    ET.SubElement(root, "CEPS")
+    scenario_set = ET.SubElement(root, "SCENARIOSET")
+    scenario = ET.SubElement(scenario_set, "SCENARIO")
+    ET.SubElement(scenario, "NAME").text = "Scenario 0"
+    command_logs = ET.SubElement(root, "COMMAND_LOGS")
+    ET.SubElement(command_logs, "LOG").text = "keep-me"
+    ceps = ET.SubElement(root, "CEPS")
+    ET.SubElement(ceps, "CEP").text = "keep-me"
 
     _sanitize_runtime_sections(root)
 
@@ -215,8 +219,9 @@ def test_sanitize_runtime_sections_preserves_visual_sections_by_default() -> Non
     assert root.findtext("./PHYSICALWORKSPACE/NOTES/NOTE/TEXT", default="marker") == ""
     assert root.findtext("./ANSWER_TREE_SELECTED") == "3"
     assert len(root.find("./SCENARIOSET")) == 1
-    assert len(root.find("./COMMAND_LOGS")) == 0
-    assert len(root.find("./CEPS")) == 0
+    assert root.findtext("./SCENARIOSET/SCENARIO/NAME") == "Scenario 0"
+    assert root.findtext("./COMMAND_LOGS/LOG") == "keep-me"
+    assert root.findtext("./CEPS/CEP") == "keep-me"
 
 
 def test_inspect_donor_coherence_flags_unexpected_visual_emptying() -> None:
@@ -255,3 +260,30 @@ def test_inspect_donor_coherence_flags_unexpected_visual_emptying() -> None:
     assert result.visual_runtime_status == "invalid"
     assert any("unexpectedly emptied donor visual section FILTERS" in issue for issue in result.blocking_issues)
     assert any("unexpectedly emptied donor visual section PHYSICALWORKSPACE/NOTES" in issue for issue in result.blocking_issues)
+
+
+def test_inspect_donor_coherence_flags_unexpected_runtime_emptying() -> None:
+    donor_root = ET.Element("PACKETTRACER5")
+    ET.SubElement(donor_root, "VERSION").text = "9.0.0.0810"
+    scenario_set = ET.SubElement(donor_root, "SCENARIOSET")
+    scenario = ET.SubElement(scenario_set, "SCENARIO")
+    ET.SubElement(scenario, "NAME").text = "Scenario 0"
+    command_logs = ET.SubElement(donor_root, "COMMAND_LOGS")
+    ET.SubElement(command_logs, "LOG").text = "keep-me"
+    ceps = ET.SubElement(donor_root, "CEPS")
+    ET.SubElement(ceps, "CEP").text = "keep-me"
+    network = ET.SubElement(donor_root, "NETWORK")
+    devices = ET.SubElement(network, "DEVICES")
+    devices.append(_make_donor_ready_device("DONOR-PC", "save-ref-id:1", "{orig-uuid}", "{leaf-uuid}"))
+    ET.SubElement(network, "LINKS")
+
+    generated_root = ET.fromstring(ET.tostring(donor_root, encoding="unicode"))
+    generated_root.find("./SCENARIOSET").clear()
+    generated_root.find("./COMMAND_LOGS").clear()
+    generated_root.find("./CEPS").clear()
+
+    result = inspect_donor_coherence(donor_root, generated_root)
+
+    assert result.scenario_status == "invalid"
+    assert any("unexpectedly emptied donor runtime section SCENARIOSET" in issue for issue in result.blocking_issues)
+    assert any("unexpectedly emptied donor runtime section COMMAND_LOGS" in issue for issue in result.blocking_issues)

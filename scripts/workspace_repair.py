@@ -408,6 +408,16 @@ def inspect_donor_coherence(donor_root: ET.Element, generated_root: ET.Element) 
         "ELLIPSES": "./ELLIPSES",
         "POLYGONS": "./POLYGONS",
     }
+    preserved_scenario_paths = {
+        "SCENARIOSET": "./SCENARIOSET",
+        "COMMAND_LOGS": "./COMMAND_LOGS",
+        "CEPS": "./CEPS",
+    }
+    for section_name, path in preserved_scenario_paths.items():
+        donor_score = _section_content_score(donor_root.find(path))
+        generated_score = _section_content_score(generated_root.find(path))
+        if donor_score > 0 and generated_score == 0:
+            issues.append(f"Generated file unexpectedly emptied donor runtime section {section_name}")
     for section_name, path in global_visual_paths.items():
         donor_score = _section_content_score(donor_root.find(path))
         generated_score = _section_content_score(generated_root.find(path))

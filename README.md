@@ -30,7 +30,8 @@ lab, and produce a `.pkt` file that opens cleanly in Packet Tracer 9.x.
 Design defaults:
 
 - Cisco local samples are the primary donor source
-- external labs are reference-only
+- imported external labs are reference-only by default
+- curated external donor roots can become donor-eligible after validation
 - prompt parsing happens before generation
 - generation uses donor-prune adaptation for compatibility
 - unsafe requests return `blocking_gaps` instead of guessed output
@@ -96,6 +97,7 @@ That command:
 - installs the skill into the selected host path
 - creates a local `.venv` inside the installed skill directory
 - installs declared Python requirements from this repository
+- shows runtime doctor output with concrete next-step guidance for donor and Twofish setup
 
 It still does not install Cisco Packet Tracer itself.
 
@@ -152,10 +154,18 @@ Run:
 npx packet-tracer-skill --doctor
 ```
 
+The doctor output also prints recommended next steps when runtime pieces are missing.
+On supported hosts it also prints suggested environment variable examples for your OS.
+
 It checks:
 
+- `host_os`
+- `installer_support`
+- `real_pkt_runtime_support`
 - `node`
 - `python`
+- `PACKET_TRACER_SAVES_ROOT`
+- `PACKET_TRACER_EXE`
 - `python_version`
 - `python_support_status`
 - `PACKET_TRACER_ROOT`
@@ -165,6 +175,14 @@ It checks:
 - `resolved_twofish_path`
 - `twofish_load_status`
 - `twofish_sha256`
+- `twofish_expected_patterns`
+- `twofish_search_roots`
+
+Direct Python diagnostic:
+
+```powershell
+python .\scripts\runtime_doctor.py
+```
 
 ### Runtime Configuration
 
@@ -184,6 +202,7 @@ Important variables:
 - `PACKET_TRACER_COMPAT_DONOR`
 - `PACKET_TRACER_TARGET_VERSION`
 - `PKT_TWOFISH_LIBRARY`
+- `PKT_TWOFISH_SEARCH_ROOTS`
 
 Donor policy:
 
@@ -202,13 +221,20 @@ Host note:
 
 - the host process must inherit the same `PACKET_TRACER_*` and `PKT_TWOFISH_LIBRARY` environment variables
 - this applies to every host equally: Codex, Cursor, Claude Code, Claude Desktop, Antigravity, Gemini CLI, Kiro, and similar tools
-- if a host wrapper blocks child-process inspection, run `python .\scripts\donor_diagnostics.py` from a local clone to verify the donor directly
+- if a host wrapper blocks child-process inspection, run `python .\scripts\runtime_doctor.py` from a local clone to verify runtime readiness directly
 
 Where to place the Twofish binary:
 
 - preferred: put `_twofish.cp314-win_amd64.pyd` next to `scripts/vendor/twofish.py` inside the installed skill folder
 - override: set `PKT_TWOFISH_LIBRARY` to the exact local binary path
+- optional: set `PKT_TWOFISH_SEARCH_ROOTS` to one or more local directories separated by your OS path separator
 - do not point `PKT_TWOFISH_LIBRARY` at a placeholder path such as `C:\tools\pkt-twofish\...` unless that file actually exists
+
+Non-Windows bridge naming contract:
+
+- macOS: `_twofish.cp314-macos*.dylib`
+- Linux: `_twofish.cp314-linux*.so`
+- run `python .\scripts\runtime_doctor.py` to see the exact expected patterns and current search roots on your machine
 
 ### What This Repo Does
 
@@ -232,7 +258,12 @@ Where to place the Twofish binary:
 - `autofix_summary`
 - `validation_report`
 - `cisco_sample_candidates`
+- `curated_external_donor_candidates`
 - `external_reference_patterns`
+- `capability_matrix_hits`
+- `coverage_gaps`
+- `blueprint_plan`
+- `remote_search_results`
 - `assumptions_used`
 
 This is the main debugging surface for prompt quality.
@@ -248,10 +279,46 @@ Workflow:
 2. pass that folder with `--reference-root`
 3. inspect `external_reference_patterns` in `--explain-plan`
 
+Optional remote discovery can search GitHub first, then auto-import matching
+repos into a local cache before cataloging them:
+
+```powershell
+python .\scripts\generate_pkt.py --explain-plan "6 department campus with vlan dhcp dns ap" --search-remote --remote-provider github --import-cache-root .\output\remote-cache
+```
+
+Remote discovery is multi-source search only. Final `.pkt` apply still uses one
+validated donor.
+
 Example:
 
 ```powershell
 python .\scripts\generate_pkt.py --explain-plan "6 şöbəli şəbəkə qur, hər şöbədə 1 switch 1 AP 1 printer 2 PC 2 tablet olsun" --reference-root C:\labs\external-pkt-samples
+```
+
+### Curated External Donor Workflow
+
+If you trust a local external lab collection technically, pass it with
+`--donor-root`.
+
+Workflow:
+
+1. clone or copy the external repo locally
+2. pass that folder with `--donor-root`
+3. only validated Packet Tracer `9.0.0.0810` labs become donor-eligible
+   - direct `logical_status=ok` and `physical_status=ok` labs pass
+   - `legacy_uuid_physical` labs also pass when their only logical warnings are repeated `MEM_ADDR` mismatches
+4. Cisco local donors still rank ahead of curated external donors
+
+If no safe donor fits, generation refuses cleanly and can emit a blueprint:
+
+```powershell
+python .\scripts\generate_pkt.py --prompt "6 department campus with vlan dns ap" --output .\output\campus.pkt --blueprint-out .\output\campus-blueprint.json
+```
+
+Example:
+
+```powershell
+python .\scripts\generate_pkt.py --explain-plan "6 şöbəli şəbəkə qur, hər şöbədə 1 switch 1 AP 1 printer 2 PC 2 tablet olsun" --donor-root C:\labs\curated-pkt-donors --reference-root C:\labs\external-pkt-samples
 ```
 
 ### Common Commands
@@ -274,6 +341,13 @@ Explain a donor-prune campus prompt:
 python .\scripts\generate_pkt.py --explain-plan "6 şöbəli şəbəkə qur, hər şöbədə 1 switch, 1 AP, 1 printer, 2 PC, 2 tablet olsun, router-on-a-stick olsun, DHCP routerdən verilsin, management VLAN və telnet olsun"
 ```
 
+Show the aggregated capability matrix:
+
+```powershell
+python .\scripts\generate_pkt.py --coverage-report
+python .\scripts\generate_pkt.py --coverage-report --device-family "access points"
+```
+
 Generate a `.pkt`:
 
 ```powershell
@@ -284,6 +358,14 @@ Inspect an existing `.pkt`:
 
 ```powershell
 python .\scripts\generate_pkt.py --inventory .\input\lab.pkt
+python .\scripts\generate_pkt.py --inventory .\input\lab.pkt --inventory-capabilities
+```
+
+Edit an existing `.pkt` from a prompt:
+
+```powershell
+python .\scripts\generate_pkt.py --edit .\input\lab.pkt --prompt "set Wireless Router0 ssid FIN_WIFI security wpa2-psk passphrase fin12345 channel 6 associate PC0 to Wireless Router0 ssid FIN_WIFI dhcp" --output .\output\edited_lab.pkt --xml-out .\output\edited_lab.xml
+python .\scripts\generate_pkt.py --edit .\input\lab.pkt --prompt "enable dns on Server0 set Server0 dns A www.example.local 192.168.10.20 set PC0 dns 192.168.10.20" --output .\output\edited_services.pkt
 ```
 
 Decode a `.pkt`:
@@ -320,6 +402,9 @@ Runtime policy:
 
 - supported Python runtime: `3.14.x` only
 - the current bridge filename is ABI-specific: `_twofish.cp314-win_amd64.pyd`
+- non-Windows custom bridges should follow the runtime doctor pattern contract:
+  - macOS: `_twofish.cp314-macos*.dylib`
+  - Linux: `_twofish.cp314-linux*.so`
 - if you use Python `3.12`, `3.13`, `3.15`, or another ABI-incompatible build, `doctor` should report the runtime as unsupported
 
 Read `scripts/vendor/README.md` for local setup.
@@ -717,8 +802,9 @@ Public paylaşmazdan əvvəl bunları yoxla:
 ### Cari limitlər
 
 - yalnız Packet Tracer 9.x
-- real `.pkt` runtime hazırda yalnız Windows-da dəstəklənir
-- macOS və Linux hazırda əsasən installer səviyyəsində qismən işləyir
+- installer/CLI qatını Windows, macOS və Linux üçün saxlaya bilərik
+- real `.pkt` generate/edit runtime hazırda yalnız Windows-da acceptance-verified-dir
+- macOS və Linux-da real runtime yalnız custom Packet Tracer path və uyğun native Twofish bridge (`.so` / `.dylib`) ilə nəzəri olaraq mümkündür; repo bunu hazır binary kimi vermir
 - donor-prune generate donor capacity ilə məhduddur
 - xarici lab-lar donor kimi istifadə olunmur
 - bundled template coverage qəsdən limitlidir

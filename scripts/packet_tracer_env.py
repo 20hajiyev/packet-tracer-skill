@@ -1,17 +1,31 @@
 from __future__ import annotations
 
 import os
+import platform
 from pathlib import Path
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 
 
-DEFAULT_INSTALL_CANDIDATES = [
-    Path(r"C:\Program Files\Cisco Packet Tracer 9.0.0"),
-    Path(r"C:\Program Files\Cisco Packet Tracer"),
-    Path(r"C:\Program Files (x86)\Cisco Packet Tracer 9.0.0"),
-    Path(r"C:\Program Files (x86)\Cisco Packet Tracer"),
-]
+DEFAULT_INSTALL_CANDIDATES_BY_OS = {
+    "Windows": [
+        Path(r"C:\Program Files\Cisco Packet Tracer 9.0.0"),
+        Path(r"C:\Program Files\Cisco Packet Tracer"),
+        Path(r"C:\Program Files (x86)\Cisco Packet Tracer 9.0.0"),
+        Path(r"C:\Program Files (x86)\Cisco Packet Tracer"),
+    ],
+    "Darwin": [
+        Path("/Applications/Cisco Packet Tracer.app/Contents/Resources"),
+        Path("/Applications/Packet Tracer.app/Contents/Resources"),
+        Path.home() / "Applications" / "Cisco Packet Tracer.app" / "Contents" / "Resources",
+    ],
+    "Linux": [
+        Path("/opt/pt"),
+        Path("/opt/packettracer"),
+        Path("/usr/local/packettracer"),
+        Path.home() / "packettracer",
+    ],
+}
 DEFAULT_PACKET_TRACER_TARGET_VERSION = "9.0.0.0810"
 DEFAULT_DONOR_FALLBACKS = [
     Path.home() / "Downloads",
@@ -19,10 +33,10 @@ DEFAULT_DONOR_FALLBACKS = [
     Path.home() / "Desktop",
 ]
 DEFAULT_SAMPLE_DONOR_FILES = [
-    Path(r"01 Networking\FTP\FTP.pkt"),
-    Path(r"01 Networking\HTTPS\HTTPS.pkt"),
-    Path(r"01 Networking\DNS\Multilevel_DNS.pkt"),
-    Path(r"01 Networking\DHCP\dhcp_snooping_trusted_untrusted_gigabit_ports.pkt"),
+    Path("01 Networking") / "FTP" / "FTP.pkt",
+    Path("01 Networking") / "HTTPS" / "HTTPS.pkt",
+    Path("01 Networking") / "DNS" / "Multilevel_DNS.pkt",
+    Path("01 Networking") / "DHCP" / "dhcp_snooping_trusted_untrusted_gigabit_ports.pkt",
 ]
 
 
@@ -44,11 +58,88 @@ def _existing_path(raw: str | None) -> Path | None:
     return path if path.exists() else None
 
 
+def _host_os() -> str:
+    return platform.system()
+
+
+def default_install_candidates(host_os: str | None = None) -> list[Path]:
+    return DEFAULT_INSTALL_CANDIDATES_BY_OS.get(host_os or _host_os(), [])
+
+
+def default_executable_candidates(root: Path, host_os: str | None = None) -> list[Path]:
+    system = host_os or _host_os()
+    if system == "Windows":
+        return [root / "bin" / "PacketTracer.exe", root / "PacketTracer.exe"]
+    if system == "Darwin":
+        return [
+            root / "bin" / "PacketTracer",
+            root / "Packet Tracer",
+            root / "MacOS" / "Packet Tracer",
+        ]
+    if system == "Linux":
+        return [
+            root / "bin" / "PacketTracer",
+            root / "bin" / "packettracer",
+            root / "PacketTracer",
+            root / "packettracer",
+        ]
+    return [root / "bin" / "PacketTracer", root / "PacketTracer"]
+
+
+def default_saves_candidates(root: Path, host_os: str | None = None) -> list[Path]:
+    system = host_os or _host_os()
+    candidates = [root / "saves"]
+    if system == "Darwin":
+        candidates.extend(
+            [
+                root / "Contents" / "Resources" / "saves",
+                root.parent / "Resources" / "saves",
+            ]
+        )
+    elif system == "Linux":
+        candidates.extend(
+            [
+                root / "resources" / "saves",
+                root.parent / "saves",
+            ]
+        )
+    return candidates
+
+
+def detect_packet_tracer_layout(root: Path, host_os: str | None = None) -> str:
+    system = host_os or _host_os()
+    if system == "Windows":
+        if (root / "bin" / "PacketTracer.exe").exists() or (root / "PacketTracer.exe").exists():
+            return "windows_install_root"
+    if system == "Darwin":
+        if "Contents/Resources" in root.as_posix():
+            return "macos_app_bundle_resources"
+        if ".app" in root.as_posix():
+            return "macos_app_bundle"
+    if system == "Linux":
+        if (root / "bin" / "packettracer").exists() or (root / "bin" / "PacketTracer").exists():
+            return "linux_install_root"
+    return "custom"
+
+
+def recommended_packet_tracer_root(host_os: str | None = None) -> Path | None:
+    candidates = default_install_candidates(host_os)
+    return candidates[0] if candidates else None
+
+
+def recommended_packet_tracer_saves_root(host_os: str | None = None) -> Path | None:
+    root = recommended_packet_tracer_root(host_os)
+    if root is None:
+        return None
+    candidates = default_saves_candidates(root, host_os)
+    return candidates[0] if candidates else None
+
+
 def get_packet_tracer_root() -> Path | None:
     env_root = _existing_path(os.getenv("PACKET_TRACER_ROOT"))
     if env_root is not None:
         return env_root
-    for candidate in DEFAULT_INSTALL_CANDIDATES:
+    for candidate in default_install_candidates():
         if candidate.exists():
             return candidate
     return None
@@ -61,8 +152,10 @@ def get_packet_tracer_saves_root() -> Path | None:
     root = get_packet_tracer_root()
     if root is None:
         return None
-    saves = root / "saves"
-    return saves if saves.exists() else None
+    for candidate in default_saves_candidates(root):
+        if candidate.exists():
+            return candidate
+    return None
 
 
 def get_packet_tracer_exe() -> Path | None:
@@ -72,7 +165,7 @@ def get_packet_tracer_exe() -> Path | None:
     root = get_packet_tracer_root()
     if root is None:
         return None
-    for candidate in [root / "bin" / "PacketTracer.exe", root / "PacketTracer.exe"]:
+    for candidate in default_executable_candidates(root):
         if candidate.exists():
             return candidate
     return None
@@ -125,6 +218,17 @@ def _candidate_pkt_files(directory: Path, source: str) -> list[tuple[str, Path]]
     return [(source, candidate) for candidate in candidates]
 
 
+def _candidate_pkt_files_recursive(directory: Path, source: str, limit: int = 12) -> list[tuple[str, Path]]:
+    if not directory.exists() or not directory.is_dir():
+        return []
+    candidates = sorted(
+        (path for path in directory.rglob("*.pkt") if path.is_file()),
+        key=lambda path: (path.stat().st_mtime, path.name.lower()),
+        reverse=True,
+    )
+    return [(source, candidate) for candidate in candidates[:limit]]
+
+
 def list_packet_tracer_compatibility_donor_candidates() -> list[tuple[str, Path]]:
     candidates: list[tuple[str, Path]] = []
     seen: set[str] = set()
@@ -152,6 +256,12 @@ def list_packet_tracer_compatibility_donor_candidates() -> list[tuple[str, Path]
                 continue
             seen.add(key)
             candidates.append(("auto:packet-tracer-saves", candidate))
+        for source, candidate in _candidate_pkt_files_recursive(saves_root, "auto:packet-tracer-saves-scan"):
+            key = str(candidate).lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            candidates.append((source, candidate))
 
     return candidates
 

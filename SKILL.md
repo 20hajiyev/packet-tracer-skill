@@ -16,8 +16,9 @@ The current builder/editor is Cisco-sample-centric:
 - installed Packet Tracer sample saves are the primary prototype source
 - bundled device templates are the secondary fallback for gaps such as missing
   device families in Cisco's own saves
-- imported external labs are reference-only by default and are not used as the
-  default donor/prototype source
+- imported external labs are reference-only by default
+- curated external donor roots can become donor-eligible after validation, but
+  Cisco local donors still rank first
 
 That is intentional: it avoids the invalid synthetic XML approach that Packet
 Tracer rejects while still keeping the skill usable when Cisco's own sample set
@@ -67,12 +68,18 @@ Tracer releases, so this skill intentionally targets the 9.0 line.
    - port map
    - VLAN/service/config plan
    - assumptions and blocking gaps
-3. Rank Cisco local donor candidates with capability and topology scoring
-4. Optionally rank external imported labs as reference patterns only
-5. Apply donor-prune mutations on a working Cisco 9.0 donor lab
+3. Rank Cisco local donor candidates with capability, topology, and donor-graph scoring
+4. Optionally search/import remote labs, then rank imported labs as curated donors or reference patterns
+5. Apply donor-prune mutations on one working Cisco 9.0 donor lab
 6. Validate workspace/runtime/scenario compatibility
 7. Encode XML into a `.pkt` blob with `scripts/pkt_codec.py`
 8. Save generated or edited output locally
+
+Open-first rules remain strict:
+
+- multi-source search and scoring is allowed
+- final `.pkt` apply is still single-donor
+- when no safe donor exists, return `blocking_gaps` plus a `blueprint_plan`
 
 ## Files
 
@@ -92,6 +99,8 @@ Tracer releases, so this skill intentionally targets the 9.0 line.
   Sample ranking by capability, topology, trust level, and prototype eligibility
 - `scripts/packet_tracer_env.py`
   Resolves Packet Tracer install, saves root, and executable paths
+- `scripts/runtime_doctor.py`
+  Unified runtime diagnostics for host OS, donor, Packet Tracer paths, and Twofish readiness
 - `templates/pt900/base_empty.xml`
   Base Packet Tracer 9.0 skeleton
 - `templates/pt900/device_library/*.xml`
@@ -134,6 +143,7 @@ Strict compatibility rules:
   - `preflight_validation`
   - `autofix_summary`
   - `cisco_sample_candidates`
+  - `curated_external_donor_candidates`
   - `external_reference_patterns`
   - `validation_report`
 - explicit port-to-port and cable/media mapping
@@ -202,10 +212,41 @@ Explain a natural Azerbaijani prompt before generation:
 python scripts/generate_pkt.py --explain-plan "3 dene switch ve 6 komputer ve 1 router vlanlarda 10,20,30 switchlerin oz aralarinda ve routerle aralarinda gig portuna qosulsun komputerler ise fa portlarla qosulsun"
 ```
 
+Inspect curated donor candidates from a local imported lab root:
+
+```powershell
+python scripts/generate_pkt.py --explain-plan "6 şöbəli şəbəkə qur, hər şöbədə 1 switch 1 AP 1 printer 2 PC 2 tablet olsun" --donor-root C:\labs\curated-pkt-donors --reference-root C:\labs\external-pkt-samples
+```
+
+Only external `9.0.0.0810` labs are promoted into the curated donor pool when
+their workspace validation passes cleanly, or when they are `legacy_uuid_physical`
+donors whose only logical warnings are repeated `MEM_ADDR` mismatch records.
+
+Search GitHub first, then auto-import matching repos into a local cache:
+
+```powershell
+python scripts/generate_pkt.py --explain-plan "6 department campus with vlan dhcp dns ap" --search-remote --remote-provider github --import-cache-root output\remote-cache
+```
+
+Print the aggregated capability matrix:
+
+```powershell
+python scripts/generate_pkt.py --coverage-report
+python scripts/generate_pkt.py --coverage-report --device-family "access points"
+```
+
 Inspect an existing `.pkt` inventory:
 
 ```powershell
 python scripts/generate_pkt.py --inventory input\lab.pkt
+python scripts/generate_pkt.py --inventory input\lab.pkt --inventory-capabilities
+```
+
+Edit an existing `.pkt` directly from a prompt:
+
+```powershell
+python scripts/generate_pkt.py --edit input\lab.pkt --prompt "set Wireless Router0 ssid FIN_WIFI security wpa2-psk passphrase fin12345 channel 6 associate PC0 to Wireless Router0 ssid FIN_WIFI dhcp" --output output\edited_lab.pkt --xml-out output\edited_lab.xml
+python scripts/generate_pkt.py --edit input\lab.pkt --prompt "enable dns on Server0 set Server0 dns A www.example.local 192.168.10.20 set PC0 dns 192.168.10.20" --output output\edited_services.pkt
 ```
 
 Decode a `.pkt` back to XML for inspection:

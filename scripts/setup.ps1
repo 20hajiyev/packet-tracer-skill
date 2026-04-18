@@ -23,4 +23,5 @@ if ($Dev) {
 
 Write-Output "Setup complete."
 Write-Output "Venv python: $python"
-Write-Output "If you use Packet Tracer 9.x encoding/decoding, also set PKT_TWOFISH_LIBRARY."
+Write-Output "If you use Packet Tracer 9.x encoding/decoding, also set PKT_TWOFISH_LIBRARY or PKT_TWOFISH_SEARCH_ROOTS."
+Write-Output "Run python .\scripts\runtime_doctor.py to verify donor, Packet Tracer path, and Twofish readiness."

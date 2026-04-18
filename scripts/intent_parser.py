@@ -17,12 +17,23 @@ CAPABILITY_PATTERNS = {
     "server_dns": [r"\bdns\b", r"\ba record\b", r"\bcname\b"],
     "server_http": [r"\bhttp\b", r"\bweb\b"],
     "server_ftp": [r"\bftp\b", r"\btftp\b"],
+    "server_https": [r"\bhttps\b"],
+    "server_tftp": [r"\btftp\b"],
+    "server_email": [r"\bemail\b", r"\bsmtp\b", r"\bpop3\b"],
+    "server_syslog": [r"\bsyslog\b"],
+    "server_aaa": [r"\baaa\b", r"\bacs\b", r"\bradius\b"],
+    "iot": [r"\biot\b", r"\bhome gateway\b", r"\bsmart home\b", r"\bsensor\b", r"\bactuator\b", r"\bmcu\b"],
+    "iot_registration": [r"\biot registration\b", r"\bregister\b", r"\bregistration server\b"],
+    "iot_control": [r"\biot control\b", r"\bcontrol\b", r"\btrigger\b", r"\bturn on\b", r"\bturn off\b", r"\block\b", r"\bunlock\b"],
     "management_vlan": [r"\bmanagement vlan\b", r"\bvlan 99\b", r"\bdefault-gateway\b"],
     "telnet": [r"\btelnet\b", r"\bvty\b", r"\btransport input telnet\b"],
     "wireless_ap": [r"\bssid\b", r"\bwifi\b", r"\bwpa\b", r"\bwpa2\b", r"\bwireless\b", r"\baccess point\b", r"\bap\b"],
+    "wireless_mutation": [r"\bset\s+[A-Za-z0-9_ -]+?\s+ssid\b", r"\bsecurity\s+(?:wpa|wpa2|wep|open|802\.1x)\b", r"\bpassphrase\b", r"\bchannel\s+\d+\b"],
     "wireless_client": [r"\btablet\b", r"\blaptop\b", r"\bsmartphone\b", r"\bassociate\b", r"\bjoin\b"],
+    "wireless_client_association": [r"\bassociate\b", r"\bjoin\b"],
     "tablet": [r"\btablet\b"],
     "printer": [r"\bprinter\b"],
+    "end_device_mutation": [r"\bset\s+[A-Za-z0-9_-]+\s+ip\b", r"\bset\s+[A-Za-z0-9_-]+\s+ipv4\s+dhcp\b", r"\bset\s+[A-Za-z0-9_-]+\s+dns\b"],
     "verification": [r"\bshow vlan brief\b", r"\bshow interfaces trunk\b", r"\bshow ip interface brief\b", r"\bshow ip dhcp binding\b", r"\bping\b", r"\btelnet\b"],
     "ospf": [r"\bospf\b"],
     "eigrp": [r"\beigrp\b"],
@@ -41,6 +52,8 @@ DEVICE_SYNONYMS = {
     "ap": "LightWeightAccessPoint",
     "wireless-router": "WirelessRouter",
     "wirelessrouter": "WirelessRouter",
+    "home-router": "WirelessRouter",
+    "homerouter": "WirelessRouter",
     "tablet": "Tablet",
     "laptop": "Laptop",
     "smartphone": "Smartphone",
@@ -52,6 +65,7 @@ NATURAL_DEVICE_ALIASES = {
     "Switch": ["switch", "switchler", "switchlerin"],
     "PC": ["pc", "pcs", "computer", "computers", "komputer", "komputerler", "kompyuter", "kompyuterler"],
     "Server": ["server", "serverler"],
+    "WirelessRouter": ["wireless router", "wireless-router", "wirelessrouter", "home router", "home-router", "wrt"],
     "Tablet": ["tablet", "tabletler"],
     "Laptop": ["laptop", "laptoplar"],
     "Printer": ["printer", "printerler"],
@@ -164,6 +178,7 @@ class IntentPlan:
     pkt_path: str | None = None
     capabilities: list[str] = field(default_factory=list)
     network_style: str | None = None
+    wireless_mode: str | None = None
     device_requirements: dict[str, int] = field(default_factory=dict)
     device_counts: dict[str, int] = field(default_factory=dict)
     department_groups: list[dict[str, object]] = field(default_factory=list)
@@ -177,6 +192,15 @@ class IntentPlan:
     confidence_score: float = 0.0
     parse_warnings: list[str] = field(default_factory=list)
     blocking_gaps: list[str] = field(default_factory=list)
+    compatibility_profile: dict[str, object] = field(default_factory=dict)
+    unsafe_mutations_requested: list[str] = field(default_factory=list)
+    blocked_mutations: list[str] = field(default_factory=list)
+    acceptance_stage_plan: list[dict[str, object]] = field(default_factory=list)
+    capability_matrix_hits: list[dict[str, object]] = field(default_factory=list)
+    unsupported_capabilities: list[str] = field(default_factory=list)
+    coverage_gap_report: dict[str, object] = field(default_factory=dict)
+    blueprint_plan: dict[str, object] = field(default_factory=dict)
+    remote_search_results: list[dict[str, object]] = field(default_factory=list)
     edit_operations: list[dict[str, object]] = field(default_factory=list)
     devices: list[dict[str, object]] = field(default_factory=list)
     links: list[dict[str, object]] = field(default_factory=list)
@@ -187,6 +211,7 @@ class IntentPlan:
     end_device_ops: list[dict[str, object]] = field(default_factory=list)
     management_ops: list[dict[str, object]] = field(default_factory=list)
     verification_ops: list[dict[str, object]] = field(default_factory=list)
+    iot_ops: list[dict[str, object]] = field(default_factory=list)
 
     def all_operations(self) -> list[dict[str, object]]:
         merged: list[dict[str, object]] = []
@@ -199,6 +224,7 @@ class IntentPlan:
             self.end_device_ops,
             self.management_ops,
             self.verification_ops,
+            self.iot_ops,
         ]:
             merged.extend(bucket)
         return merged
@@ -337,13 +363,31 @@ def _extract_service_requirements(capabilities: list[str], prompt: str) -> dict[
         "services": [],
         "security": [],
     }
-    for service in ["dhcp", "dns", "http", "https", "ftp", "tftp", "ntp"]:
+    for service in ["dhcp", "dns", "http", "https", "ftp", "tftp", "ntp", "email", "syslog", "aaa"]:
         if service in lowered:
             requirements["services"].append(service)
     for security in ["acl", "telnet", "wpa2", "wpa", "wep", "nat"]:
         if security in lowered:
             requirements["security"].append(security)
     return requirements
+
+
+def _extract_wireless_mode(
+    normalized_prompt: str,
+    capabilities: list[str],
+    device_requirements: dict[str, int],
+    network_style: str | None,
+) -> str | None:
+    has_wireless = any(cap in capabilities for cap in ["wireless_ap", "wireless_client"])
+    if not has_wireless and not device_requirements.get("WirelessRouter", 0):
+        return None
+    mentions_home_router = any(token in normalized_prompt for token in ["home router", "wireless router", "wirelessrouter", "wrt"])
+    campus_like = network_style in {"campus", "branch", "wireless_branch"} or "department" in normalized_prompt or "sobeli" in normalized_prompt
+    if mentions_home_router and campus_like:
+        return "mixed"
+    if mentions_home_router or "nat" in capabilities or network_style == "small_office" or device_requirements.get("WirelessRouter", 0):
+        return "home_router_edge"
+    return "ap_bridge"
 
 
 def _estimate_confidence(
@@ -422,7 +466,7 @@ def _extract_switch_ops(prompt: str) -> list[dict[str, object]]:
         for device, port, vlan_id in re.findall(r"set\s+([A-Za-z0-9_-]+)\s+access-port\s+([A-Za-z0-9/._-]+)\s+vlan\s+(\d+)", segment, flags=re.IGNORECASE):
             ops.append({"op": "set_access_port", "device": device, "port": port, "vlan": int(vlan_id)})
     trunk_pattern = re.compile(
-        r"set\s+([A-Za-z0-9_-]+)\s+trunk-port\s+([A-Za-z0-9/._-]+)\s+allowed\s+([0-9,\s]+)(?:\s+native\s+(\d+))?",
+        r"set\s+([A-Za-z0-9_-]+)\s+trunk-port\s+([A-Za-z0-9/._-]+)\s+allowed\s+([0-9,\s]+?)(?:\s+native\s+(\d+))?(?=\s+set\s+|$)",
         flags=re.IGNORECASE,
     )
     for segment in _command_segments(prompt):
@@ -470,10 +514,24 @@ def _extract_router_ops(prompt: str) -> list[dict[str, object]]:
                     "max_users": int(max_users) if max_users else None,
                 }
             )
-    acl_create_pattern = re.compile(r"set\s+([A-Za-z0-9_-]+)\s+acl\s+(standard|extended)\s+([A-Za-z0-9_-]+)", flags=re.IGNORECASE)
+    acl_create_pattern = re.compile(r"set\s+([A-Za-z0-9_ -]+?)\s+acl\s+(standard|extended)\s+([A-Za-z0-9_-]+)", flags=re.IGNORECASE)
     for segment in _command_segments(prompt):
         for device, acl_kind, acl_name in acl_create_pattern.findall(segment):
-            ops.append({"op": "set_acl", "device": device, "acl_kind": acl_kind.lower(), "acl_name": acl_name})
+            ops.append({"op": "set_acl", "device": device.strip(), "acl_kind": acl_kind.lower(), "acl_name": acl_name})
+    acl_create_simple_pattern = re.compile(
+        r"create\s+acl\s+([A-Za-z0-9_-]+)\s+on\s+([A-Za-z0-9_ -]+?)(?:\s+kind\s+(standard|extended))?(?=\s+(?:acl\b|apply\b|enable\b|set\b|associate\b|register\b|disable\b)|$)",
+        flags=re.IGNORECASE,
+    )
+    for segment in _command_segments(prompt):
+        for acl_name, device, acl_kind in acl_create_simple_pattern.findall(segment):
+            ops.append(
+                {
+                    "op": "set_acl",
+                    "device": device.strip(),
+                    "acl_kind": (acl_kind or "standard").lower(),
+                    "acl_name": acl_name,
+                }
+            )
     acl_rule_pattern = re.compile(
         r"acl\s+([A-Za-z0-9_-]+)\s+(permit|deny)\s+(host\s+\d+\.\d+\.\d+\.\d+|\d+\.\d+\.\d+\.\d+\s+\d+\.\d+\.\d+\.\d+|any)"
         r"(?:\s+(host\s+\d+\.\d+\.\d+\.\d+|\d+\.\d+\.\d+\.\d+\s+\d+\.\d+\.\d+\.\d+|any))?",
@@ -482,10 +540,13 @@ def _extract_router_ops(prompt: str) -> list[dict[str, object]]:
     for segment in _command_segments(prompt):
         for acl_name, action, source, destination in acl_rule_pattern.findall(segment):
             ops.append({"op": "add_acl_rule", "acl_name": acl_name, "action": action.lower(), "source": source.strip(), "destination": destination.strip() if destination else None})
-    acl_apply_pattern = re.compile(r"apply\s+acl\s+([A-Za-z0-9_-]+)\s+(in|out)\s+on\s+([A-Za-z0-9_-]+)\s+([A-Za-z0-9/._-]+)", flags=re.IGNORECASE)
+    acl_apply_pattern = re.compile(
+        r"apply\s+acl\s+([A-Za-z0-9_-]+)\s+(in|out)\s+on\s+([A-Za-z0-9_ -]+?)(?:\s+interface)?\s+([A-Za-z0-9/._-]+)",
+        flags=re.IGNORECASE,
+    )
     for segment in _command_segments(prompt):
         for acl_name, direction, device, interface_name in acl_apply_pattern.findall(segment):
-            ops.append({"op": "apply_acl", "device": device, "acl_name": acl_name, "direction": direction.lower(), "interface": interface_name})
+            ops.append({"op": "apply_acl", "device": device.strip(), "acl_name": acl_name, "direction": direction.lower(), "interface": interface_name})
     return ops
 
 
@@ -495,6 +556,14 @@ def _extract_server_ops(prompt: str) -> list[dict[str, object]]:
     for segment in _command_segments(prompt):
         for device, record_type, name, value in dns_pattern.findall(segment):
             ops.append({"op": "set_server_dns_record", "device": device, "record_type": record_type.upper(), "name": name, "value": value})
+    email_domain_pattern = re.compile(r"set\s+([A-Za-z0-9_-]+)\s+email\s+domain\s+([A-Za-z0-9._-]+)", flags=re.IGNORECASE)
+    for segment in _command_segments(prompt):
+        for device, domain in email_domain_pattern.findall(segment):
+            ops.append({"op": "set_server_email_domain", "device": device, "domain": domain})
+    aaa_auth_port_pattern = re.compile(r"set\s+([A-Za-z0-9_-]+)\s+aaa\s+auth-port\s+(\d+)", flags=re.IGNORECASE)
+    for segment in _command_segments(prompt):
+        for device, port in aaa_auth_port_pattern.findall(segment):
+            ops.append({"op": "set_server_aaa_auth_port", "device": device, "auth_port": int(port)})
     dhcp_pattern = re.compile(
         r"set\s+([A-Za-z0-9_-]+)\s+(server-dhcp|dhcp)\s+pool\s+([A-Za-z0-9_-]+)\s+network\s+(\d+\.\d+\.\d+\.\d+)/(\d+)\s+gateway\s+(\d+\.\d+\.\d+\.\d+)"
         r"(?:\s+dns\s+(\d+\.\d+\.\d+\.\d+))?(?:\s+start\s+(\d+\.\d+\.\d+\.\d+))?(?:\s+max\s+(\d+))?",
@@ -517,21 +586,21 @@ def _extract_server_ops(prompt: str) -> list[dict[str, object]]:
                     "max_users": int(max_users) if max_users else 0,
                 }
             )
-        for service, device in re.findall(r"enable\s+(dns|http|https|ftp|tftp|ntp)\s+on\s+([A-Za-z0-9_ -]+)", segment, flags=re.IGNORECASE):
+        for service, device in re.findall(r"enable\s+(dns|http|https|ftp|tftp|ntp|email|syslog|aaa)\s+on\s+([A-Za-z0-9_ -]+)", segment, flags=re.IGNORECASE):
             ops.append({"op": "enable_server_service", "device": device.strip(), "service": service.lower()})
     return ops
 
 
 def _extract_management_ops(prompt: str) -> list[dict[str, object]]:
     ops: list[dict[str, object]] = []
-    mgmt_pattern = re.compile(r"set\s+([A-Za-z0-9_-]+)\s+management\s+vlan\s+(\d+)\s+ip\s+(\d+\.\d+\.\d+\.\d+)/(\d+)\s+gateway\s+(\d+\.\d+\.\d+\.\d+)", flags=re.IGNORECASE)
+    mgmt_pattern = re.compile(r"set\s+([A-Za-z0-9_ -]+?)\s+management\s+vlan\s+(\d+)\s+ip\s+(\d+\.\d+\.\d+\.\d+)/(\d+)\s+gateway\s+(\d+\.\d+\.\d+\.\d+)", flags=re.IGNORECASE)
     for segment in _command_segments(prompt):
         for device, vlan_id, ip, prefix, gateway in mgmt_pattern.findall(segment):
-            ops.append({"op": "set_management_vlan", "device": device, "vlan": int(vlan_id), "ip": ip, "prefix": int(prefix), "gateway": gateway})
-    telnet_pattern = re.compile(r"enable\s+telnet\s+on\s+([A-Za-z0-9_-]+)\s+username\s+([A-Za-z0-9._-]+)\s+password\s+([A-Za-z0-9._-]+)", flags=re.IGNORECASE)
+            ops.append({"op": "set_management_vlan", "device": device.strip(), "vlan": int(vlan_id), "ip": ip, "prefix": int(prefix), "gateway": gateway})
+    telnet_pattern = re.compile(r"enable\s+telnet\s+on\s+([A-Za-z0-9_ -]+?)\s+username\s+([A-Za-z0-9._-]+)\s+password\s+([A-Za-z0-9._-]+)", flags=re.IGNORECASE)
     for segment in _command_segments(prompt):
         for device, username, password in telnet_pattern.findall(segment):
-            ops.append({"op": "enable_telnet", "device": device, "username": username, "password": password})
+            ops.append({"op": "enable_telnet", "device": device.strip(), "username": username, "password": password})
     return ops
 
 
@@ -592,13 +661,53 @@ def _extract_verification_ops(prompt: str) -> list[dict[str, object]]:
     return ops
 
 
+def _extract_iot_ops(prompt: str) -> list[dict[str, object]]:
+    ops: list[dict[str, object]] = []
+    registration_pattern = re.compile(
+        r"register\s+([A-Za-z0-9_ -]+?)\s+to\s+([A-Za-z0-9_ -]+?)(?=\s+(?:mode|server(?:-address)?|username|password)\b|$)"
+        r"(?:\s+mode\s+(lan_server|remote_server))?"
+        r"(?:\s+server(?:-address)?\s+(\d+\.\d+\.\d+\.\d+))?"
+        r"(?:\s+username\s+([A-Za-z0-9._-]+))?"
+        r"(?:\s+password\s+([A-Za-z0-9._-]+))?",
+        flags=re.IGNORECASE,
+    )
+    for segment in _command_segments(prompt):
+        for device, target, mode, server_address, username, password in registration_pattern.findall(segment):
+            ops.append(
+                {
+                    "op": "set_iot_registration",
+                    "device": device.strip(),
+                    "target": target.strip(),
+                    "mode": (mode or "").upper() or None,
+                    "server_address": server_address or None,
+                    "username": username or None,
+                    "password": password or None,
+                }
+            )
+        rule_pattern = re.compile(
+            r"(enable|disable)\s+iot\s+rule\s+(?:\"([^\"]+)\"|'([^']+)'|([A-Za-z0-9_ -]+?))\s+on\s+([A-Za-z0-9_ -]+)",
+            flags=re.IGNORECASE,
+        )
+        for action, quoted_name, single_quoted_name, plain_name, device in rule_pattern.findall(segment):
+            rule_name = quoted_name or single_quoted_name or plain_name
+            ops.append(
+                {
+                    "op": "set_iot_rule_state",
+                    "device": device.strip(),
+                    "rule_name": rule_name.strip(),
+                    "enabled": action.lower() == "enable",
+                }
+            )
+    return ops
+
+
 def parse_intent(prompt: str) -> IntentPlan:
     pkt_path_match = re.search(r"([A-Za-z]:\\[^\"\n]+?\.pkt)\b", prompt, flags=re.IGNORECASE)
     pkt_path = pkt_path_match.group(1) if pkt_path_match else None
     lowered = prompt.lower()
     normalized_prompt = _normalize_prompt(prompt)
 
-    capabilities = sorted(capability for capability, patterns in CAPABILITY_PATTERNS.items() if any(re.search(pattern, lowered) for pattern in patterns))
+    capability_set = {capability for capability, patterns in CAPABILITY_PATTERNS.items() if any(re.search(pattern, lowered) for pattern in patterns)}
     devices = _extract_explicit_devices(prompt)
     links = _extract_explicit_links(prompt)
     device_counts = _extract_natural_device_counts(normalized_prompt)
@@ -635,12 +744,13 @@ def parse_intent(prompt: str) -> IntentPlan:
     if department_groups:
         topology_requirements["uplink_topology"] = "chain"
         topology_requirements["department_count"] = department_count
-    if "router_dhcp" in capabilities or "dhcp_pool" in capabilities:
+    if "router_dhcp" in capability_set or "dhcp_pool" in capability_set:
         topology_requirements["needs_dhcp_pool"] = True
-    routing = next((cap for cap in ["ospf", "eigrp", "rip"] if cap in capabilities), None)
+    routing = next((cap for cap in ["ospf", "eigrp", "rip"] if cap in capability_set), None)
     if routing:
         topology_requirements["routing_protocol"] = routing
-    service_requirements = _extract_service_requirements(capabilities, prompt)
+    service_requirements = _extract_service_requirements(sorted(capability_set), prompt)
+    wireless_mode = _extract_wireless_mode(normalized_prompt, sorted(capability_set), device_requirements, network_style)
 
     edit_operations: list[dict[str, object]] = []
     for old_name, new_name in re.findall(r"rename\s+([A-Za-z0-9_-]+)\s+to\s+([A-Za-z0-9_-]+)", prompt, flags=re.IGNORECASE):
@@ -654,6 +764,18 @@ def parse_intent(prompt: str) -> IntentPlan:
     end_device_ops = _extract_end_device_ops(prompt)
     management_ops = _extract_management_ops(prompt)
     verification_ops = _extract_verification_ops(prompt)
+    iot_ops = _extract_iot_ops(prompt)
+
+    if any(op["op"] == "associate_wireless_client" for op in wireless_ops):
+        capability_set.update({"wireless_client", "wireless_client_association"})
+    if any(op["op"] == "set_wireless_ssid" for op in wireless_ops):
+        capability_set.update({"wireless_ap", "wireless_mutation"})
+    if end_device_ops:
+        capability_set.add("end_device_mutation")
+    if iot_ops:
+        capability_set.update({"iot", "iot_registration"})
+
+    capabilities = sorted(capability_set)
 
     parse_warnings: list[str] = []
     blocking_gaps: list[str] = []
@@ -690,6 +812,7 @@ def parse_intent(prompt: str) -> IntentPlan:
         pkt_path=pkt_path,
         capabilities=capabilities,
         network_style=network_style,
+        wireless_mode=wireless_mode,
         device_requirements=device_requirements,
         device_counts=device_counts,
         department_groups=department_groups,
@@ -713,4 +836,5 @@ def parse_intent(prompt: str) -> IntentPlan:
         end_device_ops=end_device_ops,
         management_ops=management_ops,
         verification_ops=verification_ops,
+        iot_ops=iot_ops,
     )

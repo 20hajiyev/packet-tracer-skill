@@ -12,25 +12,27 @@ See `scripts/vendor/README.md` for setup guidance.
 from __future__ import annotations
 
 import os
+import sys
 from ctypes import POINTER, CDLL, Structure, c_char_p, c_int, c_uint32, create_string_buffer, pointer
 from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parents[1]
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from twofish_runtime import candidate_bridge_paths, expected_bridge_patterns  # noqa: E402
 
 
 def _load_library() -> CDLL:
     here = Path(__file__).resolve().parent
     env_path = os.getenv("PKT_TWOFISH_LIBRARY")
-    candidates: list[Path] = []
-    if env_path:
-        candidate = Path(env_path).expanduser()
-        if candidate.exists():
-            candidates.append(candidate)
-    candidates.extend(sorted(here.glob("_twofish*.pyd")))
-    candidates.extend(sorted(here.glob("_twofish*.so")))
-    candidates.extend(sorted(here.glob("_twofish*.dll")))
+    candidates = [path for _, path in candidate_bridge_paths(here, env_path=env_path) if path.exists()]
     if not candidates:
+        patterns = ", ".join(expected_bridge_patterns())
         raise ImportError(
             "Twofish bridge not found. Set PKT_TWOFISH_LIBRARY or place a local _twofish binary "
-            "next to scripts/vendor/twofish.py. See scripts/vendor/README.md."
+            "next to scripts/vendor/twofish.py. "
+            f"Expected patterns for this host: {patterns}. See scripts/vendor/README.md."
         )
     return CDLL(str(candidates[0]))
 

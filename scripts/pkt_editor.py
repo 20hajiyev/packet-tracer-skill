@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import re
 from pathlib import Path
 import xml.etree.ElementTree as ET
@@ -74,13 +75,48 @@ def inventory_services(root: ET.Element) -> dict[str, list[str]]:
             ("DNS_SERVER", "ENABLED"),
             ("DHCP_SERVER", "ENABLED"),
             ("TFTP_SERVER", "ENABLED"),
+            ("FTP_SERVER", "ENABLED"),
             ("NTP_SERVER", "ENABLED"),
+            ("SYSLOG_SERVER", "ENABLED"),
+            ("ACS_SERVER", "ENABLED"),
         ]:
             node = engine.find(tag)
             if node is not None and node.findtext(enabled_tag, default="0") in {"1", "true", "True"}:
                 enabled.append(tag.lower())
+        email_server = engine.find("EMAIL_SERVER")
+        if email_server is not None and any(
+            email_server.findtext(tag, default="0") in {"1", "true", "True"}
+            for tag in ["SMTP_ENABLED", "POP3_ENABLED"]
+        ):
+            enabled.append("email_server")
         if enabled:
             result[name] = enabled
+    return result
+
+
+def inventory_service_details(root: ET.Element) -> dict[str, dict[str, object]]:
+    result: dict[str, dict[str, object]] = {}
+    for device in root.findall(".//DEVICES/DEVICE"):
+        name = device.findtext("./ENGINE/NAME", default="")
+        engine = device.find("./ENGINE")
+        if engine is None:
+            continue
+        details: dict[str, object] = {}
+        email_server = engine.find("EMAIL_SERVER")
+        if email_server is not None:
+            domain = email_server.findtext("SMTP_DOMAIN", default="")
+            if domain:
+                details["email_domain"] = domain
+            user_count = email_server.findtext("NO_OF_USERS", default="")
+            if user_count:
+                details["email_user_count"] = user_count
+        acs_server = engine.find("ACS_SERVER")
+        if acs_server is not None:
+            auth_port = acs_server.findtext("./RADIUS_SETTINGS/AUTH_PORT", default="")
+            if auth_port:
+                details["aaa_auth_port"] = auth_port
+        if details:
+            result[name] = details
     return result
 
 
@@ -97,12 +133,59 @@ def inventory_wireless(root: ET.Element) -> dict[str, dict[str, str]]:
                 "mode": "ap",
                 "ssid": common.findtext("SSID", default="") if common is not None else "",
             }
+        if engine.find("./CAPWAP_AC/WLANS/WLAN_CONFIG") is not None:
+            wlan = engine.find("./CAPWAP_AC/WLANS/WLAN_CONFIG")
+            result[name] = {
+                "mode": "controller",
+                "ssid": wlan.findtext("SSID", default="") if wlan is not None else "",
+            }
         if engine.find("WIRELESS_CLIENT") is not None:
             common = engine.find("./WIRELESS_CLIENT/WIRELESS_COMMON")
             result[name] = {
                 "mode": "client",
                 "ssid": common.findtext("SSID", default="") if common is not None else "",
             }
+    return result
+
+
+def inventory_iot(root: ET.Element) -> dict[str, dict[str, object]]:
+    result: dict[str, dict[str, object]] = {}
+    for device in root.findall(".//DEVICES/DEVICE"):
+        name = device.findtext("./ENGINE/NAME", default="")
+        engine = device.find("./ENGINE")
+        if engine is None:
+            continue
+        raw_type = engine.findtext("TYPE", default="")
+        tags = {child.tag for child in list(engine)}
+        iot_role = None
+        if raw_type in {"HomeGateway", "WirelessRouterNewGeneration"}:
+            iot_role = "gateway"
+        elif raw_type in {"IoT", "MCUComponent", "Board", "Sensor", "Actuator"}:
+            iot_role = "thing"
+        elif {"IOE_USER_MANAGER", "IOX_SEVICE", "IOX_VM_MANAGER"} & tags:
+            iot_role = "server"
+        if iot_role is None:
+            continue
+        result[name] = {
+            "role": iot_role,
+            "type": raw_type,
+            "wireless_ssid": engine.findtext("./WIRELESS_CLIENT/WIRELESS_COMMON/SSID", default=""),
+            "http_enabled": engine.findtext("./HTTP_SERVER/ENABLED", default="0") in {"1", "true", "True"},
+            "client_mode": engine.findtext("./IOE_CLIENT/CLIENT_MODE", default=""),
+            "server_address": engine.findtext("./IOE_CLIENT/SERVER_ADDRESS", default=""),
+            "username": engine.findtext("./IOE_CLIENT/USERNAME", default=""),
+        }
+        if iot_role == "server":
+            rules: list[dict[str, object]] = []
+            for node in engine.findall("./IOE_USER_MANAGER/USERS/USER/IOE_RULES/IOE_RULE/JSON"):
+                try:
+                    payload = json.loads(node.text or "{}")
+                except json.JSONDecodeError:
+                    continue
+                if payload.get("name"):
+                    rules.append({"name": str(payload["name"]), "enabled": bool(payload.get("enabled", False))})
+            if rules:
+                result[name]["rules"] = rules
     return result
 
 
@@ -159,6 +242,41 @@ def inventory_acl_names(root: ET.Element) -> dict[str, list[str]]:
     return result
 
 
+def inventory_management(root: ET.Element) -> dict[str, dict[str, object]]:
+    result: dict[str, dict[str, object]] = {}
+    for device in root.findall(".//DEVICES/DEVICE"):
+        name = device.findtext("./ENGINE/NAME", default="")
+        running = "\n".join(line.text or "" for line in device.findall("./ENGINE/RUNNINGCONFIG/LINE"))
+        if not running:
+            continue
+        management_vlans = sorted(
+            {
+                match.group(1)
+                for match in re.finditer(r"(?mi)^interface\s+Vlan(\d+)\s*$", running)
+            },
+            key=int,
+        )
+        usernames = sorted(
+            {
+                match.group(1)
+                for match in re.finditer(r"(?mi)^username\s+(\S+)\s+(?:password|secret)\s+\S+\s*$", running)
+            }
+        )
+        default_gateway_match = re.search(r"(?mi)^ip default-gateway\s+(\S+)\s*$", running)
+        telnet_enabled = bool(re.search(r"(?mi)^\s*transport input .*telnet.*$", running))
+        enable_secret_present = bool(re.search(r"(?mi)^enable secret\s+\S+\s*$", running))
+        if not any([management_vlans, usernames, default_gateway_match, telnet_enabled, enable_secret_present]):
+            continue
+        result[name] = {
+            "management_vlans": management_vlans,
+            "default_gateway": default_gateway_match.group(1) if default_gateway_match else "",
+            "telnet_enabled": telnet_enabled,
+            "usernames": usernames,
+            "enable_secret_present": enable_secret_present,
+        }
+    return result
+
+
 def inventory_topology_summary(root: ET.Element) -> dict[str, object]:
     devices = inventory_devices(root)
     counts: dict[str, int] = {}
@@ -178,10 +296,13 @@ def inventory_root(root: ET.Element) -> dict[str, object]:
         "devices": inventory_devices(root),
         "links": inventory_links(root),
         "services": inventory_services(root),
+        "service_details": inventory_service_details(root),
         "wireless": inventory_wireless(root),
+        "iot": inventory_iot(root),
         "vlans": inventory_vlans(root),
         "dhcp_pools": inventory_dhcp_pools(root),
         "acl_names": inventory_acl_names(root),
+        "management": inventory_management(root),
         "topology_summary": inventory_topology_summary(root),
     }
 
@@ -246,6 +367,28 @@ def _device_refs(root: ET.Element) -> tuple[dict[str, str], dict[str, str]]:
     return index_refs, save_refs
 
 
+def _link_port_mem_map(root: ET.Element) -> dict[tuple[str, str], str]:
+    mapping: dict[tuple[str, str], str] = {}
+    for link in root.findall(".//LINKS/LINK"):
+        cable = link.find("./CABLE")
+        if cable is None:
+            continue
+        ports = cable.findall("PORT")
+        if len(ports) < 2:
+            continue
+        from_ref = cable.findtext("FROM", default="")
+        to_ref = cable.findtext("TO", default="")
+        from_port = ports[0].text or ""
+        to_port = ports[1].text or ""
+        from_mem = cable.findtext("FROM_PORT_MEM_ADDR", default="").strip()
+        to_mem = cable.findtext("TO_PORT_MEM_ADDR", default="").strip()
+        if from_ref and from_port and from_mem:
+            mapping[(from_ref, from_port)] = from_mem
+        if to_ref and to_port and to_mem:
+            mapping[(to_ref, to_port)] = to_mem
+    return mapping
+
+
 def _find_link_by_devices(root: ET.Element, left_name: str, right_name: str) -> ET.Element | None:
     index_refs, save_refs = _device_refs(root)
     left_candidates = {index_refs.get(left_name, ""), save_refs.get(left_name, "")}
@@ -261,6 +404,16 @@ def _find_link_by_devices(root: ET.Element, left_name: str, right_name: str) -> 
         if from_idx in right_candidates and to_idx in left_candidates:
             return link
     return None
+
+
+def _first_link_prototype(root: ET.Element) -> ET.Element | None:
+    for link in root.findall(".//LINKS/LINK"):
+        cable = link.find("./CABLE")
+        if cable is None:
+            continue
+        if cable.find("FUNCTIONAL") is not None and cable.find("GEO_VIEW_COLOR") is not None and cable.find("IS_MANAGED_IN_RACK_VIEW") is not None:
+            return link
+    return root.find(".//LINKS/LINK")
 
 
 def _remove_links_for_device(root: ET.Element, device_name: str) -> None:
@@ -302,12 +455,55 @@ def _remove_physical_leaf(root: ET.Element, device: ET.Element) -> None:
             return
 
 
+def _node_contains_tokens(node: ET.Element, tokens: list[str]) -> bool:
+    if any(token and token in ((node.text or "").strip()) for token in tokens):
+        return True
+    for value in node.attrib.values():
+        if any(token and token in value for token in tokens):
+            return True
+    for child in list(node):
+        if _node_contains_tokens(child, tokens):
+            return True
+    return False
+
+
+def _remove_runtime_references(root: ET.Element, device: ET.Element) -> None:
+    tokens = [
+        device.findtext("./ENGINE/SAVE_REF_ID", default="").strip(),
+        device.findtext("./ENGINE/NAME", default="").strip(),
+        device.findtext("./ENGINE/ORIGINAL_DEVICE_UUID", default="").strip(),
+    ]
+    physical_path = device.findtext("./WORKSPACE/PHYSICAL", default="").strip()
+    if physical_path:
+        tokens.append(physical_path.split(",")[-1].strip())
+    tokens = [token for token in tokens if token]
+    if not tokens:
+        return
+    protected_tags = {"SCENARIOSET", "SCENARIO", "COMMAND_LOGS", "CEPS"}
+    for section_path in ["./SCENARIOSET", "./COMMAND_LOGS", "./CEPS"]:
+        section = root.find(section_path)
+        if section is None:
+            continue
+        stack = [section]
+        while stack:
+            parent = stack.pop()
+            for child in list(parent):
+                if child.tag in protected_tags:
+                    stack.append(child)
+                    continue
+                if _node_contains_tokens(child, tokens):
+                    parent.remove(child)
+                    continue
+                stack.append(child)
+
+
 def _prune_device(root: ET.Element, device_name: str) -> None:
     device = _find_device(root, device_name)
     if device is None:
         return
     _remove_links_for_device(root, device_name)
     _remove_physical_leaf(root, device)
+    _remove_runtime_references(root, device)
     parent = _find_parent_of_node(root, device)
     if parent is not None:
         parent.remove(device)
@@ -322,7 +518,15 @@ def _remove_link(root: ET.Element, left_name: str, right_name: str) -> None:
         links_parent.remove(link)
 
 
-def _ensure_link(root: ET.Element, left_name: str, left_port: str, right_name: str, right_port: str, media: str) -> None:
+def _ensure_link(
+    root: ET.Element,
+    left_name: str,
+    left_port: str,
+    right_name: str,
+    right_port: str,
+    media: str,
+    port_mem_map: dict[tuple[str, str], str] | None = None,
+) -> None:
     existing = _find_link_by_devices(root, left_name, right_name)
     devices = {device.findtext("./ENGINE/NAME", default=""): device for device in root.findall(".//DEVICES/DEVICE")}
     index_refs, save_refs = _device_refs(root)
@@ -351,6 +555,8 @@ def _ensure_link(root: ET.Element, left_name: str, left_port: str, right_name: s
                 prototype = candidate
                 break
         if prototype is None:
+            prototype = _first_link_prototype(root)
+        if prototype is None:
             prototype_root = load_sample_root(resolve_sample_path(FTP_SAMPLE))
             prototype = prototype_root.find(".//LINKS/LINK")
         link = copy.deepcopy(prototype)
@@ -363,21 +569,40 @@ def _ensure_link(root: ET.Element, left_name: str, left_port: str, right_name: s
     cable = link.find("./CABLE")
     if cable is None:
         return
-    _ensure_text(cable, "FROM", save_refs.get(left_name, index_refs[left_name]))
-    _ensure_text(cable, "TO", save_refs.get(right_name, index_refs[right_name]))
+    from_ref = save_refs.get(left_name, index_refs[left_name])
+    to_ref = save_refs.get(right_name, index_refs[right_name])
+    _ensure_text(cable, "FROM", from_ref)
+    _ensure_text(cable, "TO", to_ref)
     ports = cable.findall("PORT")
     if len(ports) < 2:
         while len(ports) < 2:
             ports.append(ET.SubElement(cable, "PORT"))
     ports[0].text = left_port
     ports[1].text = right_port
+    resolved_port_mem_map = port_mem_map or {}
     for node_name, value in [
         ("FROM_DEVICE_MEM_ADDR", left_device.findtext("./WORKSPACE/LOGICAL/MEM_ADDR", default="")),
         ("TO_DEVICE_MEM_ADDR", right_device.findtext("./WORKSPACE/LOGICAL/MEM_ADDR", default="")),
-        ("FROM_PORT_MEM_ADDR", _port_address_for_name(left_device, left_port) or ""),
-        ("TO_PORT_MEM_ADDR", _port_address_for_name(right_device, right_port) or ""),
+        (
+            "FROM_PORT_MEM_ADDR",
+            _port_address_for_name(left_device, left_port)
+            or resolved_port_mem_map.get((from_ref, left_port), ""),
+        ),
+        (
+            "TO_PORT_MEM_ADDR",
+            _port_address_for_name(right_device, right_port)
+            or resolved_port_mem_map.get((to_ref, right_port), ""),
+        ),
     ]:
-        _ensure_text(cable, node_name, value)
+        if value:
+            _ensure_text(cable, node_name, value)
+    _ensure_text(cable, "FUNCTIONAL", cable.findtext("FUNCTIONAL", default="true") or "true")
+    _ensure_text(cable, "GEO_VIEW_COLOR", cable.findtext("GEO_VIEW_COLOR", default="#6ba72e") or "#6ba72e")
+    _ensure_text(
+        cable,
+        "IS_MANAGED_IN_RACK_VIEW",
+        cable.findtext("IS_MANAGED_IN_RACK_VIEW", default="false") or "false",
+    )
     apply_cable_type(cable, media)
 
 
@@ -550,7 +775,19 @@ def _set_enabled_service(engine: ET.Element, service_name: str) -> None:
         "ftp": ("FTP_SERVER", "ENABLED"),
         "tftp": ("TFTP_SERVER", "ENABLED"),
         "ntp": ("NTP_SERVER", "ENABLED"),
+        "syslog": ("SYSLOG_SERVER", "ENABLED"),
+        "aaa": ("ACS_SERVER", "ENABLED"),
     }
+    if service_name == "email":
+        email = engine.find("EMAIL_SERVER")
+        if email is None:
+            prototype = _server_engine_prototype_child("EMAIL_SERVER")
+            email = copy.deepcopy(prototype) if prototype is not None else ET.SubElement(engine, "EMAIL_SERVER")
+        if email not in list(engine):
+            engine.append(email)
+        _ensure_text(email, "SMTP_ENABLED", "1")
+        _ensure_text(email, "POP3_ENABLED", "1")
+        return
     tag, enabled_tag = mapping[service_name]
     node = engine.find(tag)
     if node is None:
@@ -619,6 +856,26 @@ def _apply_server_op(device: ET.Element, operation: dict[str, object]) -> None:
         _ensure_text(pool, "MAX_USERS", str(operation.get("max_users") or 0))
     elif operation["op"] == "enable_server_service":
         _set_enabled_service(engine, str(operation["service"]))
+    elif operation["op"] == "set_server_email_domain":
+        email_server = engine.find("EMAIL_SERVER")
+        if email_server is None:
+            prototype = _server_engine_prototype_child("EMAIL_SERVER")
+            email_server = copy.deepcopy(prototype) if prototype is not None else ET.SubElement(engine, "EMAIL_SERVER")
+            engine.append(email_server)
+        _ensure_text(email_server, "SMTP_ENABLED", "1")
+        _ensure_text(email_server, "POP3_ENABLED", "1")
+        _ensure_text(email_server, "SMTP_DOMAIN", str(operation["domain"]))
+    elif operation["op"] == "set_server_aaa_auth_port":
+        acs_server = engine.find("ACS_SERVER")
+        if acs_server is None:
+            prototype = _server_engine_prototype_child("ACS_SERVER")
+            acs_server = copy.deepcopy(prototype) if prototype is not None else ET.SubElement(engine, "ACS_SERVER")
+            engine.append(acs_server)
+        _ensure_text(acs_server, "ENABLED", "1")
+        radius_settings = acs_server.find("RADIUS_SETTINGS")
+        if radius_settings is None:
+            radius_settings = ET.SubElement(acs_server, "RADIUS_SETTINGS")
+        _ensure_text(radius_settings, "AUTH_PORT", str(operation["auth_port"]))
 
 
 def _wireless_common_nodes(engine: ET.Element) -> list[ET.Element]:
@@ -627,6 +884,7 @@ def _wireless_common_nodes(engine: ET.Element) -> list[ET.Element]:
         "./WIRELESS_SERVER/WIRELESS_COMMON",
         "./WIRELESS_CLIENT/WIRELESS_COMMON",
         "./WLC/WLANS/WLAN_CONFIG",
+        "./CAPWAP_AC/WLANS/WLAN_CONFIG",
     ]:
         node = engine.find(path)
         if node is not None:
@@ -689,8 +947,39 @@ def _apply_end_device_op(device: ET.Element, operation: dict[str, object]) -> No
         apply_host_ip(device, operation)
 
 
+def _apply_iot_op(device: ET.Element, operation: dict[str, object]) -> None:
+    engine = device.find("./ENGINE")
+    if engine is None:
+        return
+    if operation["op"] == "set_iot_registration":
+        client = engine.find("IOE_CLIENT")
+        if client is None:
+            client = ET.SubElement(engine, "IOE_CLIENT")
+        if operation.get("mode"):
+            _ensure_text(client, "CLIENT_MODE", str(operation["mode"]))
+        if operation.get("server_address"):
+            _ensure_text(client, "SERVER_ADDRESS", str(operation["server_address"]))
+        if operation.get("username"):
+            _ensure_text(client, "USERNAME", str(operation["username"]))
+        if operation.get("password"):
+            _ensure_text(client, "PASSWORD", str(operation["password"]))
+        return
+    if operation["op"] == "set_iot_rule_state":
+        for node in engine.findall("./IOE_USER_MANAGER/USERS/USER/IOE_RULES/IOE_RULE/JSON"):
+            try:
+                payload = json.loads(node.text or "{}")
+            except json.JSONDecodeError:
+                continue
+            if str(payload.get("name", "")).strip() != str(operation["rule_name"]).strip():
+                continue
+            payload["enabled"] = bool(operation["enabled"])
+            node.text = json.dumps(payload)
+            return
+
+
 def apply_plan_operations(root: ET.Element, plan: IntentPlan) -> ET.Element:
     updated = copy.deepcopy(root)
+    port_mem_map = _link_port_mem_map(updated)
     acl_kind_map: dict[str, str] = {}
     acl_device_map: dict[str, str] = {}
     for operation in plan.router_ops:
@@ -717,6 +1006,7 @@ def apply_plan_operations(root: ET.Element, plan: IntentPlan) -> ET.Element:
                 str(operation["b"]["dev"]),
                 str(operation["b"]["port"]),
                 str(operation.get("media", "copper")),
+                port_mem_map=port_mem_map,
             )
             continue
         device = _find_device(updated, str(operation["device"]))
@@ -734,6 +1024,7 @@ def apply_plan_operations(root: ET.Element, plan: IntentPlan) -> ET.Element:
         (plan.wireless_ops, _apply_wireless_op),
         (plan.end_device_ops, _apply_end_device_op),
         (plan.management_ops, _apply_management_op),
+        (plan.iot_ops, _apply_iot_op),
     ]:
         for operation in bucket:
             device = _find_device(updated, str(operation["device"]))
