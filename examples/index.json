@@ -1,0 +1,22 @@
+{
+  "curated_examples": [
+    {
+      "name": "complex_campus_master_edit_v4",
+      "scenario_family": "campus",
+      "inventory_json": "examples/complex_campus_master_edit_v4.inventory.json",
+      "screenshot": "examples/screenshots/complex_campus_master_edit_v4.png"
+    },
+    {
+      "name": "home_iot_cli_edit_v1",
+      "scenario_family": "home_iot",
+      "inventory_json": "examples/home_iot_cli_edit_v1.inventory.json",
+      "screenshot": null
+    },
+    {
+      "name": "service_heavy_cli_edit_v1",
+      "scenario_family": "service_heavy",
+      "inventory_json": "examples/service_heavy_cli_edit_v1.inventory.json",
+      "screenshot": null
+    }
+  ]
+}

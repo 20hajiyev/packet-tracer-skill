@@ -1,0 +1,55 @@
+{
+  "example_name": "home_iot_cli_edit_v1",
+  "source_mode": "donor-backed edit",
+  "scenario_family": "home_iot",
+  "public_repo_policy": {
+    "commit_pkt_binary": false,
+    "commit_inventory_json": true,
+    "commit_screenshot": false
+  },
+  "artifact_paths": {
+    "inventory_json": "examples/home_iot_cli_edit_v1.inventory.json",
+    "screenshot": null
+  },
+  "topology_summary": {
+    "gateway": "Home Gateway0",
+    "iot_things": [
+      "door0",
+      "door1"
+    ]
+  },
+  "wireless_summary": {
+    "Home Gateway0": "HomeGateway",
+    "door0": "HomeGateway",
+    "door1": "HomeGateway"
+  },
+  "iot_summary": {
+    "Home Gateway0": {
+      "role": "gateway",
+      "type": "HomeGateway",
+      "http_enabled": true
+    },
+    "door0": {
+      "role": "thing",
+      "type": "MCUComponent",
+      "client_mode": "LAN_SERVER",
+      "server_address": "192.168.25.1",
+      "username": "admin"
+    },
+    "door1": {
+      "role": "thing",
+      "type": "MCUComponent",
+      "client_mode": "LAN_SERVER"
+    }
+  },
+  "service_summary": {
+    "Home Gateway0": [
+      "http_server",
+      "dhcp_server"
+    ]
+  },
+  "verification_status": {
+    "inventory_roundtrip_verified": true,
+    "full_pytest_passed": true
+  }
+}

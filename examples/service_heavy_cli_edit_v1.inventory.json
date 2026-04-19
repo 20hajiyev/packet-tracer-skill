@@ -1,0 +1,45 @@
+{
+  "example_name": "service_heavy_cli_edit_v1",
+  "source_mode": "donor-backed edit",
+  "scenario_family": "service_heavy",
+  "public_repo_policy": {
+    "commit_pkt_binary": false,
+    "commit_inventory_json": true,
+    "commit_screenshot": false
+  },
+  "artifact_paths": {
+    "inventory_json": "examples/service_heavy_cli_edit_v1.inventory.json",
+    "screenshot": null
+  },
+  "topology_summary": {
+    "core_server": "Server0",
+    "client_devices": [
+      "PC0",
+      "PC1"
+    ]
+  },
+  "service_summary": {
+    "Server0": [
+      "http_server",
+      "https_server",
+      "dns_server",
+      "dhcp_server",
+      "tftp_server",
+      "ftp_server",
+      "ntp_server",
+      "syslog_server",
+      "acs_server",
+      "email_server"
+    ]
+  },
+  "service_details": {
+    "Server0": {
+      "email_domain": "example.local",
+      "aaa_auth_port": "1812"
+    }
+  },
+  "verification_status": {
+    "inventory_roundtrip_verified": true,
+    "full_pytest_passed": true
+  }
+}
