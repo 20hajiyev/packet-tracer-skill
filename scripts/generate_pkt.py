@@ -2628,7 +2628,13 @@ def explain_plan(
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
-def inventory_pkt(pkt_path: Path, donor_roots: list[Path] | None = None, *, include_capabilities: bool = False) -> None:
+def inventory_pkt(
+    pkt_path: Path,
+    donor_roots: list[Path] | None = None,
+    *,
+    include_capabilities: bool = False,
+    inventory_out: Path | None = None,
+) -> None:
     root = ET.fromstring(decode_pkt_modern(pkt_path.read_bytes()))
     payload = inventory_root(root)
     workspace = inspect_workspace_integrity(root)
@@ -2709,7 +2715,11 @@ def inventory_pkt(pkt_path: Path, donor_roots: list[Path] | None = None, *, incl
     if include_capabilities:
         payload["inventory_capabilities"] = build_inventory_capability_report(payload)
     payload.update(_link_schema_summary(root))
-    print(json.dumps(payload, indent=2, ensure_ascii=False))
+    rendered = json.dumps(payload, indent=2, ensure_ascii=False)
+    if inventory_out is not None:
+        inventory_out.parent.mkdir(parents=True, exist_ok=True)
+        inventory_out.write_text(rendered, encoding="utf-8")
+    print(rendered)
 
 
 def validate_open(pkt_path: Path) -> None:
@@ -2816,6 +2826,7 @@ def main() -> None:
     parser.add_argument("--blueprint-out", help="Optional JSON output path for the generated blueprint plan or refusal blueprint")
     parser.add_argument("--coverage-report", action="store_true", help="Print the aggregated capability coverage matrix")
     parser.add_argument("--inventory-capabilities", action="store_true", help="Include inferred capability inventory when using --inventory")
+    parser.add_argument("--inventory-out", help="Optional JSON output path when using --inventory")
     parser.add_argument("--device-family", help="Optional device family filter for --coverage-report")
     args = parser.parse_args()
     if args.compat_donor:
@@ -2836,7 +2847,12 @@ def main() -> None:
         )
         return
     if args.inventory:
-        inventory_pkt(Path(args.inventory), donor_roots, include_capabilities=args.inventory_capabilities)
+        inventory_pkt(
+            Path(args.inventory),
+            donor_roots,
+            include_capabilities=args.inventory_capabilities,
+            inventory_out=Path(args.inventory_out) if args.inventory_out else None,
+        )
         return
     if args.edit:
         if not args.prompt:

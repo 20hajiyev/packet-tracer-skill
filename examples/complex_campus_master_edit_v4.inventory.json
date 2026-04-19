@@ -1,0 +1,86 @@
+{
+  "example_name": "complex_campus_master_edit_v4",
+  "source_mode": "donor-backed edit",
+  "public_repo_policy": {
+    "commit_pkt_binary": false,
+    "commit_inventory_json": true
+  },
+  "topology_summary": {
+    "network_style": "campus",
+    "core_router": "Router0",
+    "switches_with_management": [
+      "Switch Management",
+      "Switch Emeliyyat",
+      "Switch IT",
+      "Switch Maliyye",
+      "Switch Muhendislik",
+      "Switch Security"
+    ],
+    "wireless_routers": [
+      "Wireless Router0",
+      "Wireless Router1",
+      "Wireless Router2",
+      "Wireless Router3",
+      "Wireless Router4"
+    ]
+  },
+  "management_summary": {
+    "management_vlan": 99,
+    "default_gateway": "192.168.99.1",
+    "telnet_enabled_switches": [
+      "Switch Management",
+      "Switch Emeliyyat",
+      "Switch IT",
+      "Switch Maliyye",
+      "Switch Muhendislik",
+      "Switch Security"
+    ],
+    "username": "admin"
+  },
+  "routing_security_summary": {
+    "acl_names": {
+      "Router0": [
+        "MGMT_ONLY"
+      ]
+    }
+  },
+  "server_service_summary": {
+    "Server0": {
+      "services": [
+        "dns_server",
+        "email_server",
+        "ftp_server",
+        "http_server",
+        "https_server",
+        "ntp_server",
+        "syslog_server",
+        "tftp_server"
+      ],
+      "email_domain": "campus.local"
+    },
+    "Server1": {
+      "services": [
+        "acs_server",
+        "email_server",
+        "ftp_server",
+        "http_server",
+        "https_server",
+        "ntp_server",
+        "syslog_server",
+        "tftp_server"
+      ],
+      "aaa_auth_port": "1812"
+    }
+  },
+  "wireless_summary": {
+    "Wireless Router0": "OPS_WIFI",
+    "Wireless Router1": "IT_WIFI",
+    "Wireless Router2": "FIN_WIFI",
+    "Wireless Router3": "ENG_WIFI",
+    "Wireless Router4": "SEC_WIFI"
+  },
+  "verification_status": {
+    "inventory_roundtrip_verified": true,
+    "full_pytest_passed": true
+  }
+}

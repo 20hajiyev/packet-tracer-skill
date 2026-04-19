@@ -359,6 +359,7 @@ Inspect an existing `.pkt`:
 ```powershell
 python .\scripts\generate_pkt.py --inventory .\input\lab.pkt
 python .\scripts\generate_pkt.py --inventory .\input\lab.pkt --inventory-capabilities
+python .\scripts\generate_pkt.py --inventory .\input\lab.pkt --inventory-capabilities --inventory-out .\examples\lab.inventory.json
 ```
 
 Edit an existing `.pkt` from a prompt:
@@ -437,6 +438,7 @@ This repo is prepared to avoid accidental sharing of local private material:
 - no hardcoded donor path is committed
 - no `C:\Users\<name>\...` donor path is baked into config
 - generated `.pkt` and `.xml` files are gitignored
+- public sample labs should be committed as inventory JSON or blueprint JSON, not raw `.pkt` binaries
 - Python cache files are gitignored
 - Twofish bridge binaries are gitignored
 

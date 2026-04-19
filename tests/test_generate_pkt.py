@@ -27,6 +27,7 @@ from generate_pkt import (  # noqa: E402
     _preferred_donor_archetypes_for_plan,
     build_prompt_blueprint,
     edit_from_prompt,
+    inventory_pkt,
     prepare_generation_plan,
 )
 from intent_parser import parse_intent  # noqa: E402
@@ -325,6 +326,45 @@ def test_generate_from_prompt_writes_pkt_on_safe_open_selection(tmp_path: Path, 
     assert output.read_bytes() == b"pkt"
     assert xml_out.exists()
     assert blueprint_out.exists()
+
+
+def test_inventory_pkt_can_write_json_artifact(tmp_path: Path, monkeypatch) -> None:
+    pkt_path = tmp_path / "lab.pkt"
+    out_path = tmp_path / "lab.inventory.json"
+    pkt_path.write_bytes(b"pkt")
+    donor_root = _make_safe_open_root()
+
+    monkeypatch.setattr(generate_pkt_module, "decode_pkt_modern", lambda payload: ET.tostring(donor_root, encoding="utf-8"))
+    monkeypatch.setattr(
+        generate_pkt_module,
+        "inspect_workspace_integrity",
+        lambda root: SimpleNamespace(
+            workspace_mode="logical",
+            logical_status="ok",
+            physical_status="ok",
+            blocking_issues=[],
+        ),
+    )
+    monkeypatch.setattr(
+        generate_pkt_module,
+        "inspect_packet_tracer_compatibility_donor",
+        lambda: SimpleNamespace(
+            resolved_path=None,
+            donor_version=None,
+            donor_source=None,
+            target_version="9.0.0.0810",
+            blocking_reason=None,
+            candidate_paths=[],
+        ),
+    )
+    monkeypatch.setattr(generate_pkt_module, "_link_schema_summary", lambda root: {"link_schema_mode": "unit-test"})
+
+    inventory_pkt(pkt_path, inventory_out=out_path)
+
+    assert out_path.exists()
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
+    assert payload["workspace_validation"]["logical_status"] == "ok"
+    assert payload["link_schema_mode"] == "unit-test"
 
 
 def test_build_prompt_blueprint_department_prompt_uses_chain_archetype() -> None:
