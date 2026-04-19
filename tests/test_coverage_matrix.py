@@ -496,6 +496,107 @@ def test_build_coverage_gap_report_tracks_best_maturity_per_capability() -> None
     assert status_by_capability["server_dns"]["config_mutation_supported"] is True
 
 
+def test_build_coverage_gap_report_classifies_campus_readiness() -> None:
+    plan = parse_intent("campus sebekesi qur vlan management telnet acl")
+    plan.capabilities = ["router_on_a_stick", "trunk", "access_port", "management_vlan", "telnet", "acl"]
+    plan.device_requirements = {"Router": 1, "Switch": 2}
+    sample = SampleDescriptor(
+        path="campus_ready.pkt",
+        relative_path="campus_ready.pkt",
+        version="9.0.0.0810",
+        device_count=3,
+        link_count=2,
+        devices=[
+            {"name": "R1", "type": "Router", "model": "ISR4331"},
+            {"name": "SW1", "type": "Switch", "model": "2960-24TT"},
+            {"name": "SW2", "type": "Switch", "model": "2960-24TT"},
+        ],
+        links=[],
+        capability_tags=["vlan", "management_vlan", "acl"],
+        topology_tags=["router_on_a_stick", "department_lan"],
+        preferred_roles=["preferred_vlan", "preferred_management"],
+        trust_level="trusted",
+        origin="cisco-local",
+        role="primary",
+        prototype_eligible=True,
+        donor_eligible=True,
+        apply_safety_level="acceptance-verified",
+    )
+    report = build_coverage_gap_report(plan, [sample])
+    assert report.scenario_family == "campus"
+    assert report.scenario_generate_readiness["status"] == "ready"
+    assert "router_on_a_stick" in report.scenario_generate_readiness["critical_capabilities"]
+
+
+def test_build_coverage_gap_report_classifies_service_heavy_as_donor_limited() -> None:
+    plan = parse_intent("dns dhcp ftp email syslog aaa server sebekesi qur")
+    plan.capabilities = ["server_dns", "server_dhcp", "server_ftp", "server_email", "server_syslog", "server_aaa"]
+    plan.device_requirements = {"Server": 1, "PC": 1}
+    sample = SampleDescriptor(
+        path="service_curated.pkt",
+        relative_path="service_curated.pkt",
+        version="9.0.0.0810",
+        device_count=2,
+        link_count=1,
+        devices=[
+            {"name": "Server0", "type": "Server", "model": "Server-PT"},
+            {"name": "PC0", "type": "PC", "model": "PC-PT"},
+        ],
+        links=[],
+        capability_tags=[],
+        topology_tags=["server_services"],
+        preferred_roles=["preferred_services"],
+        trust_level="curated",
+        origin="external-curated",
+        role="secondary",
+        prototype_eligible=True,
+        donor_eligible=True,
+        service_support=["dns", "dhcp", "ftp", "email", "syslog", "aaa"],
+        device_families=["servers", "end devices"],
+        apply_safety_level="safe-open-generate-supported",
+    )
+    report = build_coverage_gap_report(plan, [sample])
+    assert report.scenario_family == "service_heavy"
+    assert report.scenario_generate_readiness["status"] == "donor_limited"
+    assert "server_email" in report.scenario_generate_readiness["critical_capabilities"]
+
+
+def test_build_coverage_gap_report_classifies_home_iot_as_acceptance_gated() -> None:
+    plan = parse_intent("home iot sebekesi qur register qapi cihazlarini gatewaye qos")
+    plan.capabilities = ["iot", "iot_registration", "iot_control", "wireless_ap"]
+    plan.device_requirements = {"HomeGateway": 1, "MCUComponent": 2}
+    sample = SampleDescriptor(
+        path="home_iot_ready.pkt",
+        relative_path="home_iot_ready.pkt",
+        version="9.0.0.0810",
+        device_count=3,
+        link_count=2,
+        devices=[
+            {"name": "Home Gateway0", "type": "HomeGateway", "model": "HomeGateway-PT"},
+            {"name": "Door0", "type": "MCUComponent", "model": "Door"},
+            {"name": "Door1", "type": "MCUComponent", "model": "Door"},
+        ],
+        links=[],
+        capability_tags=["iot", "wireless_ap"],
+        topology_tags=["wireless_edge"],
+        preferred_roles=["preferred_iot"],
+        trust_level="trusted",
+        origin="cisco-local",
+        role="primary",
+        prototype_eligible=True,
+        donor_eligible=True,
+        wireless_mode_tags=["home_router_edge"],
+        iot_roles=["gateway", "thing"],
+        device_families=["home/wireless routers", "iot devices"],
+        apply_safety_level="acceptance-verified",
+    )
+    report = build_coverage_gap_report(plan, [sample])
+    assert report.scenario_family == "home_iot"
+    assert report.scenario_generate_readiness["status"] == "acceptance_gated"
+    assert "iot_registration" in report.scenario_generate_readiness["critical_capabilities"]
+    assert report.scenario_generate_readiness["reasons"]
+
+
 def test_build_coverage_gap_report_supports_phase_a_switching_capabilities() -> None:
     plan = parse_intent("router-on-a-stick trunk access management telnet")
     plan.capabilities = ["router_on_a_stick", "trunk", "access_port", "management_vlan", "telnet"]

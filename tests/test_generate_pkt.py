@@ -21,10 +21,14 @@ from generate_pkt import (  # noqa: E402
     _build_donor_prune_plan_for_donor,
     _candidate_acceptance_penalty,
     _candidate_to_dict,
+    _donor_graph_fit_summary,
     _filter_candidates_for_blueprint,
     _evaluate_donor_prune_candidates,
     _collect_donor_groups,
     _preferred_donor_archetypes_for_plan,
+    _scenario_generate_decision,
+    _selected_donor_summary,
+    _summarize_candidate_pool,
     build_prompt_blueprint,
     edit_from_prompt,
     inventory_pkt,
@@ -242,6 +246,61 @@ def test_generate_from_prompt_writes_blueprint_on_refusal(tmp_path: Path, monkey
     assert json.loads(blueprint_out.read_text(encoding="utf-8")) == plan.blueprint_plan
 
 
+def test_generate_from_prompt_blocks_acceptance_gated_scenario_before_donor_apply(tmp_path: Path, monkeypatch) -> None:
+    raw_plan = parse_intent("home iot sebekesi qur register qapi cihazlarini gatewaye qos")
+    raw_plan.blueprint_plan = {"requested_devices": [{"name": "Home Gateway0", "type": "HomeGateway"}]}
+    blueprint = {
+        "topology_archetype": "home_router_edge",
+        "preferred_donor_archetypes": ["IoT/home gateway"],
+        "devices": [{"name": "Home Gateway0", "type": "HomeGateway"}],
+        "links": [],
+    }
+    coverage_gap = {
+        "unsupported_capabilities": [],
+        "requires_manual_acceptance": ["iot_registration", "iot_control"],
+        "scenario_generate_readiness": {
+            "family": "home_iot",
+            "status": "acceptance_gated",
+            "critical_capabilities": ["iot_registration", "iot_control"],
+            "missing_critical_capabilities": [],
+            "reasons": ["critical capabilities remain acceptance-gated: iot_registration, iot_control"],
+        },
+        "recommended_next_actions": [],
+    }
+
+    monkeypatch.setattr(generate_pkt_module, "parse_intent", lambda prompt: raw_plan)
+    monkeypatch.setattr(generate_pkt_module, "_resolve_remote_sources", lambda *args, **kwargs: ([], [], []))
+    monkeypatch.setattr(generate_pkt_module, "build_prompt_blueprint", lambda raw_plan_arg, donor_roots=None: (blueprint, raw_plan))
+    monkeypatch.setattr(generate_pkt_module, "_rank_generation_donors", lambda *args, **kwargs: ([], [], []))
+    monkeypatch.setattr(
+        generate_pkt_module,
+        "_build_support_reports",
+        lambda *args, **kwargs: ([], coverage_gap, raw_plan.blueprint_plan),
+    )
+    monkeypatch.setattr(
+        generate_pkt_module,
+        "inspect_packet_tracer_compatibility_donor",
+        lambda: SimpleNamespace(blocking_reason=None),
+    )
+
+    output = tmp_path / "blocked_home_iot.pkt"
+    blueprint_out = tmp_path / "blocked_home_iot_blueprint.json"
+
+    try:
+        generate_pkt_module.generate_from_prompt(
+            "home iot sebekesi qur register qapi cihazlarini gatewaye qos",
+            output,
+            blueprint_out_path=blueprint_out,
+        )
+    except PlanningError as exc:
+        assert any("acceptance-gated" in gap for gap in exc.plan.blocking_gaps)
+    else:
+        raise AssertionError("Expected PlanningError")
+
+    assert not output.exists()
+    assert blueprint_out.exists()
+
+
 def test_generate_from_prompt_writes_pkt_on_safe_open_selection(tmp_path: Path, monkeypatch) -> None:
     raw_plan = parse_intent("set SW1 vlan 10 name Finance")
     blueprint = {
@@ -300,6 +359,66 @@ def test_generate_from_prompt_writes_pkt_on_safe_open_selection(tmp_path: Path, 
                 mutation_groups=[],
                 layout_strategy="preserve",
             ),
+        ),
+    )
+    monkeypatch.setattr(
+        generate_pkt_module,
+        "_evaluate_donor_prune_candidates",
+        lambda prepared_plan, generated_blueprint, donor_candidates: (
+            (
+                raw_plan,
+                DonorArchetypePlan(
+                    compat_donor=str(donor_path),
+                    donor_capacity={"devices": 2},
+                    kept_devices=["SW1", "R1"],
+                    pruned_devices=[],
+                    renamed_devices=[],
+                    mutation_groups=[],
+                    layout_strategy="preserve",
+                    selection_reasons=["capability:vlan", "origin:cisco-local"],
+                ),
+                donor_root,
+                SampleCandidate(
+                    sample=SampleDescriptor(
+                        path=str(donor_path),
+                        relative_path="donor.pkt",
+                        version="9.0.0.0810",
+                        device_count=2,
+                        link_count=1,
+                        devices=[],
+                        links=[],
+                        capability_tags=["vlan"],
+                        topology_tags=["general"],
+                        preferred_roles=[],
+                        origin="cisco-local",
+                        apply_safety_level="acceptance-verified",
+                    ),
+                    capability_score=12,
+                    topology_score=6,
+                    total_score=18,
+                    reasons=["capability:vlan"],
+                ),
+            ),
+            [
+                {
+                    "relative_path": "donor.pkt",
+                    "origin": "cisco-local",
+                    "status": "selected",
+                    "reasons": ["capability:vlan", "origin:cisco-local"],
+                    "sample_archetypes": ["campus/core"],
+                    "archetype_match_reasons": ["archetype:campus/core"],
+                    "donor_graph_fit": {"layout_reuse_score": 21},
+                    "donor_graph_summary": {
+                        "required_pair_count": 1,
+                        "reusable_pair_count": 1,
+                        "missing_pair_count": 0,
+                        "conflict_count": 0,
+                        "reusable_pair_coverage": 100,
+                        "layout_reuse_status": "strong",
+                    },
+                    "adjusted_total_score": 18,
+                }
+            ],
         ),
     )
     monkeypatch.setattr(generate_pkt_module, "decode_pkt_to_root", lambda path: donor_root)
@@ -808,6 +927,52 @@ def test_candidate_to_dict_includes_archetype_and_layout_diagnostics() -> None:
     assert payload["sample_archetypes"]
     assert payload["archetype_match_score"] > 0
     assert "layout_reuse_score" in payload["donor_graph_fit"]
+    assert payload["donor_graph_summary"]["layout_reuse_status"] == "not_applicable"
+    assert payload["donor_graph_summary"]["reusable_pair_coverage"] == 100
+
+
+def test_donor_graph_fit_summary_marks_weak_reuse() -> None:
+    sample = SampleDescriptor(
+        path="weak-layout.pkt",
+        relative_path="weak-layout.pkt",
+        version="9.0.0.0810",
+        device_count=2,
+        link_count=1,
+        devices=[
+            {"name": "R1", "type": "Router", "model": "ISR4331"},
+            {"name": "SW1", "type": "Switch", "model": "2960-24TT"},
+        ],
+        links=[
+            {
+                "from": "R1",
+                "to": "SW1",
+                "media": "eStraightThrough",
+                "ports": ["GigabitEthernet0/0/0", "GigabitEthernet0/1"],
+            }
+        ],
+        capability_tags=["vlan"],
+        topology_tags=["general"],
+        preferred_roles=[],
+        apply_safety_level="acceptance-verified",
+    )
+    candidate = SampleCandidate(sample=sample, capability_score=20, topology_score=10, total_score=30, reasons=["fit"])
+    payload = _candidate_to_dict(
+        candidate,
+        {
+            "preferred_donor_archetypes": ["wireless-heavy"],
+            "topology_archetype": "wireless_branch",
+            "devices": [{"name": "R1"}, {"name": "SW1"}, {"name": "AP1"}, {"name": "TAB1"}],
+            "links": [
+                {"a": {"dev": "R1", "port": "GigabitEthernet0/0/0"}, "b": {"dev": "SW1", "port": "GigabitEthernet0/1"}, "media": "straight-through"},
+                {"a": {"dev": "SW1", "port": "GigabitEthernet0/2"}, "b": {"dev": "AP1", "port": "GigabitEthernet0"}, "media": "straight-through"},
+                {"a": {"dev": "AP1", "port": "Wireless0"}, "b": {"dev": "TAB1", "port": "Wireless0"}, "media": "wireless"},
+            ],
+        },
+    )
+    assert payload["donor_graph_summary"]["required_pair_count"] == 3
+    assert payload["donor_graph_summary"]["reusable_pair_count"] == 1
+    assert payload["donor_graph_summary"]["reusable_pair_coverage"] == 33
+    assert payload["donor_graph_summary"]["layout_reuse_status"] == "weak"
 
 
 def test_preferred_donor_archetypes_for_plan_covers_campus_service_and_wireless() -> None:
@@ -1007,10 +1172,186 @@ def test_filter_candidates_for_blueprint_filters_end_device_mutation_gap() -> No
     )
 
 
+def test_filter_candidates_for_blueprint_filters_archetype_mismatch_with_weak_layout_reuse() -> None:
+    weak_sample = SampleDescriptor(
+        path="weak-archetype.pkt",
+        relative_path="weak-archetype.pkt",
+        version="9.0.0.0810",
+        device_count=2,
+        link_count=1,
+        devices=[
+            {"name": "R1", "type": "Router", "model": "ISR4331"},
+            {"name": "SW1", "type": "Switch", "model": "2960-24TT"},
+        ],
+        links=[
+            {
+                "from": "R1",
+                "to": "SW1",
+                "media": "eStraightThrough",
+                "ports": ["GigabitEthernet0/0/0", "GigabitEthernet0/1"],
+            }
+        ],
+        capability_tags=["vlan"],
+        topology_tags=["general"],
+        preferred_roles=[],
+        apply_safety_level="acceptance-verified",
+    )
+    strong_sample = SampleDescriptor(
+        path="strong-archetype.pkt",
+        relative_path="strong-archetype.pkt",
+        version="9.0.0.0810",
+        device_count=4,
+        link_count=3,
+        devices=[
+            {"name": "R1", "type": "Router", "model": "ISR4331"},
+            {"name": "SW1", "type": "Switch", "model": "2960-24TT"},
+            {"name": "AP1", "type": "LightWeightAccessPoint", "model": "AccessPoint-PT"},
+            {"name": "TAB1", "type": "Tablet", "model": "TabletPC-PT"},
+        ],
+        links=[
+            {"from": "R1", "to": "SW1", "media": "eStraightThrough", "ports": ["GigabitEthernet0/0/0", "GigabitEthernet0/1"]},
+            {"from": "SW1", "to": "AP1", "media": "eStraightThrough", "ports": ["GigabitEthernet0/2", "GigabitEthernet0"]},
+            {"from": "AP1", "to": "TAB1", "media": "wireless", "ports": ["Wireless0", "Wireless0"]},
+        ],
+        capability_tags=["wireless_ap", "wireless_client_association"],
+        topology_tags=["wireless_edge"],
+        preferred_roles=[],
+        wireless_mode_tags=["ap_bridge"],
+        apply_safety_level="acceptance-verified",
+    )
+    candidates = [
+        SampleCandidate(sample=weak_sample, capability_score=20, topology_score=10, total_score=30, reasons=["weak-fit"]),
+        SampleCandidate(sample=strong_sample, capability_score=20, topology_score=10, total_score=30, reasons=["strong-fit"]),
+    ]
+    blueprint = {
+        "preferred_donor_archetypes": ["wireless-heavy"],
+        "capabilities": ["wireless_client_association"],
+        "links": [
+            {"a": {"dev": "R1", "port": "GigabitEthernet0/0/0"}, "b": {"dev": "SW1", "port": "GigabitEthernet0/1"}, "media": "straight-through"},
+            {"a": {"dev": "SW1", "port": "GigabitEthernet0/2"}, "b": {"dev": "AP1", "port": "GigabitEthernet0"}, "media": "straight-through"},
+            {"a": {"dev": "AP1", "port": "Wireless0"}, "b": {"dev": "TAB1", "port": "Wireless0"}, "media": "wireless"},
+        ],
+    }
+    viable, diagnostics = _filter_candidates_for_blueprint(candidates, blueprint)
+    assert [candidate.sample.relative_path for candidate in viable] == ["strong-archetype.pkt"]
+    assert any(
+        "sample archetype does not align with the requested donor shape" in reason
+        for item in diagnostics
+        for reason in item["rejection_reasons"]
+    )
+    assert diagnostics[0]["donor_graph_summary"]["layout_reuse_status"] == "weak"
+
+
+def test_summarize_candidate_pool_reports_counts_and_top_reasons() -> None:
+    summary = _summarize_candidate_pool(
+        [
+            {"status": "filtered", "adjusted_total_score": 4, "donor_graph_fit": {"layout_reuse_score": 0}, "rejection_reasons": ["reason-a", "reason-b"]},
+            {"status": "rejected", "adjusted_total_score": 12, "donor_graph_fit": {"layout_reuse_score": 8}, "rejection_reasons": ["reason-c"]},
+            {"status": "selected", "adjusted_total_score": 20, "donor_graph_fit": {"layout_reuse_score": 21}, "rejection_reasons": []},
+        ],
+        ["campus/core", "service-heavy"],
+    )
+    assert summary["preferred_donor_archetypes"] == ["campus/core", "service-heavy"]
+    assert summary["candidate_counts"] == {"selected": 1, "rejected": 1, "filtered": 1}
+    assert summary["best_adjusted_total_score"] == 20
+    assert summary["best_layout_reuse_score"] == 21
+    assert summary["top_rejection_reasons"] == ["reason-a", "reason-b", "reason-c"]
+
+
+def test_selected_donor_summary_reports_why_selected() -> None:
+    donor_plan = DonorArchetypePlan(
+        compat_donor="donor.pkt",
+        donor_capacity={"devices": 4},
+        kept_devices=["R1", "SW1"],
+        pruned_devices=[],
+        renamed_devices=[],
+        mutation_groups=[],
+        layout_strategy="preserve",
+        selection_reasons=["capability:vlan", "origin:cisco-local"],
+    )
+    summary = _selected_donor_summary(
+        [
+            {
+                "relative_path": "donor.pkt",
+                "origin": "cisco-local",
+                "status": "selected",
+                "reasons": ["capability:vlan"],
+                "sample_archetypes": ["campus/core"],
+                "archetype_match_reasons": ["archetype:campus/core"],
+                "donor_graph_summary": {
+                    "reusable_pair_coverage": 100,
+                    "layout_reuse_status": "strong",
+                },
+                "adjusted_total_score": 18,
+            }
+        ],
+        donor_plan,
+    )
+    assert summary is not None
+    assert summary["relative_path"] == "donor.pkt"
+    assert summary["selection_reasons"] == ["capability:vlan", "origin:cisco-local"]
+    assert any("layout reuse 100% (strong)" == item for item in summary["why_selected"])
+    assert any("archetype match via archetype:campus/core" == item for item in summary["why_selected"])
+
+
+def test_scenario_generate_decision_blocks_acceptance_gated_and_unsupported() -> None:
+    acceptance_gated = _scenario_generate_decision(
+        {
+            "scenario_generate_readiness": {
+                "family": "home_iot",
+                "status": "acceptance_gated",
+            }
+        }
+    )
+    unsupported = _scenario_generate_decision(
+        {
+            "scenario_generate_readiness": {
+                "family": "campus",
+                "status": "unsupported",
+            }
+        }
+    )
+
+    assert acceptance_gated["allow_generate"] is False
+    assert any("acceptance-gated" in item for item in acceptance_gated["blocking_reasons"])
+    assert unsupported["allow_generate"] is False
+    assert any("not generate-ready" in item for item in unsupported["blocking_reasons"])
+
+
+def test_scenario_generate_decision_allows_ready_and_strong_donor_limited() -> None:
+    ready = _scenario_generate_decision(
+        {
+            "scenario_generate_readiness": {
+                "family": "campus",
+                "status": "ready",
+            }
+        }
+    )
+    donor_limited = _scenario_generate_decision(
+        {
+            "scenario_generate_readiness": {
+                "family": "service_heavy",
+                "status": "donor_limited",
+            }
+        },
+        donor_selection_summary={"candidate_counts": {"selected": 1}},
+        selected_donor_summary={
+            "donor_graph_summary": {
+                "layout_reuse_status": "strong",
+                "reusable_pair_coverage": 100,
+            }
+        },
+    )
+
+    assert ready["allow_generate"] is True
+    assert donor_limited["allow_generate"] is True
+
+
 def test_augment_coverage_gap_actions_adds_runtime_and_link_guidance() -> None:
     coverage_gap = {
         "unsupported_capabilities": ["router_on_a_stick"],
         "recommended_next_actions": ["Run explain-plan first."],
+        "scenario_generate_readiness": {"family": "campus", "status": "donor_limited"},
     }
     diagnostics = [
         {
@@ -1024,9 +1365,39 @@ def test_augment_coverage_gap_actions_adds_runtime_and_link_guidance() -> None:
     updated = _augment_coverage_gap_actions(
         coverage_gap,
         donor_diagnostics=diagnostics,
+        donor_selection_summary={
+            "preferred_donor_archetypes": ["campus/core", "service-heavy"],
+            "candidate_counts": {"selected": 0, "rejected": 1, "filtered": 1},
+            "best_layout_reuse_score": 0,
+            "top_rejection_reasons": ["archetype_gap:wireless-heavy", "missing_link_pairs:3"],
+        },
         donor_blocking_reason="Packet Tracer modern codec requires a local Twofish bridge.",
     )
     assert any("PKT_TWOFISH_LIBRARY" in action for action in updated["recommended_next_actions"])
     assert any("link skeleton" in action for action in updated["recommended_next_actions"])
     assert any("ports/media" in action for action in updated["recommended_next_actions"])
     assert any("--blueprint-out" in action for action in updated["recommended_next_actions"])
+    assert any("campus/core, service-heavy" in action for action in updated["recommended_next_actions"])
+    assert any("Simplify the topology" in action for action in updated["recommended_next_actions"])
+    assert any("closer to the requested scenario" in action for action in updated["recommended_next_actions"])
+    assert any("campus/core donor" in action for action in updated["recommended_next_actions"])
+
+
+def test_augment_coverage_gap_actions_adds_service_heavy_and_home_iot_guidance() -> None:
+    service_updated = _augment_coverage_gap_actions(
+        {
+            "unsupported_capabilities": [],
+            "recommended_next_actions": [],
+            "scenario_generate_readiness": {"family": "service_heavy", "status": "acceptance_gated"},
+        }
+    )
+    home_iot_updated = _augment_coverage_gap_actions(
+        {
+            "unsupported_capabilities": [],
+            "recommended_next_actions": [],
+            "scenario_generate_readiness": {"family": "home_iot", "status": "unsupported"},
+        }
+    )
+
+    assert any("required server service family" in action for action in service_updated["recommended_next_actions"])
+    assert any("Home Gateway plus existing IoT registration/control structure" in action for action in home_iot_updated["recommended_next_actions"])

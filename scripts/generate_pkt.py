@@ -246,6 +246,7 @@ def _resolve_remote_sources(
 
 def _candidate_to_dict(candidate: SampleCandidate, blueprint: dict[str, object] | None = None) -> dict[str, object]:
     donor_graph_fit = build_donor_graph_fit(candidate.sample, blueprint)
+    donor_graph_summary = _donor_graph_fit_summary(donor_graph_fit, blueprint)
     acceptance_penalty, acceptance_risk_reasons = _candidate_acceptance_penalty(candidate, blueprint)
     preferred_archetypes = [str(item) for item in list((blueprint or {}).get("preferred_donor_archetypes", [])) if item]
     archetype_match_score, archetype_reasons, sample_archetypes = _candidate_archetype_alignment(
@@ -267,6 +268,7 @@ def _candidate_to_dict(candidate: SampleCandidate, blueprint: dict[str, object] 
         "topology_score": candidate.topology_score,
         "reasons": candidate.reasons[:8],
         "donor_graph_fit": asdict(donor_graph_fit),
+        "donor_graph_summary": donor_graph_summary,
         "preferred_donor_archetypes": preferred_archetypes,
         "sample_archetypes": sample_archetypes,
         "archetype_match_score": archetype_match_score,
@@ -409,6 +411,103 @@ def _candidate_acceptance_penalty(candidate: SampleCandidate, blueprint: dict[st
     return penalty, reasons
 
 
+def _donor_graph_fit_summary(fit, blueprint: dict[str, object] | None = None) -> dict[str, object]:
+    required_pair_count = len(list((blueprint or {}).get("links", [])))
+    effective_required_pairs = len(fit.matched_pairs) + len(fit.missing_pairs)
+    if effective_required_pairs:
+        required_pair_count = effective_required_pairs
+    reusable_pair_count = len(fit.matched_pairs)
+    missing_pair_count = len(fit.missing_pairs)
+    conflict_count = len(fit.port_media_conflicts)
+    if required_pair_count <= 0:
+        reusable_pair_coverage = 100
+    else:
+        reusable_pair_coverage = int(round((reusable_pair_count / required_pair_count) * 100))
+    if required_pair_count <= 0:
+        layout_reuse_status = "not_applicable"
+    elif missing_pair_count == 0 and conflict_count == 0:
+        layout_reuse_status = "strong"
+    elif reusable_pair_count > 0 and reusable_pair_coverage >= 50 and conflict_count <= reusable_pair_count:
+        layout_reuse_status = "partial"
+    else:
+        layout_reuse_status = "weak"
+    return {
+        "required_pair_count": required_pair_count,
+        "reusable_pair_count": reusable_pair_count,
+        "missing_pair_count": missing_pair_count,
+        "conflict_count": conflict_count,
+        "reusable_pair_coverage": reusable_pair_coverage,
+        "layout_reuse_status": layout_reuse_status,
+    }
+
+
+def _summarize_candidate_pool(
+    diagnostics: list[dict[str, object]],
+    preferred_archetypes: list[str] | None = None,
+) -> dict[str, object]:
+    counts = {"selected": 0, "rejected": 0, "filtered": 0}
+    top_rejection_reasons: list[str] = []
+    best_adjusted_score: int | None = None
+    best_layout_reuse_score: int | None = None
+    for item in diagnostics:
+        status = str(item.get("status", "")).strip()
+        if status in counts:
+            counts[status] += 1
+        adjusted_total_score = item.get("adjusted_total_score")
+        if isinstance(adjusted_total_score, int):
+            best_adjusted_score = adjusted_total_score if best_adjusted_score is None else max(best_adjusted_score, adjusted_total_score)
+        donor_graph_fit = item.get("donor_graph_fit", {})
+        layout_reuse_score = donor_graph_fit.get("layout_reuse_score")
+        if isinstance(layout_reuse_score, int):
+            best_layout_reuse_score = layout_reuse_score if best_layout_reuse_score is None else max(best_layout_reuse_score, layout_reuse_score)
+        for reason in item.get("rejection_reasons", []):
+            normalized = str(reason).strip()
+            if normalized and normalized not in top_rejection_reasons:
+                top_rejection_reasons.append(normalized)
+            if len(top_rejection_reasons) >= 5:
+                break
+        if len(top_rejection_reasons) >= 5:
+            continue
+    return {
+        "preferred_donor_archetypes": list(preferred_archetypes or []),
+        "candidate_counts": counts,
+        "best_adjusted_total_score": best_adjusted_score,
+        "best_layout_reuse_score": best_layout_reuse_score,
+        "top_rejection_reasons": top_rejection_reasons,
+    }
+
+
+def _selected_donor_summary(
+    diagnostics: list[dict[str, object]],
+    donor_archetype: DonorArchetypePlan | None = None,
+) -> dict[str, object] | None:
+    selected = next((item for item in diagnostics if item.get("status") == "selected"), None)
+    if selected is None:
+        return None
+    donor_graph_summary = dict(selected.get("donor_graph_summary") or {})
+    summary = {
+        "relative_path": selected.get("relative_path"),
+        "origin": selected.get("origin"),
+        "selection_reasons": list(donor_archetype.selection_reasons if donor_archetype is not None else selected.get("reasons", []))[:8],
+        "sample_archetypes": list(selected.get("sample_archetypes", [])),
+        "archetype_match_reasons": list(selected.get("archetype_match_reasons", [])),
+        "adjusted_total_score": selected.get("adjusted_total_score", selected.get("total_score")),
+        "donor_graph_summary": donor_graph_summary,
+    }
+    reusable_pair_coverage = donor_graph_summary.get("reusable_pair_coverage")
+    layout_reuse_status = donor_graph_summary.get("layout_reuse_status")
+    summary["why_selected"] = [
+        item
+        for item in [
+            f"layout reuse {reusable_pair_coverage}% ({layout_reuse_status})" if reusable_pair_coverage is not None and layout_reuse_status else None,
+            f"archetype match via {', '.join(summary['archetype_match_reasons'])}" if summary["archetype_match_reasons"] else None,
+            f"selection reasons: {', '.join(summary['selection_reasons'][:4])}" if summary["selection_reasons"] else None,
+        ]
+        if item
+    ]
+    return summary
+
+
 def _filter_candidates_for_blueprint(
     candidates: list[SampleCandidate],
     blueprint: dict[str, object] | None,
@@ -421,6 +520,7 @@ def _filter_candidates_for_blueprint(
     filtered_diagnostics: list[dict[str, object]] = []
     for candidate in candidates:
         fit = build_donor_graph_fit(candidate.sample, blueprint)
+        fit_summary = _donor_graph_fit_summary(fit, blueprint)
         acceptance_penalty, penalty_reasons = _candidate_acceptance_penalty(candidate, blueprint)
         adjusted_total_score = candidate.total_score - acceptance_penalty
         preferred_archetypes = [str(item) for item in list(blueprint.get("preferred_donor_archetypes", [])) if item]
@@ -432,6 +532,10 @@ def _filter_candidates_for_blueprint(
         filter_reasons: list[str] = []
         if required_link_count and len(fit.missing_pairs) >= required_link_count and not fit.matched_pairs:
             filter_reasons.append("donor graph has no reusable link pairs for the requested topology")
+        if fit_summary["required_pair_count"] >= 3 and fit_summary["reusable_pair_coverage"] < 40 and fit.layout_reuse_score <= 0:
+            filter_reasons.append("sample reuses too little of the requested link skeleton")
+        if preferred_archetypes and not archetype_match_score and fit_summary["layout_reuse_status"] == "weak":
+            filter_reasons.append("sample archetype does not align with the requested donor shape")
         if "wireless_client_association" in required_capabilities and "wireless_client_association" not in supported_capabilities:
             filter_reasons.append("sample lacks donor-backed support for requested wireless client association")
         if "wireless_mutation" in required_capabilities and "wireless_mutation" not in supported_capabilities:
@@ -449,6 +553,7 @@ def _filter_candidates_for_blueprint(
                     "adjusted_total_score": adjusted_total_score,
                     "reasons": candidate.reasons[:8],
                     "donor_graph_fit": asdict(fit),
+                    "donor_graph_summary": fit_summary,
                     "preferred_donor_archetypes": preferred_archetypes,
                     "sample_archetypes": sample_archetypes,
                     "archetype_match_score": archetype_match_score,
@@ -513,12 +618,14 @@ def _evaluate_donor_prune_candidates(
     diagnostics.extend(filtered_diagnostics)
     for donor_candidate in viable_candidates:
         donor_path = Path(donor_candidate.sample.path)
+        donor_graph_fit = build_donor_graph_fit(donor_candidate.sample, blueprint)
         diagnostic: dict[str, object] = {
             "relative_path": donor_candidate.sample.relative_path,
             "origin": donor_candidate.sample.origin,
             "total_score": donor_candidate.total_score,
             "reasons": donor_candidate.reasons[:8],
-            "donor_graph_fit": asdict(build_donor_graph_fit(donor_candidate.sample, blueprint)),
+            "donor_graph_fit": asdict(donor_graph_fit),
+            "donor_graph_summary": _donor_graph_fit_summary(donor_graph_fit, blueprint),
         }
         try:
             adapted_plan, archetype_plan = _build_donor_prune_plan_for_donor(plan, blueprint, donor_path)
@@ -2164,6 +2271,7 @@ def _augment_coverage_gap_actions(
     coverage_gap: dict[str, object],
     *,
     donor_diagnostics: list[dict[str, object]] | None = None,
+    donor_selection_summary: dict[str, object] | None = None,
     donor_blocking_reason: str | None = None,
 ) -> dict[str, object]:
     updated = copy.deepcopy(coverage_gap)
@@ -2171,6 +2279,7 @@ def _augment_coverage_gap_actions(
     if donor_blocking_reason and "Twofish" in donor_blocking_reason:
         actions.append("Configure PKT_TWOFISH_LIBRARY and use Python 3.14 so Packet Tracer 9.0 donor files can be decoded.")
     diagnostics = donor_diagnostics or []
+    selection_summary = donor_selection_summary or {}
     if any(
         any("cannot create new donor link pair" in str(reason) or "requires donor link reuse" in str(reason) for reason in item.get("rejection_reasons", []))
         for item in diagnostics
@@ -2181,10 +2290,93 @@ def _augment_coverage_gap_actions(
         for item in diagnostics
     ):
         actions.append("Adjust requested ports/media or select a donor whose existing cable and port layout already matches the prompt.")
+    preferred_archetypes = [str(item) for item in selection_summary.get("preferred_donor_archetypes", []) if str(item).strip()]
+    candidate_counts = selection_summary.get("candidate_counts", {})
+    if preferred_archetypes and any(int(candidate_counts.get(key, 0)) > 0 for key in ["filtered", "rejected"]):
+        actions.append(
+            "Prefer a donor whose archetype matches the prompt shape: "
+            + ", ".join(preferred_archetypes)
+            + "."
+        )
+    best_layout_reuse_score = selection_summary.get("best_layout_reuse_score")
+    if isinstance(best_layout_reuse_score, int) and best_layout_reuse_score <= 0:
+        actions.append("Simplify the topology or import a donor with a closer reusable layout skeleton before generating.")
+    top_rejection_reasons = [str(item) for item in selection_summary.get("top_rejection_reasons", []) if str(item).strip()]
+    if any("archetype_gap:" in reason or "archetype does not align" in reason for reason in top_rejection_reasons):
+        actions.append("Re-run with a donor family closer to the requested scenario, or reduce the prompt to the donor's existing archetype.")
     if updated.get("unsupported_capabilities"):
         actions.append("Use --blueprint-out to review unsupported capabilities, then import a donor that explicitly covers them.")
+    scenario_readiness = updated.get("scenario_generate_readiness") or {}
+    scenario_family = str(scenario_readiness.get("family") or "").strip()
+    scenario_status = str(scenario_readiness.get("status") or "").strip()
+    if scenario_family == "campus" and scenario_status in {"donor_limited", "acceptance_gated", "unsupported"}:
+        actions.append("For campus prompts, prefer a campus/core donor with reusable router-switch-management skeleton before generating.")
+    if scenario_family == "service_heavy" and scenario_status in {"donor_limited", "acceptance_gated", "unsupported"}:
+        actions.append("For service-heavy prompts, prefer a donor that already contains the required server service family and core server layout.")
+    if scenario_family == "home_iot" and scenario_status in {"donor_limited", "acceptance_gated", "unsupported"}:
+        actions.append("For home IoT prompts, prefer a donor with Home Gateway plus existing IoT registration/control structure.")
     updated["recommended_next_actions"] = list(dict.fromkeys(actions))
     return updated
+
+
+def _scenario_generate_decision(
+    coverage_gap: dict[str, object],
+    *,
+    donor_selection_summary: dict[str, object] | None = None,
+    selected_donor_summary: dict[str, object] | None = None,
+) -> dict[str, object]:
+    readiness = dict(coverage_gap.get("scenario_generate_readiness") or {})
+    family = str(readiness.get("family") or "").strip()
+    status = str(readiness.get("status") or "").strip()
+    decision = {
+        "family": family or None,
+        "status": status or "not_classified",
+        "allow_generate": True,
+        "blocking_reasons": [],
+    }
+    if not family or status in {"", "not_classified", "partial", "ready"}:
+        return decision
+
+    family_label_map = {
+        "campus": "campus/core",
+        "service_heavy": "service-heavy",
+        "home_iot": "home IoT",
+    }
+    family_label = family_label_map.get(family, family)
+    blocking_reasons: list[str] = []
+
+    if status == "unsupported":
+        blocking_reasons.append(
+            f"Scenario '{family_label}' is not generate-ready in safe-open mode because critical capability coverage is still missing."
+        )
+    elif status == "acceptance_gated":
+        blocking_reasons.append(
+            f"Scenario '{family_label}' is still acceptance-gated; use edit/inventory flow or donor-backed validation before prompt generate."
+        )
+    elif status == "donor_limited":
+        summary = donor_selection_summary or {}
+        selected = selected_donor_summary or {}
+        selected_count = int(summary.get("candidate_counts", {}).get("selected", 0) or 0)
+        if not selected and selected_count <= 0:
+            blocking_reasons.append(
+                f"Scenario '{family_label}' depends on donor-limited safe-open coverage, but no compatible donor was selected."
+            )
+        donor_graph_summary = dict(selected.get("donor_graph_summary") or {})
+        layout_status = str(donor_graph_summary.get("layout_reuse_status") or "").strip()
+        pair_coverage = donor_graph_summary.get("reusable_pair_coverage")
+        if layout_status == "weak":
+            blocking_reasons.append(
+                f"Scenario '{family_label}' donor selection is too weak for safe-open generate; choose a donor with stronger reusable layout skeleton."
+            )
+        if isinstance(pair_coverage, int) and pair_coverage <= 0:
+            blocking_reasons.append(
+                f"Scenario '{family_label}' donor selection has no reusable link-pair coverage for prompt generate."
+            )
+
+    if blocking_reasons:
+        decision["allow_generate"] = False
+        decision["blocking_reasons"] = blocking_reasons
+    return decision
 
 
 def prepare_generation_plan(plan: IntentPlan) -> IntentPlan:
@@ -2342,11 +2534,20 @@ def generate_from_prompt(
         coverage_gap,
         donor_blocking_reason=inspect_packet_tracer_compatibility_donor().blocking_reason,
     )
+    scenario_generate_decision = _scenario_generate_decision(coverage_gap)
     prepared_plan.remote_search_results = remote_results
     prepared_plan.capability_matrix_hits = matrix_hits
     prepared_plan.coverage_gap_report = coverage_gap
     prepared_plan.unsupported_capabilities = list(coverage_gap.get("unsupported_capabilities", []))
     prepared_plan.blueprint_plan = blueprint_plan
+    if not scenario_generate_decision["allow_generate"]:
+        for reason in scenario_generate_decision["blocking_reasons"]:
+            if reason not in prepared_plan.blocking_gaps:
+                prepared_plan.blocking_gaps.append(reason)
+        if blueprint_out_path is not None:
+            blueprint_out_path.parent.mkdir(parents=True, exist_ok=True)
+            blueprint_out_path.write_text(json.dumps(blueprint_plan, indent=2, ensure_ascii=False), encoding="utf-8")
+        raise PlanningError("Scenario is not generate-ready in safe-open mode; generation was skipped.", prepared_plan)
     try:
         adapted_plan, donor_archetype = _build_donor_prune_plan(prepared_plan, blueprint, resolved_donor_roots)
     except PlanningError as exc:
@@ -2457,6 +2658,9 @@ def explain_plan(
         ],
         "donor_candidate_diagnostics": [],
         "donor_rejection_reasons": [],
+        "donor_selection_summary": _summarize_candidate_pool([], _preferred_donor_archetypes_for_plan(plan, topology_tags)),
+        "selected_donor_summary": None,
+        "scenario_generate_decision": None,
         "remote_search_results": remote_results,
     }
     cisco_ranked, curated_ranked, _ = _rank_generation_donors(plan, topology_tags, resolved_donor_roots)
@@ -2471,6 +2675,7 @@ def explain_plan(
         coverage_gap,
         donor_blocking_reason=donor_details.blocking_reason,
     )
+    result["scenario_generate_decision"] = _scenario_generate_decision(coverage_gap)
     plan.capability_matrix_hits = matrix_hits
     plan.coverage_gap_report = coverage_gap
     plan.unsupported_capabilities = list(coverage_gap.get("unsupported_capabilities", []))
@@ -2511,8 +2716,13 @@ def explain_plan(
         coverage_gap = _augment_coverage_gap_actions(
             coverage_gap,
             donor_diagnostics=diagnostics,
+            donor_selection_summary=_summarize_candidate_pool(
+                diagnostics,
+                [str(item) for item in list(blueprint.get("preferred_donor_archetypes", [])) if item],
+            ),
             donor_blocking_reason=donor_details.blocking_reason,
         )
+        result["scenario_generate_decision"] = _scenario_generate_decision(coverage_gap)
         prepared.coverage_gap_report = coverage_gap
         result["donor_candidate_diagnostics"] = diagnostics[:10]
         result["donor_rejection_reasons"] = [
@@ -2523,6 +2733,10 @@ def explain_plan(
             for item in diagnostics
             if item.get("status") == "rejected" and item.get("rejection_reasons")
         ][:10]
+        result["donor_selection_summary"] = _summarize_candidate_pool(
+            diagnostics,
+            [str(item) for item in list(blueprint.get("preferred_donor_archetypes", [])) if item],
+        )
         try:
             if evaluation is None:
                 raise PlanningError("Prompt plan is incomplete; generation was skipped.", prepared)
@@ -2563,6 +2777,12 @@ def explain_plan(
                     "visual_runtime_status": coherence_result.visual_runtime_status,
                     "blocking_issues": [*workspace_result.blocking_issues, *coherence_result.blocking_issues],
                 }
+            result["selected_donor_summary"] = _selected_donor_summary(diagnostics, donor_archetype)
+            result["scenario_generate_decision"] = _scenario_generate_decision(
+                coverage_gap,
+                donor_selection_summary=result["donor_selection_summary"],
+                selected_donor_summary=result["selected_donor_summary"],
+            )
         except PlanningError as exc:
             if result["donor_rejection_reasons"]:
                 for item in result["donor_rejection_reasons"]:

@@ -113,6 +113,8 @@ class CoverageGapReport:
     requires_curated_donor: list[str]
     requires_manual_acceptance: list[str]
     capability_statuses: list[dict[str, object]]
+    scenario_family: str | None = None
+    scenario_generate_readiness: dict[str, object] = field(default_factory=dict)
     recommended_next_actions: list[str] = field(default_factory=list)
 
 
@@ -207,7 +209,7 @@ def _expanded_sample_capabilities(sample: SampleDescriptor, device_families: lis
         capabilities.add("wireless_client_association")
     if iot_roles:
         capabilities.add("iot")
-    if "thing" in iot_roles and "server" in iot_roles:
+    if "thing" in iot_roles and ("server" in iot_roles or "gateway" in iot_roles):
         capabilities.add("iot_registration")
     if "thing" in iot_roles and ("gateway" in iot_roles or "server" in iot_roles):
         capabilities.add("iot_control")
@@ -253,6 +255,81 @@ def build_capability_matrix(samples: list[SampleDescriptor]) -> list[CapabilityM
 def _requested_device_families(plan: IntentPlan) -> list[str]:
     families = {_device_family_for_type(device_type) for device_type, count in plan.device_requirements.items() if count}
     return sorted(families)
+
+
+def _scenario_family_for_plan(plan: IntentPlan, requested_families: list[str]) -> str | None:
+    capabilities = set(plan.capabilities)
+    requested_services = {str(service) for service in plan.service_requirements.get("services", []) if service}
+    if capabilities & {"iot", "iot_registration", "iot_control"} or {"iot devices", "home/wireless routers"} & set(requested_families):
+        return "home_iot"
+    if (
+        requested_services & {"dns", "dhcp", "http", "https", "ftp", "tftp", "email", "syslog", "aaa", "ntp"}
+        or capabilities & {"server_dns", "server_dhcp", "server_http", "server_https", "server_ftp", "server_tftp", "server_email", "server_syslog", "server_aaa"}
+        or "servers" in requested_families
+    ) and not (plan.department_groups or {"switches", "multilayer switches"} & set(requested_families) and capabilities & {"vlan", "router_on_a_stick", "management_vlan", "telnet"}):
+        return "service_heavy"
+    if (
+        plan.department_groups
+        or {"switches", "multilayer switches"} & set(requested_families)
+        or capabilities & {"vlan", "router_on_a_stick", "management_vlan", "telnet", "acl", "nat", "pat"}
+    ):
+        return "campus"
+    return None
+
+
+SCENARIO_CAPABILITY_SETS = {
+    "campus": {"router_on_a_stick", "trunk", "access_port", "management_vlan", "telnet", "verification", "acl", "nat"},
+    "service_heavy": {"server_dns", "server_dhcp", "server_http", "server_https", "server_ftp", "server_tftp", "server_email", "server_syslog", "server_aaa", "ntp"},
+    "home_iot": {"iot", "iot_registration", "iot_control", "wireless_ap", "wireless_mutation"},
+}
+
+
+def _scenario_generate_readiness(
+    scenario_family: str | None,
+    capability_statuses: list[dict[str, object]],
+    unsupported_capabilities: list[str],
+    requires_curated_donor: list[str],
+    requires_manual_acceptance: list[str],
+) -> dict[str, object]:
+    if not scenario_family:
+        return {
+            "family": None,
+            "status": "not_classified",
+            "critical_capabilities": [],
+            "missing_critical_capabilities": [],
+            "reasons": [],
+        }
+    critical_set = SCENARIO_CAPABILITY_SETS.get(scenario_family, set())
+    status_by_capability = {str(item.get("capability")): item for item in capability_statuses}
+    relevant_capabilities = [cap for cap in status_by_capability if cap in critical_set]
+    missing_critical = [cap for cap in unsupported_capabilities if cap in critical_set]
+    donor_limited_critical = [cap for cap in requires_curated_donor if cap in critical_set]
+    gated_critical = [cap for cap in requires_manual_acceptance if cap in critical_set and cap not in donor_limited_critical]
+    reasons: list[str] = []
+    if missing_critical:
+        reasons.append(f"missing critical capability coverage: {', '.join(missing_critical)}")
+    if donor_limited_critical:
+        reasons.append(f"critical capabilities depend on donor-limited safe-open coverage: {', '.join(donor_limited_critical)}")
+    if gated_critical:
+        reasons.append(f"critical capabilities remain acceptance-gated: {', '.join(gated_critical)}")
+    if missing_critical:
+        status = "unsupported"
+    elif donor_limited_critical:
+        status = "donor_limited"
+    elif gated_critical:
+        status = "acceptance_gated"
+    elif relevant_capabilities:
+        status = "ready"
+    else:
+        status = "partial"
+        reasons.append("scenario family is recognized, but no critical capability set was requested explicitly.")
+    return {
+        "family": scenario_family,
+        "status": status,
+        "critical_capabilities": relevant_capabilities,
+        "missing_critical_capabilities": missing_critical,
+        "reasons": reasons,
+    }
 
 
 def _provider_families_for_capability(capability: str, requested_families: list[str]) -> set[str]:
@@ -415,8 +492,16 @@ def build_coverage_gap_report(
 
     requires_curated_donor = sorted(dict.fromkeys(requires_curated_donor))
     requires_manual_acceptance = sorted(dict.fromkeys(requires_manual_acceptance))
+    scenario_family = _scenario_family_for_plan(plan, requested_families)
     if selected_donor is None and plan.blocked_mutations:
         requires_manual_acceptance = sorted(dict.fromkeys([*requires_manual_acceptance, *plan.blocked_mutations]))
+    scenario_generate_readiness = _scenario_generate_readiness(
+        scenario_family,
+        capability_statuses,
+        unsupported_capabilities,
+        requires_curated_donor,
+        requires_manual_acceptance,
+    )
     recommended_next_actions: list[str] = []
     if unsupported_capabilities or unsupported_families:
         recommended_next_actions.append(
@@ -438,6 +523,8 @@ def build_coverage_gap_report(
         requires_curated_donor=requires_curated_donor,
         requires_manual_acceptance=requires_manual_acceptance,
         capability_statuses=capability_statuses,
+        scenario_family=scenario_family,
+        scenario_generate_readiness=scenario_generate_readiness,
         recommended_next_actions=recommended_next_actions,
     )
 
@@ -465,7 +552,7 @@ def build_inventory_capability_report(payload: dict[str, Any]) -> dict[str, obje
     if payload.get("iot"):
         capabilities.add("iot")
         iot_roles = {str(entry.get("role", "")).strip() for entry in payload["iot"].values() if str(entry.get("role", "")).strip()}
-        if "thing" in iot_roles and "server" in iot_roles:
+        if "thing" in iot_roles and ("gateway" in iot_roles or "server" in iot_roles):
             capabilities.add("iot_registration")
         if "thing" in iot_roles and ("gateway" in iot_roles or "server" in iot_roles):
             capabilities.add("iot_control")
