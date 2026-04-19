@@ -9,7 +9,10 @@
   },
   "artifact_paths": {
     "inventory_json": "examples/home_iot_cli_edit_v1.inventory.json",
-    "screenshot": null
+    "screenshot": "examples/screenshots/home_iot_cli_edit_v1.png",
+    "screenshots": [
+      "examples/screenshots/home_iot_cli_edit_v1.png"
+    ]
   },
   "topology_summary": {
     "gateway": "Home Gateway0",

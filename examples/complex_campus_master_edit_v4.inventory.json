@@ -8,6 +8,9 @@
   },
   "artifact_paths": {
     "screenshot": "examples/screenshots/complex_campus_master_edit_v4.png",
+    "screenshots": [
+      "examples/screenshots/complex_campus_master_edit_v4.png"
+    ],
     "inventory_json": "examples/complex_campus_master_edit_v4.inventory.json"
   },
   "topology_summary": {

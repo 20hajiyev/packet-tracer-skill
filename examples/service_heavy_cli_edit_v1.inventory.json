@@ -9,7 +9,13 @@
   },
   "artifact_paths": {
     "inventory_json": "examples/service_heavy_cli_edit_v1.inventory.json",
-    "screenshot": null
+    "screenshot": "examples/screenshots/service_heavy_cli_edit_v1.png",
+    "screenshots": [
+      "examples/screenshots/service_heavy_cli_edit_v1.png",
+      "examples/screenshots/service_heavy_cli_edit_v1_dhcp.png",
+      "examples/screenshots/service_heavy_cli_edit_v1_dns.png",
+      "examples/screenshots/service_heavy_cli_edit_v1_ftp.png"
+    ]
   },
   "topology_summary": {
     "core_server": "Server0",

@@ -15,7 +15,12 @@
         "wireless_mutation"
       ],
       "inventory_json": "examples/complex_campus_master_edit_v4.inventory.json",
+      "screenshots": [
+        "examples/screenshots/complex_campus_master_edit_v4.png"
+      ],
+      "screenshot_count": 1,
       "screenshot": "examples/screenshots/complex_campus_master_edit_v4.png",
+      "detail_images": [],
       "preview": "examples/previews/complex_campus_master_edit_v4.svg",
       "image": "examples/screenshots/complex_campus_master_edit_v4.png"
     },
@@ -30,9 +35,14 @@
         "wireless_ap"
       ],
       "inventory_json": "examples/home_iot_cli_edit_v1.inventory.json",
-      "screenshot": null,
+      "screenshots": [
+        "examples/screenshots/home_iot_cli_edit_v1.png"
+      ],
+      "screenshot_count": 1,
+      "screenshot": "examples/screenshots/home_iot_cli_edit_v1.png",
+      "detail_images": [],
       "preview": "examples/previews/home_iot_cli_edit_v1.svg",
-      "image": "examples/previews/home_iot_cli_edit_v1.svg"
+      "image": "examples/screenshots/home_iot_cli_edit_v1.png"
     },
     {
       "name": "service_heavy_cli_edit_v1",
@@ -48,9 +58,21 @@
         "server_aaa"
       ],
       "inventory_json": "examples/service_heavy_cli_edit_v1.inventory.json",
-      "screenshot": null,
+      "screenshots": [
+        "examples/screenshots/service_heavy_cli_edit_v1.png",
+        "examples/screenshots/service_heavy_cli_edit_v1_dhcp.png",
+        "examples/screenshots/service_heavy_cli_edit_v1_dns.png",
+        "examples/screenshots/service_heavy_cli_edit_v1_ftp.png"
+      ],
+      "screenshot_count": 4,
+      "screenshot": "examples/screenshots/service_heavy_cli_edit_v1.png",
+      "detail_images": [
+        "examples/screenshots/service_heavy_cli_edit_v1_dhcp.png",
+        "examples/screenshots/service_heavy_cli_edit_v1_dns.png",
+        "examples/screenshots/service_heavy_cli_edit_v1_ftp.png"
+      ],
       "preview": "examples/previews/service_heavy_cli_edit_v1.svg",
-      "image": "examples/previews/service_heavy_cli_edit_v1.svg"
+      "image": "examples/screenshots/service_heavy_cli_edit_v1.png"
     }
   ]
 }

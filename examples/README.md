@@ -6,6 +6,8 @@ Policy:
 - generated `.pkt` and `.xml` files stay gitignored
 - public examples should be sanitized JSON or markdown summaries
 - if you want to publish a lab sample, prefer `--inventory --inventory-out` and commit the resulting JSON
+- real Packet Tracer screenshots can be committed under `examples/screenshots/`
+- examples may have one primary screenshot plus additional detail screenshots
 
 Example command:
 
@@ -22,8 +24,14 @@ Current curated example:
 Additional curated examples:
 - `home_iot_cli_edit_v1.inventory.json`
   Home gateway and IoT registration example focused on gateway-backed device onboarding.
+- `screenshots/home_iot_cli_edit_v1.png`
+  Topology snapshot for the Home IoT example.
 - `service_heavy_cli_edit_v1.inventory.json`
   Service-heavy server example focused on DNS, DHCP, FTP, email, syslog, AAA, and related service metadata.
+- `screenshots/service_heavy_cli_edit_v1.png`
+  Topology snapshot for the Service Heavy example.
+- `screenshots/service_heavy_cli_edit_v1_*.png`
+  Additional service detail screenshots for DHCP, DNS, and FTP views.
 - `index.json`
   Lightweight gallery index for curated example artifacts.
 
@@ -37,7 +45,7 @@ Generated outputs:
 - `index.json`
   Machine-readable curated example index.
 - `gallery.md`
-  Human-readable markdown gallery generated from the same source.
+  Human-readable markdown gallery generated from the same source, including extra detail links when present.
 - `previews/*.svg`
   Generated fallback preview images for examples that do not yet have real Packet Tracer screenshots.
 

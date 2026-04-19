@@ -22,12 +22,27 @@ def test_build_examples_index_detects_existing_screenshot() -> None:
     campus = next(entry for entry in payload["curated_examples"] if entry["name"] == "complex_campus_master_edit_v4")
     assert campus["screenshot"] == "examples/screenshots/complex_campus_master_edit_v4.png"
     assert campus["image"] == "examples/screenshots/complex_campus_master_edit_v4.png"
+    assert campus["screenshots"] == ["examples/screenshots/complex_campus_master_edit_v4.png"]
+    assert campus["screenshot_count"] == 1
+    assert campus["detail_images"] == []
     assert campus["capabilities"]
 
     home_iot = next(entry for entry in payload["curated_examples"] if entry["name"] == "home_iot_cli_edit_v1")
-    assert home_iot["screenshot"] is None
+    assert home_iot["screenshot"] == "examples/screenshots/home_iot_cli_edit_v1.png"
+    assert home_iot["screenshots"] == ["examples/screenshots/home_iot_cli_edit_v1.png"]
+    assert home_iot["screenshot_count"] == 1
     assert home_iot["preview"] == "examples/previews/home_iot_cli_edit_v1.svg"
-    assert home_iot["image"] == "examples/previews/home_iot_cli_edit_v1.svg"
+    assert home_iot["image"] == "examples/screenshots/home_iot_cli_edit_v1.png"
+
+    service_heavy = next(entry for entry in payload["curated_examples"] if entry["name"] == "service_heavy_cli_edit_v1")
+    assert service_heavy["screenshot"] == "examples/screenshots/service_heavy_cli_edit_v1.png"
+    assert service_heavy["screenshot_count"] == 4
+    assert service_heavy["detail_images"] == [
+        "examples/screenshots/service_heavy_cli_edit_v1_dhcp.png",
+        "examples/screenshots/service_heavy_cli_edit_v1_dns.png",
+        "examples/screenshots/service_heavy_cli_edit_v1_ftp.png",
+    ]
+    assert service_heavy["image"] == "examples/screenshots/service_heavy_cli_edit_v1.png"
 
 
 def test_checked_in_examples_index_matches_builder() -> None:
@@ -45,5 +60,8 @@ def test_examples_gallery_markdown_contains_curated_entries() -> None:
     assert "Service Heavy" in gallery
     assert "screenshots/complex_campus_master_edit_v4.png" in gallery
     assert "complex_campus_master_edit_v4.inventory.json" in gallery
-    assert "[preview](previews/home_iot_cli_edit_v1.svg)" in gallery
-    assert "[preview](previews/service_heavy_cli_edit_v1.svg)" in gallery
+    assert "[screenshot](screenshots/home_iot_cli_edit_v1.png)" in gallery
+    assert "[screenshot](screenshots/service_heavy_cli_edit_v1.png)" in gallery
+    assert "extra visuals: [detail 1](screenshots/service_heavy_cli_edit_v1_dhcp.png); [detail 2](screenshots/service_heavy_cli_edit_v1_dns.png)" in gallery
+    assert "[detail 3](screenshots/service_heavy_cli_edit_v1_ftp.png)" in gallery
+    assert "Pending Screenshots" not in gallery

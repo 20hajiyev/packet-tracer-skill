@@ -65,11 +65,17 @@ def _manifest_files() -> list[Path]:
     )
 
 
-def _detect_screenshot(example_name: str) -> str | None:
-    candidate = SCREENSHOTS_DIR / f"{example_name}.png"
-    if candidate.exists():
-        return candidate.relative_to(ROOT).as_posix()
-    return None
+def _detect_screenshots(example_name: str) -> list[str]:
+    screenshots: list[Path] = []
+    primary = SCREENSHOTS_DIR / f"{example_name}.png"
+    if primary.exists():
+        screenshots.append(primary)
+
+    for candidate in sorted(SCREENSHOTS_DIR.glob(f"{example_name}_*.png")):
+        if candidate not in screenshots:
+            screenshots.append(candidate)
+
+    return [path.relative_to(ROOT).as_posix() for path in screenshots]
 
 
 def _preview_path(example_name: str) -> Path:
@@ -170,8 +176,10 @@ def _build_entry(manifest_path: Path) -> dict[str, object]:
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     name = str(payload["example_name"])
     family = str(payload.get("scenario_family") or payload.get("topology_summary", {}).get("network_style") or "general")
-    screenshot = _detect_screenshot(name)
+    screenshots = _detect_screenshots(name)
     preview = _write_preview(manifest_path)
+    screenshot = screenshots[0] if screenshots else None
+    detail_images = screenshots[1:] if len(screenshots) > 1 else []
     return {
         "name": name,
         "title": TITLE_BY_FAMILY.get(family, name.replace("_", " ").title()),
@@ -179,7 +187,10 @@ def _build_entry(manifest_path: Path) -> dict[str, object]:
         "summary": SUMMARY_BY_FAMILY.get(family, f"Curated {family} example manifest."),
         "capabilities": CAPABILITIES_BY_FAMILY.get(family, []),
         "inventory_json": manifest_path.relative_to(ROOT).as_posix(),
+        "screenshots": screenshots,
+        "screenshot_count": len(screenshots),
         "screenshot": screenshot,
+        "detail_images": detail_images,
         "preview": preview,
         "image": screenshot or preview,
     }
@@ -213,6 +224,24 @@ def build_examples_gallery_markdown(payload: dict[str, object]) -> str:
             f"| {entry['title']} | `{entry['scenario_family']}` | {capabilities} | {image} | {inventory} |"
         )
         lines.append(f"|  |  | {entry['summary']} |  |  |")
+        detail_images = [
+            f"[detail {index}]({Path(path).relative_to('examples').as_posix()})"
+            for index, path in enumerate(entry.get("detail_images") or [], start=1)
+        ]
+        if detail_images:
+            lines.append(f"|  |  | extra visuals: {'; '.join(detail_images)} |  |  |")
+
+    missing = [entry for entry in payload["curated_examples"] if not entry.get("screenshots")]
+    if missing:
+        lines.extend(
+            [
+                "",
+                "### Pending Screenshots",
+                "",
+            ]
+        )
+        for entry in missing:
+            lines.append(f"- `{entry['name']}` currently uses generated preview fallback.")
     lines.append("")
     return "\n".join(lines)
 
