@@ -37,4 +37,8 @@ def test_examples_gallery_markdown_contains_curated_entries() -> None:
     assert "Complex Campus" in gallery
     assert "Home IoT" in gallery
     assert "Service Heavy" in gallery
-    assert "examples/screenshots/complex_campus_master_edit_v4.png" in gallery
+    assert "screenshots/complex_campus_master_edit_v4.png" in gallery
+    assert "complex_campus_master_edit_v4.inventory.json" in gallery
+    assert "### Pending Screenshots" in gallery
+    assert "`home_iot_cli_edit_v1`" in gallery
+    assert "`service_heavy_cli_edit_v1`" in gallery

@@ -89,6 +89,7 @@ def build_examples_index() -> dict[str, object]:
 
 
 def build_examples_gallery_markdown(payload: dict[str, object]) -> str:
+    pending_screenshots: list[str] = []
     lines = [
         "## Curated Example Gallery",
         "",
@@ -96,13 +97,30 @@ def build_examples_gallery_markdown(payload: dict[str, object]) -> str:
         "| --- | --- | --- | --- | --- |",
     ]
     for entry in payload["curated_examples"]:
-        screenshot = f"[image]({entry['screenshot']})" if entry.get("screenshot") else "pending"
-        inventory = f"[manifest]({entry['inventory_json']})"
+        screenshot_path = entry.get("screenshot")
+        if screenshot_path:
+            screenshot_rel = Path(str(screenshot_path)).relative_to("examples").as_posix()
+            screenshot = f"[image]({screenshot_rel})"
+        else:
+            screenshot = "pending"
+            pending_screenshots.append(str(entry["name"]))
+        inventory_rel = Path(str(entry["inventory_json"])).relative_to("examples").as_posix()
+        inventory = f"[manifest]({inventory_rel})"
         capabilities = ", ".join(entry.get("capabilities") or [])
         lines.append(
             f"| {entry['title']} | `{entry['scenario_family']}` | {capabilities} | {screenshot} | {inventory} |"
         )
         lines.append(f"|  |  | {entry['summary']} |  |  |")
+    if pending_screenshots:
+        lines.extend(
+            [
+                "",
+                "### Pending Screenshots",
+                "",
+            ]
+        )
+        for name in pending_screenshots:
+            lines.append(f"- `{name}`")
     lines.append("")
     return "\n".join(lines)
 
