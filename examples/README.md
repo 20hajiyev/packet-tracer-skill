@@ -38,6 +38,8 @@ Generated outputs:
   Machine-readable curated example index.
 - `gallery.md`
   Human-readable markdown gallery generated from the same source.
+- `previews/*.svg`
+  Generated fallback preview images for examples that do not yet have real Packet Tracer screenshots.
 
 Gallery families:
 - `campus`

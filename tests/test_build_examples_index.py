@@ -21,7 +21,13 @@ def test_build_examples_index_detects_existing_screenshot() -> None:
     payload = build_examples_index()
     campus = next(entry for entry in payload["curated_examples"] if entry["name"] == "complex_campus_master_edit_v4")
     assert campus["screenshot"] == "examples/screenshots/complex_campus_master_edit_v4.png"
+    assert campus["image"] == "examples/screenshots/complex_campus_master_edit_v4.png"
     assert campus["capabilities"]
+
+    home_iot = next(entry for entry in payload["curated_examples"] if entry["name"] == "home_iot_cli_edit_v1")
+    assert home_iot["screenshot"] is None
+    assert home_iot["preview"] == "examples/previews/home_iot_cli_edit_v1.svg"
+    assert home_iot["image"] == "examples/previews/home_iot_cli_edit_v1.svg"
 
 
 def test_checked_in_examples_index_matches_builder() -> None:
@@ -39,6 +45,5 @@ def test_examples_gallery_markdown_contains_curated_entries() -> None:
     assert "Service Heavy" in gallery
     assert "screenshots/complex_campus_master_edit_v4.png" in gallery
     assert "complex_campus_master_edit_v4.inventory.json" in gallery
-    assert "### Pending Screenshots" in gallery
-    assert "`home_iot_cli_edit_v1`" in gallery
-    assert "`service_heavy_cli_edit_v1`" in gallery
+    assert "[preview](previews/home_iot_cli_edit_v1.svg)" in gallery
+    assert "[preview](previews/service_heavy_cli_edit_v1.svg)" in gallery
