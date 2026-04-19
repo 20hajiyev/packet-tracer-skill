@@ -5,6 +5,10 @@
     "commit_pkt_binary": false,
     "commit_inventory_json": true
   },
+  "artifact_paths": {
+    "screenshot": "examples/screenshots/complex_campus_master_edit_v4.png",
+    "inventory_json": "examples/complex_campus_master_edit_v4.inventory.json"
+  },
   "topology_summary": {
     "network_style": "campus",
     "core_router": "Router0",

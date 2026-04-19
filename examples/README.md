@@ -16,3 +16,5 @@ python .\scripts\generate_pkt.py --inventory .\output\complex_campus_master_edit
 Current curated example:
 - `complex_campus_master_edit_v4.inventory.json`
   Donor-backed complex campus edit showing management VLAN, Telnet, ACL, server services, and wireless updates without publishing the binary `.pkt` itself.
+- `screenshots/complex_campus_master_edit_v4.png`
+  Visual snapshot of the same lab opened inside Cisco Packet Tracer.

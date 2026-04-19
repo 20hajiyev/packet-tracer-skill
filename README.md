@@ -429,7 +429,7 @@ Read `scripts/vendor/README.md` for local setup.
 
 Generated campus topology opened in Cisco Packet Tracer:
 
-![Packet Tracer topology](docs/screenshots/packet-tracer-topology-cropped.png)
+![Packet Tracer topology](examples/screenshots/complex_campus_master_edit_v4.png)
 
 ### Security and Privacy
 
@@ -783,7 +783,7 @@ Lokal setup üçün `scripts/vendor/README.md` faylına bax.
 
 Cisco Packet Tracer-də açılmış generated campus topology:
 
-![Packet Tracer topology](docs/screenshots/packet-tracer-topology-cropped.png)
+![Packet Tracer topology](examples/screenshots/complex_campus_master_edit_v4.png)
 
 ### Təhlükəsizlik və məxfilik
 
