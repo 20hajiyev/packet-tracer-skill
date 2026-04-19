@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 EXAMPLES_DIR = ROOT / "examples"
 SCREENSHOTS_DIR = EXAMPLES_DIR / "screenshots"
 INDEX_PATH = EXAMPLES_DIR / "index.json"
+GALLERY_PATH = EXAMPLES_DIR / "gallery.md"
 
 
 TITLE_BY_FAMILY = {
@@ -87,10 +88,31 @@ def build_examples_index() -> dict[str, object]:
     }
 
 
+def build_examples_gallery_markdown(payload: dict[str, object]) -> str:
+    lines = [
+        "## Curated Example Gallery",
+        "",
+        "| Title | Family | Capabilities | Screenshot | Inventory |",
+        "| --- | --- | --- | --- | --- |",
+    ]
+    for entry in payload["curated_examples"]:
+        screenshot = f"[image]({entry['screenshot']})" if entry.get("screenshot") else "pending"
+        inventory = f"[manifest]({entry['inventory_json']})"
+        capabilities = ", ".join(entry.get("capabilities") or [])
+        lines.append(
+            f"| {entry['title']} | `{entry['scenario_family']}` | {capabilities} | {screenshot} | {inventory} |"
+        )
+        lines.append(f"|  |  | {entry['summary']} |  |  |")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def main() -> None:
     payload = build_examples_index()
     INDEX_PATH.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    GALLERY_PATH.write_text(build_examples_gallery_markdown(payload) + "\n", encoding="utf-8")
     print(f"Wrote {INDEX_PATH}")
+    print(f"Wrote {GALLERY_PATH}")
 
 
 if __name__ == "__main__":

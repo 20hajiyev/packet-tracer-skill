@@ -379,6 +379,12 @@ Get-Content .\examples\index.json
 python .\scripts\build_examples_index.py
 ```
 
+Generated gallery:
+
+```powershell
+Get-Content .\examples\gallery.md
+```
+
 Edit an existing `.pkt` from a prompt:
 
 ```powershell

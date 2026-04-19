@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from build_examples_index import build_examples_index  # noqa: E402
+from build_examples_index import build_examples_gallery_markdown, build_examples_index  # noqa: E402
 
 
 def test_build_examples_index_covers_curated_examples() -> None:
@@ -28,3 +28,13 @@ def test_checked_in_examples_index_matches_builder() -> None:
     expected = build_examples_index()
     checked_in = json.loads((ROOT / "examples" / "index.json").read_text(encoding="utf-8"))
     assert checked_in == expected
+
+
+def test_examples_gallery_markdown_contains_curated_entries() -> None:
+    payload = build_examples_index()
+    gallery = build_examples_gallery_markdown(payload)
+    assert "## Curated Example Gallery" in gallery
+    assert "Complex Campus" in gallery
+    assert "Home IoT" in gallery
+    assert "Service Heavy" in gallery
+    assert "examples/screenshots/complex_campus_master_edit_v4.png" in gallery

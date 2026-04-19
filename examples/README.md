@@ -33,6 +33,12 @@ Rebuild the gallery index:
 python .\scripts\build_examples_index.py
 ```
 
+Generated outputs:
+- `index.json`
+  Machine-readable curated example index.
+- `gallery.md`
+  Human-readable markdown gallery generated from the same source.
+
 Gallery families:
 - `campus`
   VLAN, management, ACL, server services, and wireless edits.
