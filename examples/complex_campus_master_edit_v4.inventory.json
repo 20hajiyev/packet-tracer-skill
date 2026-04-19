@@ -1,6 +1,7 @@
 {
   "example_name": "complex_campus_master_edit_v4",
   "source_mode": "donor-backed edit",
+  "scenario_family": "campus",
   "public_repo_policy": {
     "commit_pkt_binary": false,
     "commit_inventory_json": true

@@ -27,6 +27,12 @@ Additional curated examples:
 - `index.json`
   Lightweight gallery index for curated example artifacts.
 
+Rebuild the gallery index:
+
+```powershell
+python .\scripts\build_examples_index.py
+```
+
 Gallery families:
 - `campus`
   VLAN, management, ACL, server services, and wireless edits.

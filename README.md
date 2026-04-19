@@ -376,6 +376,7 @@ Gallery index:
 
 ```powershell
 Get-Content .\examples\index.json
+python .\scripts\build_examples_index.py
 ```
 
 Edit an existing `.pkt` from a prompt:
