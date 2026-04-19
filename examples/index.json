@@ -2,19 +2,47 @@
   "curated_examples": [
     {
       "name": "complex_campus_master_edit_v4",
+      "title": "Complex Campus",
       "scenario_family": "campus",
+      "summary": "Management VLAN, Telnet, ACL, DNS, email, AAA, and multi-SSID wireless campus edit.",
+      "capabilities": [
+        "management_vlan",
+        "telnet",
+        "acl",
+        "server_dns",
+        "server_email",
+        "server_aaa",
+        "wireless_mutation"
+      ],
       "inventory_json": "examples/complex_campus_master_edit_v4.inventory.json",
       "screenshot": "examples/screenshots/complex_campus_master_edit_v4.png"
     },
     {
       "name": "home_iot_cli_edit_v1",
+      "title": "Home IoT",
       "scenario_family": "home_iot",
+      "summary": "Home gateway and IoT device onboarding with gateway-backed registration state.",
+      "capabilities": [
+        "iot",
+        "iot_registration",
+        "wireless_ap"
+      ],
       "inventory_json": "examples/home_iot_cli_edit_v1.inventory.json",
       "screenshot": null
     },
     {
       "name": "service_heavy_cli_edit_v1",
+      "title": "Service Heavy",
       "scenario_family": "service_heavy",
+      "summary": "Service-rich server lab with DNS, DHCP, FTP, email, syslog, AAA, and detailed service metadata.",
+      "capabilities": [
+        "server_dns",
+        "server_dhcp",
+        "server_ftp",
+        "server_email",
+        "server_syslog",
+        "server_aaa"
+      ],
       "inventory_json": "examples/service_heavy_cli_edit_v1.inventory.json",
       "screenshot": null
     }

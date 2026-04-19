@@ -26,3 +26,11 @@ Additional curated examples:
   Service-heavy server example focused on DNS, DHCP, FTP, email, syslog, AAA, and related service metadata.
 - `index.json`
   Lightweight gallery index for curated example artifacts.
+
+Gallery families:
+- `campus`
+  VLAN, management, ACL, server services, and wireless edits.
+- `home_iot`
+  Home gateway, IoT things, and registration-focused examples.
+- `service_heavy`
+  Server-centric service labs with richer metadata.

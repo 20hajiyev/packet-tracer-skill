@@ -33,3 +33,6 @@ def test_examples_index_references_curated_manifests() -> None:
     for entry in payload["curated_examples"]:
         inventory_path = ROOT / entry["inventory_json"].replace("/", "\\")
         assert inventory_path.exists()
+        assert entry["title"]
+        assert entry["summary"]
+        assert entry["capabilities"]

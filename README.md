@@ -362,6 +362,22 @@ python .\scripts\generate_pkt.py --inventory .\input\lab.pkt --inventory-capabil
 python .\scripts\generate_pkt.py --inventory .\input\lab.pkt --inventory-capabilities --inventory-out .\examples\lab.inventory.json
 ```
 
+### Curated Examples
+
+The repo keeps public example artifacts as text-first manifests instead of raw `.pkt` binaries.
+
+| Example | Family | What it demonstrates |
+| --- | --- | --- |
+| `complex_campus_master_edit_v4` | `campus` | Management VLAN, Telnet, ACL, DNS, email, AAA, and wireless SSID edits |
+| `home_iot_cli_edit_v1` | `home_iot` | Home gateway and IoT registration state |
+| `service_heavy_cli_edit_v1` | `service_heavy` | DNS, DHCP, FTP, email, syslog, AAA service metadata |
+
+Gallery index:
+
+```powershell
+Get-Content .\examples\index.json
+```
+
 Edit an existing `.pkt` from a prompt:
 
 ```powershell
