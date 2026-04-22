@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+import xml.etree.ElementTree as ET
 
 import pytest
 
@@ -46,6 +47,22 @@ def test_pc_template_is_synthesized_into_packet_tracer_device_shape() -> None:
     assert pc.findtext("./ENGINE/TYPE") == "PC"
     assert pc.findtext("./WORKSPACE/LOGICAL/X") is not None
     assert pc.findtext("./WORKSPACE/LOGICAL/MEM_ADDR") is not None
+
+
+def test_router_and_switch_templates_are_synthesized_without_placeholders() -> None:
+    router = _load_device_template("Router")
+    switch = _load_device_template("Switch")
+
+    assert router is not None
+    assert switch is not None
+    assert router.findtext("./ENGINE/TYPE") == "Router"
+    assert switch.findtext("./ENGINE/TYPE") == "Switch"
+    assert router.findtext("./WORKSPACE/LOGICAL/X") == "200"
+    assert switch.findtext("./WORKSPACE/LOGICAL/Y") == "200"
+    assert router.findtext("./ENGINE/RUNNINGCONFIG/LINE") == "hostname Router0"
+    assert switch.findtext("./ENGINE/FILE_CONTENT/CONFIG/LINE") == "hostname Switch0"
+    assert "__X__" not in ET.tostring(router, encoding="unicode")
+    assert "__Y__" not in ET.tostring(switch, encoding="unicode")
 
 
 def test_strict_9_donor_link_preserves_save_ref_schema() -> None:

@@ -65,6 +65,8 @@ def test_package_metadata_is_publish_ready() -> None:
 def test_ci_workflow_runs_examples_build_and_tests() -> None:
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
+    assert "concurrency:" in workflow
+    assert "cancel-in-progress: true" in workflow
     assert "windows-latest" in workflow
     assert "python .\\scripts\\build_examples_index.py" in workflow
     assert "node --check .\\bin\\packet-tracer-skill.js" in workflow
