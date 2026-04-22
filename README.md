@@ -24,6 +24,14 @@ This repository is built for one job: take a natural-language network request, b
 - `--explain-plan`, `--compare-scenarios`, `--parity-report`, and `--doctor` are first-class product surfaces
 - curated donor evidence, fixture corpus checks, and runtime doctor output are part of the contract
 
+In practice, that means the tool is trying to solve a narrower but more defensible problem than a prompt-to-diagram generator. It is designed to answer three questions in order:
+
+1. what the prompt is actually asking for
+2. whether the requested capability set is really supported for this scenario family
+3. whether a compatible donor and runtime path exist to carry the request safely
+
+If the answer to any of those is weak, the tool is expected to stop and explain why. That refusal behavior is part of the intended product quality, not a temporary limitation.
+
 Current product strengths:
 
 - `open-first` generate guard
@@ -50,6 +58,13 @@ Use the same repository, then install it into the skill path your host expects.
 
 The installer can be used on multiple hosts, but real `.pkt` runtime remains Windows-first and doctor-governed.
 
+That distinction matters because this project has two different surfaces:
+
+- installer or skill-copy success
+- actual Packet Tracer decode/edit/generate readiness
+
+The first one is relatively portable. The second one is not. README, npm text, release notes, and doctor output all need to preserve that difference or they become misleading.
+
 | Platform | Installer / skill copy | Real `.pkt` runtime |
 | --- | --- | --- |
 | Windows | Supported | Acceptance-verified |
@@ -63,6 +78,8 @@ Important runtime rule:
 - repo-local bridge and external bridge are reported separately
 - current strict validation is Windows-first and external-bridge-assisted
 - `validate_open` can be ready while strict decode/edit/generate are still blocked
+
+The mixed case is especially important. If `validate_open` works, that only proves Packet Tracer can be launched. It does not prove the current checkout can decode or regenerate `.pkt` files safely. For strict work, donor availability and Twofish bridge resolution still decide the outcome.
 
 ## Quick Start
 
@@ -220,6 +237,17 @@ Curated donor registry reference:
 
 Public examples stay text-first and review-friendly. Raw `.pkt` binaries are not committed.
 
+These examples are not decorative screenshots. They are the public proof set for the current product contract. Each one is intended to show a scenario family that was actually exercised through donor-backed logic and then reduced into reviewable artifacts:
+
+- screenshot
+- inventory manifest
+- acceptance excerpt
+- parity excerpt
+- decision excerpt
+- runtime excerpt
+
+This is why the examples surface matters so much in release work. It is the shortest path from a marketing claim to a falsifiable engineering artifact.
+
 Canonical public examples:
 
 - `complex_campus_master_edit_v4`
@@ -248,6 +276,8 @@ Canonical public proof:
 
 - [docs/campus-donor-proof.md](docs/campus-donor-proof.md)
 
+The campus donor proof is intentionally more specific than the gallery cards. It shows that a real donor artifact inventories correctly, but it also shows that a generalized campus prompt can still be donor-limited. That is exactly the kind of nuance the public docs should preserve.
+
 ## Security and Privacy
 
 This repo is prepared to avoid accidental sharing of local private material:
@@ -274,6 +304,15 @@ See also:
 ## Release and Launch State
 
 The npm package is already published as `packet-tracer-skill@0.2.1`. Remaining launch ops are GitHub release application, About/Topics updates, Discussions setup, and public donor proof follow-up.
+
+So the current state is no longer “preparing to publish.” The package is out. The remaining work is about making the public surface honest and complete:
+
+- GitHub release object should match the published npm state
+- About/Topics should match the README and launch wording
+- Discussions should exist as the feedback intake surface
+- donor proof should exist as the first post-launch technical evidence layer
+
+That is the difference between “published” and “productized.” The current repo is published; these follow-up documents are what make it operationally coherent.
 
 Recommended local validation before release:
 
