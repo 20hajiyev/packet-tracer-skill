@@ -111,6 +111,9 @@ def detect_packet_tracer_layout(root: Path, host_os: str | None = None) -> str:
     if system == "Windows":
         if (root / "bin" / "PacketTracer.exe").exists() or (root / "PacketTracer.exe").exists():
             return "windows_install_root"
+        normalized_parts = [part.lower() for part in root.parts if part]
+        if any(part.startswith("cisco packet tracer") or part == "packet tracer" for part in normalized_parts):
+            return "windows_install_root"
     if system == "Darwin":
         if "Contents/Resources" in root.as_posix():
             return "macos_app_bundle_resources"

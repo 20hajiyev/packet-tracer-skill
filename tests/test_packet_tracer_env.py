@@ -63,6 +63,11 @@ def test_detect_packet_tracer_layout_variants(tmp_path: Path) -> None:
     assert packet_tracer_env.detect_packet_tracer_layout(linux_root, "Linux") == "linux_install_root"
 
 
+def test_detect_packet_tracer_layout_recognizes_canonical_windows_root_without_files() -> None:
+    canonical_root = Path(r"C:\Program Files\Cisco Packet Tracer 9.0.0")
+    assert packet_tracer_env.detect_packet_tracer_layout(canonical_root, "Windows") == "windows_install_root"
+
+
 def test_get_packet_tracer_root_uses_os_candidates(monkeypatch, tmp_path: Path) -> None:
     linux_root = tmp_path / "packettracer"
     linux_root.mkdir()

@@ -15,9 +15,13 @@ from workspace_repair import sanitize_generated_physical_workspace, validate_wor
 SCRIPT_DIR = Path(__file__).resolve().parent
 SKILL_ROOT = SCRIPT_DIR.parent
 TEMPLATE_DIR = SKILL_ROOT / "templates" / "pt900" / "device_library"
+BASE_TEMPLATE_ROOT = SKILL_ROOT / "templates" / "pt900" / "base_empty.xml"
 FALLBACK_PROTOTYPE_SAMPLE = r"01 Networking\FTP\FTP.pkt"
 DEVICE_TEMPLATE_FILES = {
+    "PC": "pc.xml",
     "Printer": "printer.xml",
+    "Router": "router.xml",
+    "Switch": "switch.xml",
 }
 GENERIC_COPPER_HOST_TYPES = {"PC", "Server", "Printer", "Laptop"}
 
@@ -28,7 +32,11 @@ def load_sample_root(sample_path: str | Path) -> ET.Element:
 
 @lru_cache(maxsize=512)
 def _load_sample_root_cached(sample_path: str) -> ET.Element:
-    xml_bytes = decode_pkt_modern(Path(sample_path).read_bytes())
+    path = Path(sample_path)
+    if path.suffix.lower() == ".xml":
+        xml_bytes = path.read_bytes()
+    else:
+        xml_bytes = decode_pkt_modern(path.read_bytes())
     return ET.fromstring(xml_bytes)
 
 
@@ -37,7 +45,13 @@ def generation_root_sample() -> str:
     donor = get_packet_tracer_compatibility_donor()
     if donor is not None:
         return str(donor)
-    return str(resolve_sample_path(FALLBACK_PROTOTYPE_SAMPLE))
+    try:
+        fallback = resolve_sample_path(FALLBACK_PROTOTYPE_SAMPLE)
+    except FileNotFoundError:
+        fallback = None
+    if fallback is not None and fallback.exists():
+        return str(fallback)
+    return str(BASE_TEMPLATE_ROOT)
 
 
 def generation_root_version() -> str:
@@ -49,7 +63,8 @@ def generation_root_version() -> str:
 
 
 def strict_compatibility_mode() -> bool:
-    return generation_root_version().startswith("9.")
+    root_sample = Path(generation_root_sample())
+    return root_sample.suffix.lower() == ".pkt" and generation_root_version().startswith("9.")
 
 
 def _device_type(device: ET.Element) -> str:
@@ -216,7 +231,7 @@ def build_device_library(source_root: ET.Element) -> dict[str, list[ET.Element]]
 
 def _load_device_template(device_type: str, model: str | None = None) -> ET.Element | None:
     normalized = normalize_device_type(device_type)
-    template_name = DEVICE_TEMPLATE_FILES.get(normalized)
+    template_name = DEVICE_TEMPLATE_FILES.get(normalized, f"{normalized.lower()}.xml")
     if not template_name:
         return None
     template_path = TEMPLATE_DIR / template_name
@@ -225,11 +240,40 @@ def _load_device_template(device_type: str, model: str | None = None) -> ET.Elem
     root = ET.fromstring(template_path.read_text(encoding="utf-8"))
     actual_type = _device_type(root)
     actual_model = _device_model(root)
-    if actual_type != normalized:
+    if actual_type != normalized and not (not actual_type and actual_model):
         return None
     if model and actual_model.lower() != str(model).lower():
         return None
     return root
+
+
+def _existing_sample_path(sample_path: str | Path) -> Path | None:
+    path = Path(sample_path)
+    return path if path.exists() else None
+
+
+def _generic_link_prototype() -> ET.Element:
+    return ET.fromstring(
+        """
+<LINK>
+  <TYPE>Cable</TYPE>
+  <CABLE>
+    <FROM>0</FROM>
+    <TO>1</TO>
+    <PORT>FastEthernet0</PORT>
+    <PORT>FastEthernet0/1</PORT>
+    <TYPE>eStraightThrough</TYPE>
+    <FROM_DEVICE_MEM_ADDR>0</FROM_DEVICE_MEM_ADDR>
+    <TO_DEVICE_MEM_ADDR>1</TO_DEVICE_MEM_ADDR>
+    <FROM_PORT_MEM_ADDR>0</FROM_PORT_MEM_ADDR>
+    <TO_PORT_MEM_ADDR>1</TO_PORT_MEM_ADDR>
+    <FUNCTIONAL>true</FUNCTIONAL>
+    <GEO_VIEW_COLOR>#6ba72e</GEO_VIEW_COLOR>
+    <IS_MANAGED_IN_RACK_VIEW>false</IS_MANAGED_IN_RACK_VIEW>
+  </CABLE>
+</LINK>
+        """.strip()
+    )
 
 
 def find_device_prototype(device_type: str, model: str | None, preferred_sample: SampleDescriptor) -> ET.Element:
@@ -251,6 +295,8 @@ def _find_device_prototype_xml(device_type: str, model: str | None, preferred_sa
         if candidate_path in visited_paths:
             continue
         visited_paths.add(candidate_path)
+        if not _existing_sample_path(candidate_path):
+            continue
         root = _load_sample_root_cached(candidate_path)
         for device in root.findall(".//DEVICES/DEVICE"):
             if _device_type(device) != normalized_target:
@@ -307,7 +353,11 @@ def _prototype_link_xml(source_sample_path: str, left_type: str, right_type: str
     if strict_compatibility_mode():
         candidate_paths = [str(compatibility_root)]
     else:
-        candidate_paths = [str(compatibility_root), str(source_sample_path), str(resolve_sample_path(FALLBACK_PROTOTYPE_SAMPLE))]
+        candidate_paths = [str(compatibility_root), str(source_sample_path)]
+        try:
+            candidate_paths.append(str(resolve_sample_path(FALLBACK_PROTOTYPE_SAMPLE)))
+        except FileNotFoundError:
+            pass
         candidate_paths.extend(sample.path for sample in load_catalog())
     visited_paths: set[str] = set()
     wanted_left = _effective_link_type(left_type)
@@ -317,6 +367,8 @@ def _prototype_link_xml(source_sample_path: str, left_type: str, right_type: str
         if root_key in visited_paths:
             continue
         visited_paths.add(root_key)
+        if not _existing_sample_path(root_key):
+            continue
         root = _load_sample_root_cached(root_key)
         devices = root.findall(".//DEVICES/DEVICE")
         index_to_type = {str(index): _effective_link_type(_device_type(device)) for index, device in enumerate(devices)}
@@ -340,7 +392,7 @@ def _prototype_link_xml(source_sample_path: str, left_type: str, right_type: str
     if strict_compatibility_mode():
         donor = require_packet_tracer_compatibility_donor()
         raise ValueError(f"Strict 9.0 donor {donor} does not contain a prototype link for {left_type} <-> {right_type}")
-    raise ValueError(f"No prototype link found for type pair {left_type} <-> {right_type}")
+    return ET.tostring(_generic_link_prototype(), encoding="unicode")
 
 
 def apply_cable_type(cable: ET.Element, media: str) -> None:
@@ -423,7 +475,6 @@ def _sanitize_generated_runtime_sections(root: ET.Element) -> None:
 
 
 def transform_from_blueprint(blueprint: dict[str, Any], sample: SampleDescriptor) -> bytes:
-    source_root = load_sample_root(sample.path)
     root_sample_path = generation_root_sample()
     target_root = copy.deepcopy(load_sample_root(root_sample_path))
     version_node = target_root.find("./VERSION")
@@ -440,7 +491,10 @@ def transform_from_blueprint(blueprint: dict[str, Any], sample: SampleDescriptor
         if node is not None:
             node.clear()
     compatibility_mode = strict_compatibility_mode()
-    library_source_root = load_sample_root(root_sample_path) if compatibility_mode else source_root
+    preferred_source = _existing_sample_path(sample.path)
+    library_source_root = load_sample_root(root_sample_path)
+    if not compatibility_mode and preferred_source is not None:
+        library_source_root = load_sample_root(preferred_source)
     reference_workspaces = _build_workspace_reference_library(load_sample_root(root_sample_path))
 
     device_library = build_device_library(library_source_root)
