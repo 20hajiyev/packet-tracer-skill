@@ -4,6 +4,24 @@ All notable changes to this project should be recorded in this file.
 
 The format is intentionally simple and release-oriented.
 
+## [0.2.1]
+
+### Added
+
+- npm tarball hardening for the public package surface
+- launch announcement draft aligned with the current public release wording
+
+### Changed
+
+- package version advanced to `0.2.1` because `0.2.0` is already published on npm
+- npm package contents now exclude caches, generated previews, and non-essential screenshot payloads
+- public release references now consistently point to the `0.2.1` patch release artifacts
+
+### Notes
+
+- `0.2.1` is the publishable patch release for the conservative public preview surface
+- runtime messaging remains Windows-first and explicit about the external bridge-assisted validation path
+
 ## [0.2.0]
 
 ### Added

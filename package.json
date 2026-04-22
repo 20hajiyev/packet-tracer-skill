@@ -1,6 +1,6 @@
 {
   "name": "packet-tracer-skill",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": false,
   "description": "Donor-backed Cisco Packet Tracer 9.x skill for natural-language planning, safe-open generation, editing, parity reporting, and runtime diagnostics across coding hosts.",
   "keywords": [
@@ -85,10 +85,10 @@
     "docs/github-discussions-setup.md",
     "docs/github-metadata.md",
     "docs/hero-demo-plan.md",
-    "docs/launch-announcement-0.2.0.md",
+    "docs/launch-announcement-0.2.1.md",
     "docs/publish-preview-roadmap.md",
     "docs/release-checklist.md",
-    "docs/release-notes-0.2.0.md",
+    "docs/release-notes-0.2.1.md",
     "docs/runtime-truth.md"
   ],
   "engines": {

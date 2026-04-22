@@ -1,8 +1,8 @@
-# `packet-tracer-skill` `0.2.0` Release Notes Draft
+# `packet-tracer-skill` `0.2.1` Release Notes Draft
 
 ## Summary
 
-`0.2.0` is a conservative public preview prep release for `packet-tracer-skill`. It stabilizes the public release surface around donor-backed planning, open-first generation rules, scenario-aware reporting, and Windows-first runtime truth.
+`0.2.1` is a conservative public preview patch release for `packet-tracer-skill`. It hardens the npm package surface around donor-backed planning, open-first generation rules, scenario-aware reporting, and Windows-first runtime truth.
 
 ## Highlights
 

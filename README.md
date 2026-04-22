@@ -8,7 +8,7 @@ Cisco Packet Tracer 9.x `.pkt` generator and editor for skill-based coding hosts
 
 This repository is built for one job: take a natural-language network request, build an explicit scenario-aware plan, adapt a compatible donor lab, and produce a Packet Tracer 9.x workflow that stays open-first and compatibility-first.
 
-`0.2.0` public preview prep is focused on:
+`0.2.1` public preview hardening is focused on:
 
 - donor-backed and scenario-aware public messaging
 - conservative Windows-first runtime truth
@@ -101,7 +101,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1 -Dev
 
 Launch-prep references:
 
-- [docs/release-notes-0.2.0.md](docs/release-notes-0.2.0.md)
+- [docs/release-notes-0.2.1.md](docs/release-notes-0.2.1.md)
 - [docs/hero-demo-plan.md](docs/hero-demo-plan.md)
 - [docs/github-metadata.md](docs/github-metadata.md)
 - [docs/release-checklist.md](docs/release-checklist.md)
@@ -234,7 +234,7 @@ Primary screenshot:
 
 ![Packet Tracer topology](examples/screenshots/complex_campus_master_edit_v4.png)
 
-Hero visual for the `0.2.0` launch-prep surface:
+Hero visual for the `0.2.1` public preview surface:
 
 - `examples/screenshots/complex_campus_master_edit_v4.png`
 
@@ -298,7 +298,7 @@ Bu repo təbii dil ilə Packet Tracer `.pkt` generate və edit etmək üçündü
 
 Hazırkı prioritet:
 
-- `0.2.0` public preview prep
+- `0.2.1` public preview hardening
 - release-ready və publish-ready surface
 - README / npm / GitHub discoverability hizalanması
 - scenario truth source, donor registry və runtime doctor contract consistency

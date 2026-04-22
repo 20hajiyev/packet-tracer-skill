@@ -1,6 +1,6 @@
 # Release Checklist
 
-Target release surface: `0.2.0` conservative public preview prep.
+Target release surface: `0.2.1` conservative public preview.
 
 ## Product Contract
 
@@ -32,8 +32,8 @@ python .\scripts\runtime_doctor.py
 - raw `.pkt` binaries are not committed
 - examples index and gallery were rebuilt
 - screenshots are intentional and non-sensitive
-- changelog entry is updated for `0.2.0`
-- release notes draft exists: `docs/release-notes-0.2.0.md`
+- changelog entry is updated for `0.2.1`
+- release notes draft exists: `docs/release-notes-0.2.1.md`
 - hero demo plan exists: `docs/hero-demo-plan.md`
 - hero visual is selected: `examples/screenshots/complex_campus_master_edit_v4.png`
 - runtime truth docs match current `runtime_grade` and `bridge_resolution` semantics

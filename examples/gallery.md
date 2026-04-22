@@ -2,7 +2,7 @@
 
 These examples are public, text-first proof artifacts derived from donor-backed workflows and aligned with the scenario fixture corpus.
 
-`0.2.0` canonical public set:
+`0.2.1` canonical public set:
 
 - `campus`
 - `home_iot`

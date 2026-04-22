@@ -11,8 +11,8 @@
 
 ## Step B: Public `0.2.x` Publish-Preview
 
-- `package.json` is versioned at `0.2.0`
-- release notes draft is ready: `docs/release-notes-0.2.0.md`
+- `package.json` is versioned at `0.2.1`
+- release notes draft is ready: `docs/release-notes-0.2.1.md`
 - hero visual is locked to `examples/screenshots/complex_campus_master_edit_v4.png`
 - hero demo execution plan is ready: `docs/hero-demo-plan.md`
 - GitHub About/Topics text is finalized in `docs/github-metadata.md`
