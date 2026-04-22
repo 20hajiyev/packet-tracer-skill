@@ -1,6 +1,6 @@
 {
   "name": "packet-tracer-skill",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": false,
   "description": "Donor-backed Cisco Packet Tracer 9.x skill for natural-language planning, safe-open generation, editing, parity reporting, and runtime diagnostics across coding hosts.",
   "keywords": [

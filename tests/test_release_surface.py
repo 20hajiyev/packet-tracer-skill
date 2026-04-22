@@ -21,6 +21,8 @@ def test_release_docs_and_trust_files_exist() -> None:
         ROOT / "docs" / "discovery-keywords.md",
         ROOT / "docs" / "publish-preview-roadmap.md",
         ROOT / "docs" / "github-metadata.md",
+        ROOT / "docs" / "hero-demo-plan.md",
+        ROOT / "docs" / "release-notes-0.2.0.md",
         ROOT / ".github" / "workflows" / "ci.yml",
         ROOT / ".github" / "ISSUE_TEMPLATE" / "bug_report.yml",
         ROOT / ".github" / "ISSUE_TEMPLATE" / "feature_request.yml",
@@ -41,9 +43,12 @@ def test_readme_highlights_release_and_runtime_contracts() -> None:
 
     assert "Known Working Scenario Set" in readme
     assert "Runtime Doctor Contract" in readme
+    assert "`0.2.0` public preview prep" in readme
     assert "bridge_resolution" in readme
     assert "references/curated-donor-registry.json" in readme
     assert "references/scenario-fixture-corpus.json" in readme
+    assert "docs/release-notes-0.2.0.md" in readme
+    assert "docs/hero-demo-plan.md" in readme
     assert "docs/release-checklist.md" in readme
     assert "docs/runtime-truth.md" in readme
     assert "docs/curated-donor-registry.md" in readme
@@ -55,6 +60,7 @@ def test_package_metadata_is_publish_ready() -> None:
     files = set(payload["files"])
     scripts = payload["scripts"]
 
+    assert payload["version"] == "0.2.0"
     assert {"packet-tracer", "network-lab", "natural-language", "codex", "cursor", "claude"} <= keywords
     assert {"CONTRIBUTING.md", "CHANGELOG.md", "CITATION.cff", "SECURITY.md", "CODE_OF_CONDUCT.md", "docs"} <= files
     assert scripts["test"] == "python -m pytest tests -q"
@@ -73,3 +79,23 @@ def test_ci_workflow_runs_examples_build_and_tests() -> None:
     assert "python .\\scripts\\generate_pkt.py --parity-report \"campus with VLAN DHCP ACL\"" in workflow
     assert "python .\\scripts\\runtime_doctor.py" in workflow
     assert "python -m pytest tests -q" in workflow
+
+
+def test_launch_prep_docs_are_decision_complete() -> None:
+    release_notes = (ROOT / "docs" / "release-notes-0.2.0.md").read_text(encoding="utf-8")
+    hero_demo = (ROOT / "docs" / "hero-demo-plan.md").read_text(encoding="utf-8")
+    metadata = (ROOT / "docs" / "github-metadata.md").read_text(encoding="utf-8")
+    gallery = (ROOT / "examples" / "gallery.md").read_text(encoding="utf-8")
+    examples_readme = (ROOT / "examples" / "README.md").read_text(encoding="utf-8")
+
+    assert "0.2.0" in release_notes
+    assert "Windows-first runtime" in release_notes
+    assert "external bridge override" in release_notes
+    assert "complex_campus_master_edit_v4.png" in hero_demo
+    assert "--explain-plan" in hero_demo
+    assert "Final About Text" in metadata
+    assert "Final Topics" in metadata
+    assert "complex_campus_master_edit_v4.png" in metadata
+    assert "canonical public set" in gallery
+    assert "complex campus screenshot" in gallery
+    assert "canonical public set" in examples_readme

@@ -2,6 +2,16 @@
 
 This repo keeps text-based example artifacts under `examples/` and treats them as a known working scenario set, not just a screenshot folder.
 
+For the `0.2.0` launch-prep surface, the canonical public set is:
+
+- `complex_campus_master_edit_v4`
+- `home_iot_cli_edit_v1`
+- `service_heavy_cli_edit_v1`
+
+Hero visual:
+
+- `screenshots/complex_campus_master_edit_v4.png`
+
 Policy:
 - generated `.pkt` and `.xml` files stay gitignored
 - public examples should be sanitized JSON or markdown summaries
@@ -56,3 +66,7 @@ Gallery families:
   Home gateway, IoT things, and registration-focused examples.
 - `service_heavy`
   Server-centric service labs with richer metadata.
+
+Launch-prep references:
+- `..\docs\hero-demo-plan.md`
+- `..\docs\release-notes-0.2.0.md`

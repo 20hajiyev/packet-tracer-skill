@@ -2,6 +2,16 @@
 
 These examples are public, text-first proof artifacts derived from donor-backed workflows and aligned with the scenario fixture corpus.
 
+`0.2.0` canonical public set:
+
+- `campus`
+- `home_iot`
+- `service_heavy`
+
+Hero visual:
+
+- [complex campus screenshot](screenshots/complex_campus_master_edit_v4.png)
+
 | Title | Family | Capabilities | Image | Inventory |
 | --- | --- | --- | --- | --- |
 | Complex Campus | `campus` | management_vlan, telnet, acl, server_dns, server_email, server_aaa, wireless_mutation | [screenshot](screenshots/complex_campus_master_edit_v4.png) | [manifest](complex_campus_master_edit_v4.inventory.json) |

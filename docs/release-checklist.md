@@ -1,5 +1,7 @@
 # Release Checklist
 
+Target release surface: `0.2.0` conservative public preview prep.
+
 ## Product Contract
 
 - `scenario_generate_decision`, `scenario_acceptance_summary`, `scenario_matrix_row`, `capability_parity`, and runtime doctor wording are internally consistent
@@ -30,7 +32,10 @@ python .\scripts\runtime_doctor.py
 - raw `.pkt` binaries are not committed
 - examples index and gallery were rebuilt
 - screenshots are intentional and non-sensitive
-- changelog entry is updated
+- changelog entry is updated for `0.2.0`
+- release notes draft exists: `docs/release-notes-0.2.0.md`
+- hero demo plan exists: `docs/hero-demo-plan.md`
+- hero visual is selected: `examples/screenshots/complex_campus_master_edit_v4.png`
 - runtime truth docs match current `runtime_grade` and `bridge_resolution` semantics
 - curated donor registry entries are reviewed for promotion status and provenance
 
@@ -48,5 +53,8 @@ Only publish when:
 
 - CI is green
 - README renders cleanly
+- `package.json` version is final for the publish-preview batch
 - doctor wording matches current runtime reality
 - no accidental local paths leaked into tracked files
+- GitHub metadata doc is final and matches README wording
+- hero visual and release notes are ready for direct reuse

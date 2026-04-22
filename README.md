@@ -8,13 +8,14 @@ Cisco Packet Tracer 9.x `.pkt` generator and editor for skill-based coding hosts
 
 This repository is built for one job: take a natural-language network request, build an explicit scenario-aware plan, adapt a compatible donor lab, and produce a Packet Tracer 9.x workflow that stays open-first and compatibility-first.
 
-Current publish-preview focus:
+`0.2.0` public preview prep is focused on:
 
-- release/readme/docs surface is being aligned to the actual runtime and donor truth
-- curated donor evidence is explicit and registry-backed
-- examples are treated as the known working scenario set
+- donor-backed and scenario-aware public messaging
+- conservative Windows-first runtime truth
+- known working scenario set examples with acceptance-backed artifacts
+- release-notes-ready and GitHub-metadata-ready launch surface
 
-## Why This Repo Exists
+## Why It Is Different
 
 `packet-tracer-skill` is not a generic topology sketcher. It is a donor-backed Packet Tracer workflow with strict refusal behavior:
 
@@ -31,7 +32,7 @@ Current product strengths:
 - runtime doctor contract with bridge resolution
 - known working examples with screenshots and acceptance excerpts
 
-## Host Support
+## Runtime Reality
 
 Use the same repository, then install it into the skill path your host expects.
 
@@ -47,9 +48,7 @@ Use the same repository, then install it into the skill path your host expects.
 | OpenCode | `npx packet-tracer-skill --path .agents/skills` | `opencode run @pkt build a Packet Tracer lab with VLAN and DHCP` |
 | Custom path | `npx packet-tracer-skill --path ./my-skills` | depends on the host |
 
-## Platform Support
-
-The installer command can be used on more than one OS, but real `.pkt` decode/edit/generate runtime is still Windows-first.
+The installer can be used on multiple hosts, but real `.pkt` runtime remains Windows-first and doctor-governed.
 
 | Platform | Installer / skill copy | Real `.pkt` runtime |
 | --- | --- | --- |
@@ -62,6 +61,7 @@ Important runtime rule:
 - installer success is not the same thing as runtime readiness
 - `--doctor` is the authority for whether real `.pkt` operations are ready
 - repo-local bridge and external bridge are reported separately
+- current strict validation is Windows-first and external-bridge-assisted
 
 ## Quick Start
 
@@ -98,6 +98,13 @@ git clone https://github.com/20hajiyev/packet-tracer-skill.git
 cd .\packet-tracer-skill
 powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1 -Dev
 ```
+
+Launch-prep references:
+
+- [docs/release-notes-0.2.0.md](docs/release-notes-0.2.0.md)
+- [docs/hero-demo-plan.md](docs/hero-demo-plan.md)
+- [docs/github-metadata.md](docs/github-metadata.md)
+- [docs/release-checklist.md](docs/release-checklist.md)
 
 ## Runtime Doctor Contract
 
@@ -165,15 +172,13 @@ Required policy:
 
 ## Core Product Surfaces
 
-### Planning and Scenario Comparison
-
 Use `--explain-plan` when you need the full decision payload:
 
 ```powershell
 python .\scripts\generate_pkt.py --explain-plan "6 department campus with router-on-a-stick, VLAN, DHCP, management VLAN, Telnet, ACL"
 ```
 
-Use `--compare-scenarios` when you need scenario comparison instead of one-off debugging:
+Use `--compare-scenarios` when you need scenario comparison:
 
 ```powershell
 python .\scripts\generate_pkt.py --compare-scenarios "campus with VLAN DHCP ACL" --compare-scenarios "smart home with IoT registration" --matrix-out .\output\compare.json
@@ -196,86 +201,12 @@ Stable CLI surfaces:
 - `--parity-report`
 - `--acceptance-json-out`
 
-### Inventory and Edit
-
-Inspect an existing `.pkt`:
-
-```powershell
-python .\scripts\generate_pkt.py --inventory .\input\lab.pkt
-python .\scripts\generate_pkt.py --inventory .\input\lab.pkt --inventory-capabilities
-python .\scripts\generate_pkt.py --inventory .\input\lab.pkt --inventory-capabilities --inventory-out .\examples\lab.inventory.json
-```
-
-Edit an existing `.pkt` from a prompt:
-
-```powershell
-python .\scripts\generate_pkt.py --edit .\input\lab.pkt --prompt "set Wireless Router0 ssid FIN_WIFI security wpa2-psk passphrase fin12345 channel 6 associate PC0 to Wireless Router0 ssid FIN_WIFI dhcp" --output .\output\edited_lab.pkt
-```
-
-### Generate
-
-Generate a `.pkt` only when donor capacity and acceptance state allow it:
-
-```powershell
-python .\scripts\generate_pkt.py --prompt "6 department campus with router-on-a-stick, VLAN, DHCP, management VLAN, Telnet, ACL" --output .\output\campus.pkt --xml-out .\output\campus.xml
-```
-
-If no safe donor fits, the workflow refuses cleanly and can emit a blueprint instead of guessed output.
-
-## Decision Layer
-
-The repo is built around decision-complete output, not silent fallbacks.
-
-Important public JSON contracts:
-
-- `scenario_generate_decision`
-- `scenario_acceptance_summary`
-- `scenario_matrix_row`
-- `capability_parity`
-- `runtime_doctor`
-
-Scenario families currently modeled:
-
-- `campus`
-- `service_heavy`
-- `home_iot`
-- `wan_security_edge`
-
-## Capability Coverage
-
-Current coverage focus:
-
-- VLAN
-- router-on-a-stick
-- trunk / access
-- management VLAN
-- Telnet
-- DHCP
-- DNS
-- ACL
-- wireless/AP-client
-- end-device mutation
-- service-heavy server metadata
-- IoT registration/control reporting
-- WAN/security-edge inventory and donor-selection awareness
-
-Important limit:
-
-- Phase D coverage is currently inventory/selection/report focused
-- WAN/security families do not yet imply full safe-open generate
-
 ## Curated Donor and Fixture Truth Sources
 
 This repository keeps explicit truth sources for donor evidence and scenario regression:
 
 - `references/curated-donor-registry.json`
 - `references/scenario-fixture-corpus.json`
-
-Those files are used to keep:
-
-- curated donor promotion deterministic
-- fixture expectations auditable
-- example metadata aligned with scenario families and acceptance excerpts
 
 Curated donor registry reference:
 
@@ -285,7 +216,7 @@ Curated donor registry reference:
 
 Public examples stay text-first and review-friendly. Raw `.pkt` binaries are not committed.
 
-Canonical examples:
+Canonical public examples:
 
 - `complex_campus_master_edit_v4`
 - `home_iot_cli_edit_v1`
@@ -303,7 +234,11 @@ Primary screenshot:
 
 ![Packet Tracer topology](examples/screenshots/complex_campus_master_edit_v4.png)
 
-The gallery is treated as a known working scenario set, not just a screenshot list.
+Hero visual for the `0.2.0` launch-prep surface:
+
+- `examples/screenshots/complex_campus_master_edit_v4.png`
+
+The gallery is treated as a known working scenario set, not just a screenshot list, and the same canonical set feeds release notes and GitHub metadata.
 
 ## Security and Privacy
 
@@ -332,16 +267,6 @@ See also:
 
 This repo is being hardened toward a publish-ready and release-ready surface.
 
-Current release engineering assets:
-
-- CI workflow
-- issue templates
-- contributing guide
-- citation metadata
-- changelog
-- release checklist
-- example gallery index builder
-
 Recommended local validation before release:
 
 ```powershell
@@ -359,15 +284,6 @@ Publish-preview references:
 - [docs/discovery-keywords.md](docs/discovery-keywords.md)
 - [docs/github-metadata.md](docs/github-metadata.md)
 
-## Current Limitations
-
-- Packet Tracer 9.x only
-- Windows-first real runtime
-- donor-prune generation is bounded by donor capacity
-- unsupported and acceptance-gated mutate does not fall back to guessed output
-- external labs are not donors by default
-- repo-local Twofish bridge is not shipped by default
-
 ## Azerbaijani Summary
 
 Bu repo təbii dil ilə Packet Tracer `.pkt` generate və edit etmək üçündür, amma əsas fərqi ondadır ki, bunu donor-backed və open-first qayda ilə edir. Yəni donor, parity, acceptance və runtime hazır deyilsə, sistem guess etmir, refusal və remediation qaytarır.
@@ -382,6 +298,7 @@ Bu repo təbii dil ilə Packet Tracer `.pkt` generate və edit etmək üçündü
 
 Hazırkı prioritet:
 
+- `0.2.0` public preview prep
 - release-ready və publish-ready surface
 - README / npm / GitHub discoverability hizalanması
 - scenario truth source, donor registry və runtime doctor contract consistency

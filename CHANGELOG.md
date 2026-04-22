@@ -4,7 +4,7 @@ All notable changes to this project should be recorded in this file.
 
 The format is intentionally simple and release-oriented.
 
-## [Unreleased]
+## [0.2.0]
 
 ### Added
 
@@ -13,6 +13,8 @@ The format is intentionally simple and release-oriented.
 - known working scenario set positioning for public examples
 - runtime truth, discovery keyword, GitHub metadata, publish-preview roadmap, and curated donor registry docs
 - seeded curated donor registry entries derived from known working public example artifacts
+- checked-in Packet Tracer template fallback assets for hermetic builder coverage
+- hero demo plan and `0.2.0` release notes draft artifacts for conservative launch prep
 
 ### Changed
 
@@ -20,8 +22,12 @@ The format is intentionally simple and release-oriented.
 - examples gallery language aligned with the scenario fixture corpus and acceptance excerpts
 - CI now includes parity-report and runtime doctor smoke steps
 - selected donor summaries now distinguish registry-backed versus inferred evidence
+- CI now cancels superseded in-progress runs on the same ref
+- placeholder-backed template devices are synthesized into Packet Tracer-native fallback nodes
+- README, GitHub metadata, release checklist, and roadmap now align around the `0.2.0` public preview message
 
 ### Notes
 
 - runtime doctor and scenario decision surfaces remain Windows-first for real `.pkt` runtime
 - repo-local bridge is still intentionally not bundled by default
+- `0.2.0` is a conservative launch-prep release surface; npm publish and GitHub release remain a short follow-up batch
