@@ -249,13 +249,22 @@ def _load_device_template(device_type: str, model: str | None = None) -> ET.Elem
     return root
 
 
+def _template_text(node: ET.Element | None, default: str) -> str:
+    if node is None or node.text is None:
+        return default
+    value = node.text.strip()
+    if not value or (value.startswith("__") and value.endswith("__")):
+        return default
+    return value
+
+
 def _synthesize_template_device(template_root: ET.Element) -> ET.Element:
     engine_type = template_root.find("./ENGINE/TYPE")
     device_type = normalize_device_type(template_root.findtext("./ENGINE/TYPE", default=""))
     model = engine_type.get("model", "") if engine_type is not None else ""
-    device_name = template_root.findtext("./ENGINE/NAME", default=f"{device_type}0")
-    x_pos = template_root.findtext("./POSITION/X", default="200")
-    y_pos = template_root.findtext("./POSITION/Y", default="200")
+    device_name = _template_text(template_root.find("./ENGINE/NAME"), f"{device_type}0")
+    x_pos = _template_text(template_root.find("./POSITION/X"), "200")
+    y_pos = _template_text(template_root.find("./POSITION/Y"), "200")
 
     device = ET.Element("DEVICE")
     engine = ET.SubElement(device, "ENGINE")
@@ -310,20 +319,20 @@ def _synthesize_template_device(template_root: ET.Element) -> ET.Element:
         port_mem_node = ET.SubElement(port, "MEM_ADDR")
         port_mem_node.text = port_mem
         ip_node = ET.SubElement(port, "IP")
-        ip_node.text = template_root.findtext("./CONFIG/IP", default="")
+        ip_node.text = _template_text(template_root.find("./CONFIG/IP"), "")
         mask_node = ET.SubElement(port, "SUBNET")
-        mask_node.text = template_root.findtext("./CONFIG/MASK", default="")
+        mask_node.text = _template_text(template_root.find("./CONFIG/MASK"), "")
         gateway_node = ET.SubElement(port, "PORT_GATEWAY")
-        gateway_node.text = template_root.findtext("./CONFIG/GATEWAY", default="")
+        gateway_node.text = _template_text(template_root.find("./CONFIG/GATEWAY"), "")
         dns_node = ET.SubElement(port, "PORT_DNS")
-        dns_node.text = template_root.findtext("./CONFIG/DNS", default="")
+        dns_node.text = _template_text(template_root.find("./CONFIG/DNS"), "")
         port_name_node = ET.SubElement(port, "NAME")
         port_name_node.text = port_name
         gateway = ET.SubElement(engine, "GATEWAY")
-        gateway.text = template_root.findtext("./CONFIG/GATEWAY", default="")
+        gateway.text = _template_text(template_root.find("./CONFIG/GATEWAY"), "")
         dns_client = ET.SubElement(engine, "DNS_CLIENT")
         dns_server_ip = ET.SubElement(dns_client, "SERVER_IP")
-        dns_server_ip.text = template_root.findtext("./CONFIG/DNS", default="")
+        dns_server_ip.text = _template_text(template_root.find("./CONFIG/DNS"), "")
     else:
         ports_parent = ET.SubElement(engine, "PORTS")
         for port_name, port_kind, port_mem in port_specs:
