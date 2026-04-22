@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
+import shutil
+import subprocess
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,6 +24,7 @@ def test_release_docs_and_trust_files_exist() -> None:
         ROOT / "docs" / "publish-preview-roadmap.md",
         ROOT / "docs" / "github-metadata.md",
         ROOT / "docs" / "hero-demo-plan.md",
+        ROOT / "docs" / "launch-announcement-0.2.0.md",
         ROOT / "docs" / "release-notes-0.2.0.md",
         ROOT / ".github" / "workflows" / "ci.yml",
         ROOT / ".github" / "ISSUE_TEMPLATE" / "bug_report.yml",
@@ -62,7 +65,18 @@ def test_package_metadata_is_publish_ready() -> None:
 
     assert payload["version"] == "0.2.0"
     assert {"packet-tracer", "network-lab", "natural-language", "codex", "cursor", "claude"} <= keywords
-    assert {"CONTRIBUTING.md", "CHANGELOG.md", "CITATION.cff", "SECURITY.md", "CODE_OF_CONDUCT.md", "docs"} <= files
+    assert {
+        "CONTRIBUTING.md",
+        "CHANGELOG.md",
+        "CITATION.cff",
+        "SECURITY.md",
+        "CODE_OF_CONDUCT.md",
+        "bin/packet-tracer-skill.js",
+        "scripts/*.py",
+        "examples/screenshots/*.png",
+        "docs/release-notes-0.2.0.md",
+        "docs/runtime-truth.md",
+    } <= files
     assert scripts["test"] == "python -m pytest tests -q"
     assert scripts["examples:build"] == "python scripts/build_examples_index.py"
     assert scripts["smoke:parity"] == "python scripts/generate_pkt.py --parity-report \"campus with VLAN DHCP ACL\""
@@ -84,6 +98,7 @@ def test_ci_workflow_runs_examples_build_and_tests() -> None:
 def test_launch_prep_docs_are_decision_complete() -> None:
     release_notes = (ROOT / "docs" / "release-notes-0.2.0.md").read_text(encoding="utf-8")
     hero_demo = (ROOT / "docs" / "hero-demo-plan.md").read_text(encoding="utf-8")
+    launch_announcement = (ROOT / "docs" / "launch-announcement-0.2.0.md").read_text(encoding="utf-8")
     metadata = (ROOT / "docs" / "github-metadata.md").read_text(encoding="utf-8")
     gallery = (ROOT / "examples" / "gallery.md").read_text(encoding="utf-8")
     examples_readme = (ROOT / "examples" / "README.md").read_text(encoding="utf-8")
@@ -93,9 +108,37 @@ def test_launch_prep_docs_are_decision_complete() -> None:
     assert "external bridge override" in release_notes
     assert "complex_campus_master_edit_v4.png" in hero_demo
     assert "--explain-plan" in hero_demo
+    assert "alt text:" in hero_demo
+    assert "npm Publish Announcement" in launch_announcement
+    assert "Short Social Summary" in launch_announcement
     assert "Final About Text" in metadata
     assert "Final Topics" in metadata
     assert "complex_campus_master_edit_v4.png" in metadata
     assert "canonical public set" in gallery
     assert "complex campus screenshot" in gallery
     assert "canonical public set" in examples_readme
+
+
+def test_npm_pack_dry_run_is_hardened() -> None:
+    npm_bin = shutil.which("npm.cmd") or shutil.which("npm")
+    assert npm_bin is not None, "npm executable not found"
+
+    result = subprocess.run(
+        [npm_bin, "pack", "--dry-run", "--json"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+        shell=False,
+    )
+    payload = json.loads(result.stdout)
+    assert payload and isinstance(payload, list)
+    files = {entry["path"] for entry in payload[0]["files"]}
+
+    assert "scripts/__pycache__/build_examples_index.cpython-314.pyc" not in files
+    assert "scripts/vendor/__pycache__/twofish.cpython-314.pyc" not in files
+    assert not any(path.startswith("examples/previews/") for path in files)
+    assert not any(path.startswith("docs/screenshots/") for path in files)
+    assert "examples/screenshots/complex_campus_master_edit_v4.png" in files
+    assert "examples/screenshots/home_iot_cli_edit_v1.png" in files
+    assert "examples/screenshots/service_heavy_cli_edit_v1.png" in files

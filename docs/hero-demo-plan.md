@@ -26,6 +26,8 @@ python .\scripts\runtime_doctor.py
 
 - pinned image: `examples/screenshots/complex_campus_master_edit_v4.png`
 - reuse the complex campus topology screenshot as the hero visual until a dedicated GIF is produced
+- alt text: `Donor-backed complex campus Packet Tracer topology with VLAN, management, ACL, and wireless edits`
+- visual label: `Complex Campus hero visual`
 
 ## Claims To Make
 
@@ -40,3 +42,9 @@ python .\scripts\runtime_doctor.py
 - do not say the repo is self-contained runtime-ready
 - do not claim full synthetic generate for WAN/security coverage
 - do not imply unsupported or acceptance-gated mutations are generated anyway
+
+## Launch Caption
+
+Use this short caption when pairing the hero image with release notes or announcement text:
+
+`Donor-backed, open-first, scenario-aware Packet Tracer workflow with conservative Windows-first runtime truth.`

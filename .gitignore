@@ -14,3 +14,4 @@ scripts/vendor/_twofish*.so
 scripts/vendor/_twofish*.dll
 .npm-cache/
 *.tgz
+examples/previews/
