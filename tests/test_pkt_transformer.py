@@ -40,6 +40,14 @@ def test_printer_template_exists_for_secondary_fallback() -> None:
     assert printer.findtext("./ENGINE/TYPE") == "Printer"
 
 
+def test_pc_template_is_synthesized_into_packet_tracer_device_shape() -> None:
+    pc = _load_device_template("PC")
+    assert pc is not None
+    assert pc.findtext("./ENGINE/TYPE") == "PC"
+    assert pc.findtext("./WORKSPACE/LOGICAL/X") is not None
+    assert pc.findtext("./WORKSPACE/LOGICAL/MEM_ADDR") is not None
+
+
 def test_strict_9_donor_link_preserves_save_ref_schema() -> None:
     donor = get_packet_tracer_compatibility_donor()
     if donor is None:

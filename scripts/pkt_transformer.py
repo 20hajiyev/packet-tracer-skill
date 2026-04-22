@@ -238,6 +238,8 @@ def _load_device_template(device_type: str, model: str | None = None) -> ET.Elem
     if not template_path.exists():
         return None
     root = ET.fromstring(template_path.read_text(encoding="utf-8"))
+    if root.find("./WORKSPACE") is None and root.find("./POSITION") is not None:
+        root = _synthesize_template_device(root)
     actual_type = _device_type(root)
     actual_model = _device_model(root)
     if actual_type != normalized and not (not actual_type and actual_model):
@@ -245,6 +247,127 @@ def _load_device_template(device_type: str, model: str | None = None) -> ET.Elem
     if model and actual_model.lower() != str(model).lower():
         return None
     return root
+
+
+def _synthesize_template_device(template_root: ET.Element) -> ET.Element:
+    engine_type = template_root.find("./ENGINE/TYPE")
+    device_type = normalize_device_type(template_root.findtext("./ENGINE/TYPE", default=""))
+    model = engine_type.get("model", "") if engine_type is not None else ""
+    device_name = template_root.findtext("./ENGINE/NAME", default=f"{device_type}0")
+    x_pos = template_root.findtext("./POSITION/X", default="200")
+    y_pos = template_root.findtext("./POSITION/Y", default="200")
+
+    device = ET.Element("DEVICE")
+    engine = ET.SubElement(device, "ENGINE")
+    type_node = ET.SubElement(engine, "TYPE")
+    type_node.text = device_type
+    type_node.set("model", model)
+    type_node.set("customModel", "")
+    name_node = ET.SubElement(engine, "NAME")
+    name_node.set("translate", "true")
+    name_node.text = device_name
+    save_ref = ET.SubElement(engine, "SAVE_REF_ID")
+    save_ref.text = "save-ref-id:template-0"
+    serial = ET.SubElement(engine, "SERIALNUMBER")
+    serial.text = "TEMPLATE0000-"
+    start_time = ET.SubElement(engine, "STARTTIME")
+    start_time.text = "800000000000"
+    coord = ET.SubElement(engine, "COORD_SETTINGS")
+    coord_x = ET.SubElement(coord, "X_COORD")
+    coord_x.text = x_pos
+    coord_y = ET.SubElement(coord, "Y_COORD")
+    coord_y.text = y_pos
+    coord_z = ET.SubElement(coord, "Z_COORD")
+    coord_z.text = "0"
+
+    port_specs = [
+        (
+            port.get("name", f"Port{index}"),
+            port.get("kind", "eCopperFastEthernet"),
+            str(4_000_000_000_000 + index * 64),
+        )
+        for index, port in enumerate(template_root.findall("./PORTS/PORT"), start=1)
+    ]
+    if not port_specs:
+        port_specs = [("FastEthernet0", "eCopperFastEthernet", "4000000000064")]
+
+    if device_type in GENERIC_COPPER_HOST_TYPES:
+        module = ET.SubElement(engine, "MODULE")
+        module_type = ET.SubElement(module, "TYPE")
+        module_type.text = "eNonRemovableModule"
+        slot = ET.SubElement(module, "SLOT")
+        slot_type = ET.SubElement(slot, "TYPE")
+        slot_type.text = "ePtHostModule"
+        slot_module = ET.SubElement(slot, "MODULE")
+        slot_module_type = ET.SubElement(slot_module, "TYPE")
+        slot_module_type.text = "ePtHostModule"
+        slot_module_model = ET.SubElement(slot_module, "MODEL")
+        slot_module_model.text = "PT-HOST-NM-1CFE"
+        port_name, port_kind, port_mem = port_specs[0]
+        port = ET.SubElement(slot_module, "PORT")
+        port_type = ET.SubElement(port, "TYPE")
+        port_type.text = port_kind
+        port_mem_node = ET.SubElement(port, "MEM_ADDR")
+        port_mem_node.text = port_mem
+        ip_node = ET.SubElement(port, "IP")
+        ip_node.text = template_root.findtext("./CONFIG/IP", default="")
+        mask_node = ET.SubElement(port, "SUBNET")
+        mask_node.text = template_root.findtext("./CONFIG/MASK", default="")
+        gateway_node = ET.SubElement(port, "PORT_GATEWAY")
+        gateway_node.text = template_root.findtext("./CONFIG/GATEWAY", default="")
+        dns_node = ET.SubElement(port, "PORT_DNS")
+        dns_node.text = template_root.findtext("./CONFIG/DNS", default="")
+        port_name_node = ET.SubElement(port, "NAME")
+        port_name_node.text = port_name
+        gateway = ET.SubElement(engine, "GATEWAY")
+        gateway.text = template_root.findtext("./CONFIG/GATEWAY", default="")
+        dns_client = ET.SubElement(engine, "DNS_CLIENT")
+        dns_server_ip = ET.SubElement(dns_client, "SERVER_IP")
+        dns_server_ip.text = template_root.findtext("./CONFIG/DNS", default="")
+    else:
+        ports_parent = ET.SubElement(engine, "PORTS")
+        for port_name, port_kind, port_mem in port_specs:
+            port = ET.SubElement(ports_parent, "PORT")
+            port_type = ET.SubElement(port, "TYPE")
+            port_type.text = port_kind
+            port_mem_node = ET.SubElement(port, "MEM_ADDR")
+            port_mem_node.text = port_mem
+            port_name_node = ET.SubElement(port, "NAME")
+            port_name_node.text = port_name
+
+    if device_type == "Router":
+        for tag in ("RUNNINGCONFIG", "STARTUPCONFIG"):
+            config_root = ET.SubElement(engine, tag)
+            for line in (f"hostname {device_name}", "end"):
+                line_node = ET.SubElement(config_root, "LINE")
+                line_node.text = line
+    if device_type == "Switch":
+        file_content = ET.SubElement(engine, "FILE_CONTENT")
+        config = ET.SubElement(file_content, "CONFIG")
+        for line in (f"hostname {device_name}", "interface FastEthernet0/1", "end"):
+            line_node = ET.SubElement(config, "LINE")
+            line_node.text = line
+
+    workspace = ET.SubElement(device, "WORKSPACE")
+    logical = ET.SubElement(workspace, "LOGICAL")
+    logical_x = ET.SubElement(logical, "X")
+    logical_x.text = x_pos
+    logical_y = ET.SubElement(logical, "Y")
+    logical_y.text = y_pos
+    devcluster = ET.SubElement(logical, "DEVCLUSTERID")
+    devcluster.text = "1-1"
+    custom_logical = ET.SubElement(logical, "CUSTOM_IMAGE_LOGICAL")
+    custom_logical.text = ""
+    custom_physical = ET.SubElement(logical, "CUSTOM_IMAGE_PHYSICAL")
+    custom_physical.text = ""
+    mem_addr = ET.SubElement(logical, "MEM_ADDR")
+    mem_addr.text = "3000000000032"
+    dev_addr = ET.SubElement(logical, "DEV_ADDR")
+    dev_addr.text = "3100000000032"
+    physical = ET.SubElement(workspace, "PHYSICAL")
+    physical.set("translate", "true")
+    physical.text = f"Intercity,Home City,Corporate Office,Main Wiring Closet,Table,{device_name}"
+    return device
 
 
 def _existing_sample_path(sample_path: str | Path) -> Path | None:
