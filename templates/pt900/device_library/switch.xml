@@ -1,0 +1,38 @@
+<DEVICE class="network-device">
+  <ID>__DEVICE_ID__</ID>
+  <ENGINE>
+    <TYPE model="2960-24TT" customModel="">Switch</TYPE>
+    <NAME translate="true">__NAME__</NAME>
+  </ENGINE>
+  <POSITION>
+    <X>__X__</X>
+    <Y>__Y__</Y>
+  </POSITION>
+  <PORTS>
+    <PORT name="FastEthernet0/1" kind="eCopperFastEthernet" />
+    <PORT name="FastEthernet0/2" kind="eCopperFastEthernet" />
+    <PORT name="FastEthernet0/3" kind="eCopperFastEthernet" />
+    <PORT name="FastEthernet0/4" kind="eCopperFastEthernet" />
+    <PORT name="FastEthernet0/5" kind="eCopperFastEthernet" />
+    <PORT name="FastEthernet0/6" kind="eCopperFastEthernet" />
+    <PORT name="FastEthernet0/7" kind="eCopperFastEthernet" />
+    <PORT name="FastEthernet0/8" kind="eCopperFastEthernet" />
+    <PORT name="FastEthernet0/9" kind="eCopperFastEthernet" />
+    <PORT name="FastEthernet0/10" kind="eCopperFastEthernet" />
+    <PORT name="FastEthernet0/11" kind="eCopperFastEthernet" />
+    <PORT name="FastEthernet0/12" kind="eCopperFastEthernet" />
+    <PORT name="FastEthernet0/13" kind="eCopperFastEthernet" />
+    <PORT name="FastEthernet0/14" kind="eCopperFastEthernet" />
+    <PORT name="FastEthernet0/15" kind="eCopperFastEthernet" />
+    <PORT name="FastEthernet0/16" kind="eCopperFastEthernet" />
+    <PORT name="FastEthernet0/17" kind="eCopperFastEthernet" />
+    <PORT name="FastEthernet0/18" kind="eCopperFastEthernet" />
+    <PORT name="FastEthernet0/19" kind="eCopperFastEthernet" />
+    <PORT name="FastEthernet0/20" kind="eCopperFastEthernet" />
+    <PORT name="FastEthernet0/21" kind="eCopperFastEthernet" />
+    <PORT name="FastEthernet0/22" kind="eCopperFastEthernet" />
+    <PORT name="FastEthernet0/23" kind="eCopperFastEthernet" />
+    <PORT name="FastEthernet0/24" kind="eCopperFastEthernet" />
+  </PORTS>
+  <CLI><![CDATA[__CLI__]]></CLI>
+</DEVICE>

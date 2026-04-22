@@ -1,0 +1,20 @@
+<DEVICE class="end-device">
+  <ID>__DEVICE_ID__</ID>
+  <ENGINE>
+    <TYPE model="PC-PT" customModel="">PC</TYPE>
+    <NAME translate="true">__NAME__</NAME>
+  </ENGINE>
+  <POSITION>
+    <X>__X__</X>
+    <Y>__Y__</Y>
+  </POSITION>
+  <PORTS>
+    <PORT name="FastEthernet0" kind="eCopperFastEthernet" />
+  </PORTS>
+  <CONFIG>
+    <IP>__IP__</IP>
+    <MASK>__MASK__</MASK>
+    <GATEWAY>__GATEWAY__</GATEWAY>
+    <DNS>__DNS__</DNS>
+  </CONFIG>
+</DEVICE>

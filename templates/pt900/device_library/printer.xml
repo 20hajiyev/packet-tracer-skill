@@ -1,0 +1,432 @@
+<DEVICE>
+  <ENGINE>
+    <TYPE customModel="" model="Printer-PT">Printer</TYPE>
+    <NAME translate="true">Printer0</NAME>
+    <POWER>true</POWER>
+    <DESCRIPTION />
+    <MODULE>
+      <TYPE>eNonRemovableModule</TYPE>
+      <MODEL />
+      <SLOT>
+        <TYPE>ePtHostModule</TYPE>
+        <MODULE>
+          <TYPE>ePtHostModule</TYPE>
+          <MODEL>PT-HOST-NM-1CFE</MODEL>
+          <PORT>
+            <ACL_IN_ID />
+            <ACL_OUT_ID />
+            <ACLv6_IN_ID />
+            <ACLv6_OUT_ID />
+            <TIMEOUT>14400000</TIMEOUT>
+            <TYPE>eCopperFastEthernet</TYPE>
+            <POWER>true</POWER>
+            <MEDIATYPE>0</MEDIATYPE>
+            <PINS>false</PINS>
+            <FIBERMULTIMODE>true</FIBERMULTIMODE>
+            <BANDWIDTH>100000</BANDWIDTH>
+            <SPEED>100</SPEED>
+            <FULLDUPLEX>true</FULLDUPLEX>
+            <AUTONEGOTIATEBANDWIDTH>true</AUTONEGOTIATEBANDWIDTH>
+            <AUTONEGOTIATESPEED>true</AUTONEGOTIATESPEED>
+            <AUTONEGOTIATEDUPLEX>true</AUTONEGOTIATEDUPLEX>
+            <MACADDRESS>000A.41E1.20D1</MACADDRESS>
+            <BIA>000A.41E1.20D1</BIA>
+            <CLOCKRATE>2000000</CLOCKRATE>
+            <CLOCKRATEFLAG>false</CLOCKRATEFLAG>
+            <DESCRIPTION />
+            <CHANNEL>0</CHANNEL>
+            <CHANNEL5GHZ>0</CHANNEL5GHZ>
+            <COVERAGERANGE>0</COVERAGERANGE>
+            <SAVED_FULLDUPLEX>false</SAVED_FULLDUPLEX>
+            <UP_METHOD>1</UP_METHOD>
+            <IP />
+            <SUBNET />
+            <PORT_GATEWAY />
+            <PORT_DNS>8.8.8.8</PORT_DNS>
+            <PORT_DHCP_ENABLE>true</PORT_DHCP_ENABLE>
+            <ND_SUPPRESSED>false</ND_SUPPRESSED>
+            <ND_IPV6_DNS_ADDRESSES />
+            <PC_FIREWALL>false</PC_FIREWALL>
+            <PC_IPV6_FIREWALL>false</PC_IPV6_FIREWALL>
+            <IPV6_ENABLED>false</IPV6_ENABLED>
+            <IPV6_ADDRESS_AUTOCONFIG>false</IPV6_ADDRESS_AUTOCONFIG>
+            <IPV6_PORT_GATEWAY />
+            <IPV6_PORT_DNS />
+            <IPV6_LINK_LOCAL>FE80::20A:41FF:FEE1:20D1</IPV6_LINK_LOCAL>
+            <IPV6_DEFAULT_LINK_LOCAL>FE80::20A:41FF:FEE1:20D1</IPV6_DEFAULT_LINK_LOCAL>
+            <IPV6_PORT_DHCP_ENABLED>false</IPV6_PORT_DHCP_ENABLED>
+            <IPV6_ADDRESSES />
+            <IP_UNNUMBERED />
+            <DHCP_SERVER_IP>192.168.10.1</DHCP_SERVER_IP>
+          </PORT>
+        </MODULE>
+      </SLOT>
+    </MODULE>
+    <CUSTOM_VARS>AAAAAgAAABAAUABUAF8ATQBPAEQARQBMAAAACgAAAAAUAFAAcgBpAG4AdABlAHIALQBQAFQAAAAUAFAAVABfAFYARQBSAFMASQBPAE4AAAAKAAAAAAoAMQAuADAALgAw</CUSTOM_VARS>
+    <CUSTOM_INTERFACE />
+    <SYS_CONTACT />
+    <SYS_LOCATION />
+    <COORD_SETTINGS>
+      <X_COORD>1229.5</X_COORD>
+      <Y_COORD>1232</Y_COORD>
+      <Z_COORD>0</Z_COORD>
+    </COORD_SETTINGS>
+    <SERIALNUMBER>PTT0810Q9F2</SERIALNUMBER>
+    <EXT_ATTRIBUTES>MTBF:17520;cost:1500;power source:0;rack units:3;wattage:30;</EXT_ATTRIBUTES>
+    <USB_PORT_COUNT>0</USB_PORT_COUNT>
+    <TEMPLATE_CREATION_TIME>0</TEMPLATE_CREATION_TIME>
+    <IGNORE_TEMPLATE_CREATION_TIME>0</IGNORE_TEMPLATE_CREATION_TIME>
+    <STARTTIME>731023440565</STARTTIME>
+    <STARTSIMTIME>0</STARTSIMTIME>
+    <USER_APPS>
+      <RUNNING_APPS />
+      <DESKTOP_APPS />
+    </USER_APPS>
+    <SAVE_REF_ID>save-ref-id:16335843635577824023</SAVE_REF_ID>
+    <IGNORED_VERSION />
+    <SYS_NAME>PC</SYS_NAME>
+    <PTP_ENALBED>0</PTP_ENALBED>
+    <GATEWAY>192.168.10.1</GATEWAY>
+    <DNS_CLIENT>
+      <SERVER_IP>8.8.8.8</SERVER_IP>
+      <SERVER_IPV6 />
+    </DNS_CLIENT>
+    <EMAIL_CLIENT>
+      <ENABLED>0</ENABLED>
+      <NAME />
+      <MAIL_ID />
+      <POP3_SERVER />
+      <SMTP_SERVER />
+      <USER />
+      <PASSWORD />
+      <NO_OF_MAILS>0</NO_OF_MAILS>
+    </EMAIL_CLIENT>
+    <WIRELESS_CLIENT>
+      <WIRELESS_COMMON>
+        <NETWORK_MODE>7</NETWORK_MODE>
+        <SSID>Default</SSID>
+        <ENCRYPT_TYPE>0</ENCRYPT_TYPE>
+        <AUTHEN_TYPE>0</AUTHEN_TYPE>
+        <RADIO_BAND>0</RADIO_BAND>
+        <WIDE_CHANNEL>0</WIDE_CHANNEL>
+        <STANDARD_CHANNEL>0</STANDARD_CHANNEL>
+        <STANDARD_CHANNEL5G>112</STANDARD_CHANNEL5G>
+      </WIRELESS_COMMON>
+      <PROFILES>
+        <WIRELESS_PROFILE>
+          <NAME>Default</NAME>
+          <SSID>Default</SSID>
+          <NETWORK_TYPE>7</NETWORK_TYPE>
+          <RADIO_BAND>0</RADIO_BAND>
+          <AUTHEN_TYPE>0</AUTHEN_TYPE>
+          <ENCRYPT_TYPE>0</ENCRYPT_TYPE>
+          <WEP_KEY />
+          <WPA_EAP_USERID />
+          <WPA_EAP_PASSWORD />
+          <DHCP_ENABLED>1</DHCP_ENABLED>
+          <DHCPV6_ENABLED>1</DHCPV6_ENABLED>
+          <IP_ADDRESS />
+          <SUBNET_MASK />
+          <DEFAULT_GATEWAY />
+          <DNS />
+          <CHANNEL>1</CHANNEL>
+          <VLAN>1</VLAN>
+        </WIRELESS_PROFILE>
+      </PROFILES>
+      <CURRENT_PROFILE>
+        <WIRELESS_PROFILE>
+          <NAME>Default</NAME>
+          <SSID>Default</SSID>
+          <NETWORK_TYPE>7</NETWORK_TYPE>
+          <RADIO_BAND>0</RADIO_BAND>
+          <AUTHEN_TYPE>0</AUTHEN_TYPE>
+          <ENCRYPT_TYPE>0</ENCRYPT_TYPE>
+          <WEP_KEY />
+          <WPA_EAP_USERID />
+          <WPA_EAP_PASSWORD />
+          <DHCP_ENABLED>1</DHCP_ENABLED>
+          <DHCPV6_ENABLED>1</DHCPV6_ENABLED>
+          <IP_ADDRESS />
+          <SUBNET_MASK />
+          <DEFAULT_GATEWAY />
+          <DNS />
+          <CHANNEL>1</CHANNEL>
+          <VLAN>1</VLAN>
+        </WIRELESS_PROFILE>
+      </CURRENT_PROFILE>
+    </WIRELESS_CLIENT>
+    <CELLULAR_CLIENT>
+      <WIRELESS_CLIENT>
+        <WIRELESS_COMMON>
+          <NETWORK_MODE>7</NETWORK_MODE>
+          <SSID>ptcellular</SSID>
+          <ENCRYPT_TYPE>0</ENCRYPT_TYPE>
+          <AUTHEN_TYPE>0</AUTHEN_TYPE>
+          <RADIO_BAND>0</RADIO_BAND>
+          <WIDE_CHANNEL>0</WIDE_CHANNEL>
+          <STANDARD_CHANNEL>0</STANDARD_CHANNEL>
+          <STANDARD_CHANNEL5G>112</STANDARD_CHANNEL5G>
+        </WIRELESS_COMMON>
+        <PROFILES>
+          <WIRELESS_PROFILE>
+            <NAME>ptcellular</NAME>
+            <SSID>ptcellular</SSID>
+            <NETWORK_TYPE>7</NETWORK_TYPE>
+            <RADIO_BAND>0</RADIO_BAND>
+            <AUTHEN_TYPE>0</AUTHEN_TYPE>
+            <ENCRYPT_TYPE>0</ENCRYPT_TYPE>
+            <WEP_KEY />
+            <WPA_EAP_USERID />
+            <WPA_EAP_PASSWORD />
+            <DHCP_ENABLED>1</DHCP_ENABLED>
+            <DHCPV6_ENABLED>1</DHCPV6_ENABLED>
+            <IP_ADDRESS />
+            <SUBNET_MASK />
+            <DEFAULT_GATEWAY />
+            <DNS />
+            <CHANNEL>1</CHANNEL>
+            <VLAN>1</VLAN>
+          </WIRELESS_PROFILE>
+        </PROFILES>
+        <CURRENT_PROFILE>
+          <WIRELESS_PROFILE>
+            <NAME>ptcellular</NAME>
+            <SSID>ptcellular</SSID>
+            <NETWORK_TYPE>7</NETWORK_TYPE>
+            <RADIO_BAND>0</RADIO_BAND>
+            <AUTHEN_TYPE>0</AUTHEN_TYPE>
+            <ENCRYPT_TYPE>0</ENCRYPT_TYPE>
+            <WEP_KEY />
+            <WPA_EAP_USERID />
+            <WPA_EAP_PASSWORD />
+            <DHCP_ENABLED>1</DHCP_ENABLED>
+            <DHCPV6_ENABLED>1</DHCPV6_ENABLED>
+            <IP_ADDRESS />
+            <SUBNET_MASK />
+            <DEFAULT_GATEWAY />
+            <DNS />
+            <CHANNEL>1</CHANNEL>
+            <VLAN>1</VLAN>
+          </WIRELESS_PROFILE>
+        </CURRENT_PROFILE>
+      </WIRELESS_CLIENT>
+      <PROFILES />
+      <CURRENT_PROFILE_NUM>0</CURRENT_PROFILE_NUM>
+      <CO_USERNAME>CentralOffice</CO_USERNAME>
+      <CO_PASSWORD>cisco</CO_PASSWORD>
+      <ACTIVATED>0</ACTIVATED>
+    </CELLULAR_CLIENT>
+    <DHCP_CLIENT>
+      <PORT_DATA_MAP>
+        <PORT_DATA_ENTRY>
+          <PORT>FastEthernet0</PORT>
+        </PORT_DATA_ENTRY>
+      </PORT_DATA_MAP>
+    </DHCP_CLIENT>
+    <ACL_PROCESS>
+      <ACLS />
+    </ACL_PROCESS>
+    <ACL_V6_PROCESS>
+      <ACLS />
+    </ACL_V6_PROCESS>
+    <GATEWAYV6 />
+    <ISATAP_ENABLED>false</ISATAP_ENABLED>
+    <ISATAP_ROUTER />
+    <DHCPV6_MAIN>
+      <PARTIAL_DUID>5E-78-9A-33-</PARTIAL_DUID>
+      <ENABLED_PORTS />
+    </DHCPV6_MAIN>
+    <NDV6>
+      <ENABLED_HOST />
+      <ENABLED_ROUTER>0</ENABLED_ROUTER>
+      <SERVER_ROUTER_PORT_DATA_HEAD />
+    </NDV6>
+    <NF_COLLECTOR>
+      <ENABLED>0</ENABLED>
+    </NF_COLLECTOR>
+    <VOIP_TFTP_IP>
+      <TFTP_IP>0.0.0.0</TFTP_IP>
+      <IS_DEFAULT_TFTP>1</IS_DEFAULT_TFTP>
+    </VOIP_TFTP_IP>
+    <FILE_MANAGER>
+      <FILE class="CDirectory">
+        <FILE_NUMBER>0</FILE_NUMBER>
+        <NAME />
+        <DATE_TIME>0</DATE_TIME>
+        <PERMISSION>6</PERMISSION>
+        <FILE_CONTENT class="CTextFileContent">
+          <TEXT>This is a sample text file</TEXT>
+        </FILE_CONTENT>
+        <FILES>
+          <FILE class="CFileSystem">
+            <FILE_NUMBER>0</FILE_NUMBER>
+            <NAME>Desktop:</NAME>
+            <DATE_TIME>0</DATE_TIME>
+            <PERMISSION>6</PERMISSION>
+            <FILE_CONTENT class="CLinksysFirmwareUpgPage">
+              <TEXT />
+              <Firmware_Version>v1.1_1.51.2</Firmware_Version>
+            </FILE_CONTENT>
+            <FILES>
+              <FILE class="CFile">
+                <FILE_NUMBER>3</FILE_NUMBER>
+                <NAME>HomeRouter-PT-AC_v1.04.16_fw,0.bin</NAME>
+                <DATE_TIME>0</DATE_TIME>
+                <PERMISSION>6</PERMISSION>
+                <FILE_CONTENT class="CLinksysFirmwareUpgPage">
+                  <TEXT />
+                  <Firmware_Version>v1.04.16</Firmware_Version>
+                </FILE_CONTENT>
+              </FILE>
+              <FILE class="CFile">
+                <FILE_NUMBER>4</FILE_NUMBER>
+                <NAME>HomeRouter-PT-AC_v2.0_10.1.17_fw,0.bin</NAME>
+                <DATE_TIME>0</DATE_TIME>
+                <PERMISSION>6</PERMISSION>
+                <FILE_CONTENT class="CLinksysFirmwareUpgPage">
+                  <TEXT />
+                  <Firmware_Version>v2.0_10.1.17</Firmware_Version>
+                </FILE_CONTENT>
+              </FILE>
+              <FILE class="CFile">
+                <FILE_NUMBER>1</FILE_NUMBER>
+                <NAME>WRT300N-v1.03.6_fw,0.bin</NAME>
+                <DATE_TIME>0</DATE_TIME>
+                <PERMISSION>6</PERMISSION>
+                <FILE_CONTENT class="CLinksysFirmwareUpgPage">
+                  <TEXT />
+                  <Firmware_Version>v1.03.6</Firmware_Version>
+                </FILE_CONTENT>
+              </FILE>
+              <FILE class="CFile">
+                <FILE_NUMBER>2</FILE_NUMBER>
+                <NAME>WRT300N-v1.1_1.51.2_fw,0.bin</NAME>
+                <DATE_TIME>0</DATE_TIME>
+                <PERMISSION>6</PERMISSION>
+                <FILE_CONTENT class="CLinksysFirmwareUpgPage">
+                  <TEXT />
+                  <Firmware_Version>v1.1_1.51.2</Firmware_Version>
+                </FILE_CONTENT>
+              </FILE>
+            </FILES>
+            <FILE_COUNTER>4</FILE_COUNTER>
+            <CAPACITY>100000000</CAPACITY>
+          </FILE>
+          <FILE class="CFileSystem">
+            <FILE_NUMBER>0</FILE_NUMBER>
+            <NAME>Dev:</NAME>
+            <DATE_TIME>0</DATE_TIME>
+            <PERMISSION>6</PERMISSION>
+            <FILE_CONTENT />
+            <FILES />
+            <FILE_COUNTER>0</FILE_COUNTER>
+            <CAPACITY>1000000000</CAPACITY>
+          </FILE>
+          <FILE class="CFileSystem">
+            <FILE_NUMBER>0</FILE_NUMBER>
+            <NAME>c:</NAME>
+            <DATE_TIME>0</DATE_TIME>
+            <PERMISSION>6</PERMISSION>
+            <FILE_CONTENT class="CTextFileContent">
+              <TEXT>This is a sample text file</TEXT>
+            </FILE_CONTENT>
+            <FILES>
+              <FILE class="CFile">
+                <FILE_NUMBER>1</FILE_NUMBER>
+                <NAME>sampleFile.txt</NAME>
+                <DATE_TIME>0</DATE_TIME>
+                <PERMISSION>6</PERMISSION>
+                <FILE_CONTENT class="CTextFileContent">
+                  <TEXT>This is a sample text file</TEXT>
+                </FILE_CONTENT>
+              </FILE>
+            </FILES>
+            <FILE_COUNTER>1</FILE_COUNTER>
+            <CAPACITY>1000000000</CAPACITY>
+          </FILE>
+        </FILES>
+      </FILE>
+    </FILE_MANAGER>
+    <ALGORITHM_SETTINGS>
+      <USE_GLOBAL>true</USE_GLOBAL>
+      <CBAC_HALF_OPEN_SESSION_MULTIPLIER>1</CBAC_HALF_OPEN_SESSION_MULTIPLIER>
+      <TCP_MAX_CONNECTING_SESSIONS>100</TCP_MAX_CONNECTING_SESSIONS>
+      <TCP_MAX_OPENED_SESSIONS>1000</TCP_MAX_OPENED_SESSIONS>
+      <INTERFACE_QUEUE_SIZE>10</INTERFACE_QUEUE_SIZE>
+      <STORM_CONTROL_MULTIPLIER>10</STORM_CONTROL_MULTIPLIER>
+      <TCP_MAX_RETRANSMISSION_TIMEOUT>1000</TCP_MAX_RETRANSMISSION_TIMEOUT>
+    </ALGORITHM_SETTINGS>
+    <TRAFFICGEN_USER_TRAFFIC />
+    <TERMINAL_SETTINGS>
+      <BITS>9600</BITS>
+      <DATA_BITS>8</DATA_BITS>
+      <PARITY>2</PARITY>
+      <STOP_BITS>1</STOP_BITS>
+      <FLOW_CONTROL>0</FLOW_CONTROL>
+    </TERMINAL_SETTINGS>
+    <PPPOE_SETTINGS>
+      <AUTHEN_TYPE>1/2/</AUTHEN_TYPE>
+    </PPPOE_SETTINGS>
+    <LOCK_SETTINGS>
+      <DLOCK>1</DLOCK>
+      <LOCK>0</LOCK>
+      <PASSWD />
+    </LOCK_SETTINGS>
+    <HTML_TAB>
+      <HTML_CODE />
+    </HTML_TAB>
+    <GUI_TAB>
+      <GUI_CODE />
+    </GUI_TAB>
+    <IMAGE_SETTINGS>
+      <CUSTOM_PHYSICAL />
+    </IMAGE_SETTINGS>
+    <DOT1X_SETTINGS>
+      <PORTS />
+    </DOT1X_SETTINGS>
+    <SNMP_MANAGER>
+      <AGENT_IP>0.0.0.0</AGENT_IP>
+      <AGENT_PORT>161</AGENT_PORT>
+      <MANAGER_PORT>161</MANAGER_PORT>
+      <READ_COMMUNITY />
+      <WRITE_COMMUNITY />
+      <SNMP_VERSION>1</SNMP_VERSION>
+    </SNMP_MANAGER>
+    <PTP_PROCESS>
+      <PTP_CLOCK_ID>0xff:FF:FF:FF:FE:FF:FF:F0</PTP_CLOCK_ID>
+      <PTP_CLOCK_TIME>1301542321735</PTP_CLOCK_TIME>
+    </PTP_PROCESS>
+    <NTP_SERVER>
+      <ENABLED>0</ENABLED>
+      <ENABLED_SERVER_AUTHENTICATE>0</ENABLED_SERVER_AUTHENTICATE>
+      <KEY>0</KEY>
+      <MD5PASSWORD />
+      <SERVER_IP_LIST />
+    </NTP_SERVER>
+  </ENGINE>
+  <WORKSPACE>
+    <LOGICAL>
+      <X>314.5</X>
+      <Y>221</Y>
+      <DEVCLUSTERID>1-1</DEVCLUSTERID>
+      <CUSTOM_IMAGE_LOGICAL />
+      <CUSTOM_IMAGE_PHYSICAL />
+      <MEM_ADDR>1779797069200</MEM_ADDR>
+      <DEV_ADDR>1779796981952</DEV_ADDR>
+    </LOGICAL>
+    <PHYSICAL>{80566901-410e-4d4e-806b-62b35bf402f8},{b15856fc-4dbc-4f4c-9e78-7014bc7da927},{3ef86b68-a737-4bd0-ad26-5bff31570b27},{1f3cecb7-8bbc-431b-b849-8e29997a7caa}</PHYSICAL>
+    <PHYSICAL_CPUR>
+      <X_PN>0.0499419</X_PN>
+      <Y_PN>0.100561</Y_PN>
+      <X>172</X>
+      <Y>215</Y>
+      <SLOT>0</SLOT>
+      <SUBSLOT>0</SUBSLOT>
+      <PARENT_PATH>{80566901-410e-4d4e-806b-62b35bf402f8},{b15856fc-4dbc-4f4c-9e78-7014bc7da927},{3ef86b68-a737-4bd0-ad26-5bff31570b27}</PARENT_PATH>
+      <CONTAINER_ID>{3ef86b68-a737-4bd0-ad26-5bff31570b27}</CONTAINER_ID>
+      <ICP_CONTAINER_SCENE_X>0</ICP_CONTAINER_SCENE_X>
+      <ICP_CONTAINER_SCENE_Y>0</ICP_CONTAINER_SCENE_Y>
+      <ORIGINAL_DEVICE_UUID>{77db60a7-903d-c57b-97d2-b4a1c883fa20}</ORIGINAL_DEVICE_UUID>
+    </PHYSICAL_CPUR>
+  </WORKSPACE>
+</DEVICE>

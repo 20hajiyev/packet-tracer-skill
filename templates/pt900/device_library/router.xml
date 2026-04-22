@@ -1,0 +1,16 @@
+<DEVICE class="network-device">
+  <ID>__DEVICE_ID__</ID>
+  <ENGINE>
+    <TYPE model="ISR4331" customModel="">Router</TYPE>
+    <NAME translate="true">__NAME__</NAME>
+  </ENGINE>
+  <POSITION>
+    <X>__X__</X>
+    <Y>__Y__</Y>
+  </POSITION>
+  <PORTS>
+    <PORT name="GigabitEthernet0/0/0" kind="eCopperGigabitEthernet" />
+    <PORT name="GigabitEthernet0/0/1" kind="eCopperGigabitEthernet" />
+  </PORTS>
+  <CLI><![CDATA[__CLI__]]></CLI>
+</DEVICE>

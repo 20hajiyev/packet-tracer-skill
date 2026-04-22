@@ -6,6 +6,8 @@ venv/
 output/
 *.pkt
 *.xml
+!templates/
+!templates/**/*.xml
 .pytest_cache/
 scripts/vendor/_twofish*.pyd
 scripts/vendor/_twofish*.so

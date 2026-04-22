@@ -25,6 +25,11 @@ def test_release_docs_and_trust_files_exist() -> None:
         ROOT / ".github" / "ISSUE_TEMPLATE" / "bug_report.yml",
         ROOT / ".github" / "ISSUE_TEMPLATE" / "feature_request.yml",
         ROOT / ".github" / "ISSUE_TEMPLATE" / "config.yml",
+        ROOT / "templates" / "pt900" / "base_empty.xml",
+        ROOT / "templates" / "pt900" / "device_library" / "pc.xml",
+        ROOT / "templates" / "pt900" / "device_library" / "printer.xml",
+        ROOT / "templates" / "pt900" / "device_library" / "router.xml",
+        ROOT / "templates" / "pt900" / "device_library" / "switch.xml",
     ]
 
     for path in required:
