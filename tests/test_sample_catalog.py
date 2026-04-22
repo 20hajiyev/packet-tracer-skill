@@ -257,6 +257,10 @@ def test_default_curated_donor_registry_is_seeded_from_known_examples() -> None:
     registry = load_curated_donor_registry()
     assert {"complex_campus_master_edit_v4.pkt", "home_iot_cli_edit_v1.pkt", "service_heavy_cli_edit_v1.pkt"} <= set(registry)
     assert registry["complex_campus_master_edit_v4.pkt"]["promotion_status"] == "acceptance_verified_curated"
+    assert any(
+        "Local inventory smoke revalidated" in note
+        for note in registry["complex_campus_master_edit_v4.pkt"]["acceptance_notes"]
+    )
     assert registry["home_iot_cli_edit_v1.pkt"]["workspace_validation"] == "inventory_roundtrip_verified"
     assert registry["service_heavy_cli_edit_v1.pkt"]["provenance"] == "known-working-example:service_heavy_cli_edit_v1"
 

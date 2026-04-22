@@ -67,6 +67,7 @@ Gallery families:
 - `service_heavy`
   Server-centric service labs with richer metadata.
 
-Launch-prep references:
+Launch references:
 - `..\docs\hero-demo-plan.md`
 - `..\docs\release-notes-0.2.1.md`
+- `..\docs\campus-donor-proof.md`

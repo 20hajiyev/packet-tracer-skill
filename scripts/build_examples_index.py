@@ -260,6 +260,10 @@ def build_examples_gallery_markdown(payload: dict[str, object]) -> str:
         "",
         "- [complex campus screenshot](screenshots/complex_campus_master_edit_v4.png)",
         "",
+        "Canonical donor proof:",
+        "",
+        "- [campus donor proof](../docs/campus-donor-proof.md)",
+        "",
         "| Title | Family | Capabilities | Image | Inventory |",
         "| --- | --- | --- | --- | --- |",
     ]

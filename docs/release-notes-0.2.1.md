@@ -1,8 +1,8 @@
-# `packet-tracer-skill` `0.2.1` Release Notes Draft
+# `packet-tracer-skill` `0.2.1` Release Notes Source
 
 ## Summary
 
-`0.2.1` is a conservative public preview patch release for `packet-tracer-skill`. It hardens the npm package surface around donor-backed planning, open-first generation rules, scenario-aware reporting, and Windows-first runtime truth.
+`0.2.1` is a conservative public preview patch release for `packet-tracer-skill`. The npm package is already live, and this file is the source text for the GitHub release body.
 
 ## Highlights
 
@@ -14,12 +14,13 @@
 
 ## Runtime Notes
 
-- real `.pkt` runtime remains Windows-first
+- real `.pkt` runtime remains Windows-first runtime
 - strict validation is currently performed with an external bridge override when repo-local bridge assets are not bundled
 - public docs intentionally preserve the distinction between repo-local readiness and external bridge fallback
 
 ## Public Preview Intent
 
-- this release prepares the repo for npm publish and GitHub release
+- `packet-tracer-skill@0.2.1` is already published on npm
+- GitHub release, About/Topics application, and Discussions setup still follow the prepared manual launch ops flow
 - it does not change the product contract to imply `1.0.0` stability
-- publish should happen only after the short follow-up batch that applies the prepared metadata and release steps
+- the next public-facing technical step is a canonical campus donor proof artifact, not broader synthetic scope

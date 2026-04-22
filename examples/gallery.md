@@ -12,6 +12,10 @@ Hero visual:
 
 - [complex campus screenshot](screenshots/complex_campus_master_edit_v4.png)
 
+Canonical donor proof:
+
+- [campus donor proof](../docs/campus-donor-proof.md)
+
 | Title | Family | Capabilities | Image | Inventory |
 | --- | --- | --- | --- | --- |
 | Complex Campus | `campus` | management_vlan, telnet, acl, server_dns, server_email, server_aaa, wireless_mutation | [screenshot](screenshots/complex_campus_master_edit_v4.png) | [manifest](complex_campus_master_edit_v4.inventory.json) |

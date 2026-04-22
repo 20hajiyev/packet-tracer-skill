@@ -8,12 +8,12 @@ Cisco Packet Tracer 9.x `.pkt` generator and editor for skill-based coding hosts
 
 This repository is built for one job: take a natural-language network request, build an explicit scenario-aware plan, adapt a compatible donor lab, and produce a Packet Tracer 9.x workflow that stays open-first and compatibility-first.
 
-`0.2.1` public preview hardening is focused on:
+`0.2.1` public preview baseline is focused on:
 
 - donor-backed and scenario-aware public messaging
 - conservative Windows-first runtime truth
 - known working scenario set examples with acceptance-backed artifacts
-- release-notes-ready and GitHub-metadata-ready launch surface
+- npm-published surface and GitHub-launch-ops-ready metadata
 
 ## Why It Is Different
 
@@ -62,6 +62,7 @@ Important runtime rule:
 - `--doctor` is the authority for whether real `.pkt` operations are ready
 - repo-local bridge and external bridge are reported separately
 - current strict validation is Windows-first and external-bridge-assisted
+- `validate_open` can be ready while strict decode/edit/generate are still blocked
 
 ## Quick Start
 
@@ -99,12 +100,14 @@ cd .\packet-tracer-skill
 powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1 -Dev
 ```
 
-Launch-prep references:
+Launch references:
 
 - [docs/release-notes-0.2.1.md](docs/release-notes-0.2.1.md)
 - [docs/hero-demo-plan.md](docs/hero-demo-plan.md)
 - [docs/github-metadata.md](docs/github-metadata.md)
 - [docs/release-checklist.md](docs/release-checklist.md)
+- [docs/github-launch-ops-0.2.1.md](docs/github-launch-ops-0.2.1.md)
+- [docs/campus-donor-proof.md](docs/campus-donor-proof.md)
 
 ## Runtime Doctor Contract
 
@@ -143,6 +146,7 @@ Important distinction:
 Runtime truth reference:
 
 - [docs/runtime-truth.md](docs/runtime-truth.md)
+- [docs/post-launch-follow-up.md](docs/post-launch-follow-up.md)
 
 ## Runtime Configuration
 
@@ -240,6 +244,10 @@ Hero visual for the `0.2.1` public preview surface:
 
 The gallery is treated as a known working scenario set, not just a screenshot list, and the same canonical set feeds release notes and GitHub metadata.
 
+Canonical public proof:
+
+- [docs/campus-donor-proof.md](docs/campus-donor-proof.md)
+
 ## Security and Privacy
 
 This repo is prepared to avoid accidental sharing of local private material:
@@ -263,9 +271,9 @@ See also:
 - [docs/release-checklist.md](docs/release-checklist.md)
 - [docs/github-discussions-setup.md](docs/github-discussions-setup.md)
 
-## Release Readiness
+## Release and Launch State
 
-This repo is being hardened toward a publish-ready and release-ready surface.
+The npm package is already published as `packet-tracer-skill@0.2.1`. Remaining launch ops are GitHub release application, About/Topics updates, Discussions setup, and public donor proof follow-up.
 
 Recommended local validation before release:
 
@@ -277,12 +285,14 @@ python .\scripts\generate_pkt.py --parity-report "campus with VLAN DHCP ACL"
 python .\scripts\runtime_doctor.py
 ```
 
-Publish-preview references:
+Launch ops references:
 
 - [docs/release-checklist.md](docs/release-checklist.md)
 - [docs/publish-preview-roadmap.md](docs/publish-preview-roadmap.md)
 - [docs/discovery-keywords.md](docs/discovery-keywords.md)
 - [docs/github-metadata.md](docs/github-metadata.md)
+- [docs/github-launch-ops-0.2.1.md](docs/github-launch-ops-0.2.1.md)
+- [docs/post-launch-follow-up.md](docs/post-launch-follow-up.md)
 
 ## Azerbaijani Summary
 

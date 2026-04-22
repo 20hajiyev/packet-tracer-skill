@@ -74,10 +74,11 @@ def test_collect_runtime_doctor_windows_ready(monkeypatch) -> None:
     assert "generate" in payload["ready_operations"]
     assert payload["blocked_operations"] == []
     assert payload["runtime_grade"] == "ready"
-    assert "Runtime looks ready" in payload["doctor_summary"]
+    assert "Runtime is ready." in payload["doctor_summary"]
+    assert "Ready operations: inventory, decode, edit, generate, validate_open." in payload["doctor_summary"]
     assert payload["bridge_resolution"] == "repo_local"
     assert payload["bridge_recommendation"] == "Repo-local bridge is resolved."
-    assert "Repo-local bridge" in payload["runtime_contract_notes"]
+    assert "run strict decode/edit/generate locally" in payload["runtime_contract_notes"]
     assert payload["recommended_next_steps"] == []
     assert payload["blocking_reason"] == ""
 
@@ -134,10 +135,11 @@ def test_collect_runtime_doctor_linux_reports_windows_first_runtime(monkeypatch)
     assert "windows_first_runtime" in payload["runtime_blockers"]
     assert "generate" in payload["blocked_operations"]
     assert payload["runtime_grade"] == "blocked"
-    assert "Runtime is blocked" in payload["doctor_summary"]
+    assert "Runtime is blocked." in payload["doctor_summary"]
+    assert "Blocked operations:" in payload["doctor_summary"]
     assert payload["bridge_resolution"] == "missing"
     assert "resolve a local bridge" in payload["bridge_recommendation"]
-    assert "strict runtime remains blocked" in payload["runtime_contract_notes"]
+    assert "strict decode/edit/generate remain blocked" in payload["runtime_contract_notes"]
     assert any("Windows-first" in line for line in payload["recommended_next_steps"])
     assert any("Packet Tracer saves" in line for line in payload["recommended_next_steps"])
     assert any("Twofish bridge" in line for line in payload["recommended_next_steps"])
@@ -184,7 +186,55 @@ def test_collect_runtime_doctor_reports_external_bridge_resolution(monkeypatch) 
     assert payload["runtime_grade"] == "partially_ready"
     assert payload["bridge_resolution"] == "external_env"
     assert payload["bridge_path_source"] == "env"
-    assert "External bridge" in payload["doctor_summary"]
+    assert "Runtime operations are ready" in payload["doctor_summary"]
+    assert "external environment" in payload["doctor_summary"]
     assert "repo-local vendor bridge" in payload["bridge_recommendation"]
-    assert "External bridge resolves decode/edit" in payload["runtime_contract_notes"]
+    assert "rely on an external bridge path" in payload["runtime_contract_notes"]
     assert "using_external_bridge_only" in payload["runtime_blockers"]
+
+
+def test_collect_runtime_doctor_reports_validate_open_only_partial_state(monkeypatch) -> None:
+    monkeypatch.setattr(runtime_doctor, "_host_os_label", lambda: "Windows")
+    monkeypatch.setattr(
+        runtime_doctor,
+        "collect_twofish_diagnostics",
+        lambda: {
+            "python_version": "3.14.0",
+            "python_support_status": "ok",
+            "python_support_message": "supported",
+            "resolved_twofish_path": "",
+            "twofish_source": "",
+            "twofish_load_status": "missing",
+            "twofish_message": "no local Twofish bridge was found",
+            "twofish_sha256": "",
+        },
+    )
+    monkeypatch.setattr(
+        runtime_doctor,
+        "collect_donor_diagnostics",
+        lambda: {
+            "target_version": "9.0.0.0810",
+            "resolved_donor_path": "",
+            "donor_version": "",
+            "donor_source": "",
+            "status": "missing",
+            "message": "not set",
+            "blocking_reason": "not set",
+            "candidate_paths": [],
+        },
+    )
+    monkeypatch.setattr(runtime_doctor, "get_packet_tracer_root", lambda: Path(r"C:\Program Files\Cisco Packet Tracer 9.0.0"))
+    monkeypatch.setattr(runtime_doctor, "get_packet_tracer_saves_root", lambda: Path(r"C:\Program Files\Cisco Packet Tracer 9.0.0\saves"))
+    monkeypatch.setattr(runtime_doctor, "get_packet_tracer_exe", lambda: Path(r"C:\Program Files\Cisco Packet Tracer 9.0.0\bin\PacketTracer.exe"))
+
+    payload = runtime_doctor.collect_runtime_doctor()
+
+    assert payload["runtime_grade"] == "partially_ready"
+    assert payload["ready_operations"] == ["validate_open"]
+    assert "inventory" in payload["blocked_operations"]
+    assert "decode" in payload["blocked_operations"]
+    assert "edit" in payload["blocked_operations"]
+    assert "generate" in payload["blocked_operations"]
+    assert "Ready operations: validate_open." in payload["doctor_summary"]
+    assert "Blocked operations: inventory, decode, edit, generate." in payload["doctor_summary"]
+    assert "Strict decode/edit/generate remain blocked until a local bridge is resolved." in payload["doctor_summary"]

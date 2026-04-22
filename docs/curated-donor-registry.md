@@ -33,6 +33,12 @@ The current seeded entries are based on known working example artifacts:
 
 These entries become active when a donor root contains matching relative paths or filenames.
 
+Current public proof reference:
+
+- `docs/campus-donor-proof.md`
+
+This is intentionally separate from the registry file. A registry-backed donor may still be refused for a generalized prompt if the reusable link skeleton is too weak.
+
 ## Promotion Rules
 
 - `reference_only` never becomes the final selected donor

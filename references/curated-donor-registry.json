@@ -20,7 +20,8 @@
       "acceptance_fixtures": ["campus_core_complex"],
       "acceptance_notes": [
         "Known working campus example with public screenshot and inventory artifact.",
-        "Use when donor root contains the exported complex campus .pkt example."
+        "Use when donor root contains the exported complex campus .pkt example.",
+        "Local inventory smoke revalidated the matching campus donor artifact before the public donor proof note was added."
       ],
       "provenance": "known-working-example:complex_campus_master_edit_v4"
     },

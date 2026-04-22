@@ -25,6 +25,23 @@ Pinned screenshot:
 
 - `examples/screenshots/complex_campus_master_edit_v4.png`
 
+Pinned caption:
+
+- `donor-backed complex campus proof artifact for the 0.2.1 public preview`
+
+## Release Source
+
+- release title: `v0.2.1`
+- release body source: `docs/release-notes-0.2.1.md`
+- launch wording source: `docs/launch-announcement-0.2.1.md`
+
+## Discussions Categories
+
+- `Showcase`
+- `Q&A`
+- `Donor Requests`
+- `Capability Roadmap`
+
 ## Public Message Guardrails
 
 - say `donor-backed`, `open-first`, `scenario-aware`, and `Windows-first runtime`

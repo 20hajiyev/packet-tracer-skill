@@ -18,6 +18,17 @@ That distinction is part of the public product contract.
 - `blocked`
   Required donor, bridge, or Packet Tracer runtime pieces are missing.
 
+## How To Read `--doctor`
+
+- if `runtime_grade=ready`, strict decode/edit/generate and `validate_open` are available from the current checkout
+- if `runtime_grade=partially_ready`, at least one operation still works, but the product contract is not fully satisfied
+- if `runtime_grade=blocked`, no critical runtime path is ready enough to claim strict `.pkt` support
+
+High-signal mixed case:
+
+- `validate_open` can be `ready` while `inventory`, `decode`, `edit`, and `generate` are blocked
+- this means Packet Tracer is installed, but the donor and/or bridge path is still not sufficient for strict `.pkt` work
+
 ## Bridge Resolution
 
 - `repo_local`
@@ -47,3 +58,4 @@ If tests pass only with an external bridge:
 - do not say "runtime ready" without qualification
 - do say "validated with external bridge override"
 - do preserve the difference between repo-local readiness and external fallback
+- do say when `validate_open` is ready but strict decode/edit/generate are still blocked

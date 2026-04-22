@@ -33,8 +33,10 @@ python .\scripts\runtime_doctor.py
 - examples index and gallery were rebuilt
 - screenshots are intentional and non-sensitive
 - changelog entry is updated for `0.2.1`
-- release notes draft exists: `docs/release-notes-0.2.1.md`
+- release notes source exists: `docs/release-notes-0.2.1.md`
 - hero demo plan exists: `docs/hero-demo-plan.md`
+- GitHub launch ops runbook exists: `docs/github-launch-ops-0.2.1.md`
+- canonical donor proof exists: `docs/campus-donor-proof.md`
 - hero visual is selected: `examples/screenshots/complex_campus_master_edit_v4.png`
 - runtime truth docs match current `runtime_grade` and `bridge_resolution` semantics
 - curated donor registry entries are reviewed for promotion status and provenance
@@ -46,6 +48,8 @@ python .\scripts\runtime_doctor.py
 - contributing and security docs exist
 - citation metadata exists
 - About/Topics are ready to be updated in GitHub UI
+- release body source is ready for direct paste into GitHub Releases
+- Discussions categories are decision-complete in docs
 
 ## Publish Gate
 
@@ -58,3 +62,9 @@ Only publish when:
 - no accidental local paths leaked into tracked files
 - GitHub metadata doc is final and matches README wording
 - hero visual and release notes are ready for direct reuse
+
+## Post-Publish Follow-Up
+
+- apply GitHub launch ops if they were not automated
+- publish one canonical donor proof note
+- use `docs/post-launch-follow-up.md` as the source for the next patch trigger conditions

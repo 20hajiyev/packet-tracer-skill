@@ -20,11 +20,14 @@ def test_release_docs_and_trust_files_exist() -> None:
         ROOT / "docs" / "github-discussions-setup.md",
         ROOT / "docs" / "runtime-truth.md",
         ROOT / "docs" / "curated-donor-registry.md",
+        ROOT / "docs" / "campus-donor-proof.md",
         ROOT / "docs" / "discovery-keywords.md",
+        ROOT / "docs" / "github-launch-ops-0.2.1.md",
         ROOT / "docs" / "publish-preview-roadmap.md",
         ROOT / "docs" / "github-metadata.md",
         ROOT / "docs" / "hero-demo-plan.md",
         ROOT / "docs" / "launch-announcement-0.2.1.md",
+        ROOT / "docs" / "post-launch-follow-up.md",
         ROOT / "docs" / "release-notes-0.2.1.md",
         ROOT / ".github" / "workflows" / "ci.yml",
         ROOT / ".github" / "ISSUE_TEMPLATE" / "bug_report.yml",
@@ -46,12 +49,15 @@ def test_readme_highlights_release_and_runtime_contracts() -> None:
 
     assert "Known Working Scenario Set" in readme
     assert "Runtime Doctor Contract" in readme
-    assert "`0.2.1` public preview hardening" in readme
+    assert "`0.2.1` public preview baseline" in readme
     assert "bridge_resolution" in readme
     assert "references/curated-donor-registry.json" in readme
     assert "references/scenario-fixture-corpus.json" in readme
     assert "docs/release-notes-0.2.1.md" in readme
     assert "docs/hero-demo-plan.md" in readme
+    assert "docs/github-launch-ops-0.2.1.md" in readme
+    assert "docs/campus-donor-proof.md" in readme
+    assert "docs/post-launch-follow-up.md" in readme
     assert "docs/release-checklist.md" in readme
     assert "docs/runtime-truth.md" in readme
     assert "docs/curated-donor-registry.md" in readme
@@ -74,6 +80,9 @@ def test_package_metadata_is_publish_ready() -> None:
         "bin/packet-tracer-skill.js",
         "scripts/*.py",
         "examples/screenshots/*.png",
+        "docs/campus-donor-proof.md",
+        "docs/github-launch-ops-0.2.1.md",
+        "docs/post-launch-follow-up.md",
         "docs/release-notes-0.2.1.md",
         "docs/runtime-truth.md",
     } <= files
@@ -100,6 +109,9 @@ def test_launch_prep_docs_are_decision_complete() -> None:
     hero_demo = (ROOT / "docs" / "hero-demo-plan.md").read_text(encoding="utf-8")
     launch_announcement = (ROOT / "docs" / "launch-announcement-0.2.1.md").read_text(encoding="utf-8")
     metadata = (ROOT / "docs" / "github-metadata.md").read_text(encoding="utf-8")
+    launch_ops = (ROOT / "docs" / "github-launch-ops-0.2.1.md").read_text(encoding="utf-8")
+    donor_proof = (ROOT / "docs" / "campus-donor-proof.md").read_text(encoding="utf-8")
+    follow_up = (ROOT / "docs" / "post-launch-follow-up.md").read_text(encoding="utf-8")
     gallery = (ROOT / "examples" / "gallery.md").read_text(encoding="utf-8")
     examples_readme = (ROOT / "examples" / "README.md").read_text(encoding="utf-8")
 
@@ -114,9 +126,16 @@ def test_launch_prep_docs_are_decision_complete() -> None:
     assert "Final About Text" in metadata
     assert "Final Topics" in metadata
     assert "complex_campus_master_edit_v4.png" in metadata
+    assert "v0.2.1" in launch_ops
+    assert "docs/release-notes-0.2.1.md" in launch_ops
+    assert "selection_failure_type=viable_donor_found_but_acceptance_weak" in donor_proof
+    assert "generalized campus generation can still be donor-limited" in donor_proof
+    assert "Trigger Conditions for `0.2.2` or the Next Minor" in follow_up
     assert "canonical public set" in gallery
     assert "complex campus screenshot" in gallery
+    assert "campus donor proof" in gallery
     assert "canonical public set" in examples_readme
+    assert "..\\docs\\campus-donor-proof.md" in examples_readme
 
 
 def test_npm_pack_dry_run_is_hardened() -> None:

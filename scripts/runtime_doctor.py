@@ -60,6 +60,10 @@ def runtime_env_examples(host_os: str) -> list[str]:
     return []
 
 
+def _format_operation_list(operations: list[str]) -> str:
+    return ", ".join(operations) if operations else "none"
+
+
 def build_recommended_next_steps(
     *,
     host_os: str,
@@ -205,13 +209,31 @@ def collect_runtime_doctor() -> dict[str, object]:
     else:
         runtime_grade = "ready"
     if runtime_grade == "ready":
-        doctor_summary = "Runtime looks ready for decode, edit, generate, and validate-open."
+        doctor_summary = (
+            "Runtime is ready. "
+            f"Ready operations: {_format_operation_list(ready_operations)}."
+        )
+    elif bridge_resolution == "external_env" and not blocked_operations:
+        doctor_summary = (
+            "Runtime operations are ready, but packaged runtime remains partially ready because the bridge "
+            "comes from an external environment instead of the repo-local vendor path. "
+            f"Ready operations: {_format_operation_list(ready_operations)}."
+        )
     elif runtime_grade == "partially_ready":
-        doctor_summary = "Runtime is partially ready: some operations work, but strict .pkt generation is still blocked."
+        doctor_summary = (
+            "Runtime is partially ready. "
+            f"Ready operations: {_format_operation_list(ready_operations)}. "
+            f"Blocked operations: {_format_operation_list(blocked_operations)}."
+        )
     else:
-        doctor_summary = "Runtime is blocked: required donor, bridge, or Packet Tracer runtime pieces are missing."
-    if bridge_resolution == "external_env":
+        doctor_summary = (
+            "Runtime is blocked. "
+            f"Blocked operations: {_format_operation_list(blocked_operations)}."
+        )
+    if bridge_resolution == "external_env" and blocked_operations:
         doctor_summary = f"{doctor_summary} External bridge is being used instead of a repo-local vendor bridge."
+    elif bridge_resolution == "missing" and runtime_grade != "ready":
+        doctor_summary = f"{doctor_summary} Strict decode/edit/generate remain blocked until a local bridge is resolved."
     bridge_recommendation = (
         "Use or install a repo-local vendor bridge for fully self-contained runtime readiness."
         if bridge_resolution == "external_env"
@@ -220,11 +242,11 @@ def collect_runtime_doctor() -> dict[str, object]:
         else "Repo-local bridge is resolved."
     )
     runtime_contract_notes = (
-        "Repo-local bridge and donor are present."
+        "Repo-local bridge and donor are present, so this checkout can run strict decode/edit/generate locally."
         if bridge_resolution == "repo_local"
-        else "External bridge resolves decode/edit, but repo-local runtime packaging is still incomplete."
+        else "Strict decode/edit/generate currently rely on an external bridge path. Repo-local runtime packaging is still incomplete."
         if bridge_resolution == "external_env"
-        else "Bridge resolution is missing, so strict runtime remains blocked."
+        else "No bridge is resolved. validate_open may still work when Packet Tracer is installed, but strict decode/edit/generate remain blocked."
     )
 
     return {
