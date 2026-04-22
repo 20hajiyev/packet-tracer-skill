@@ -1,0 +1,71 @@
+{
+  "registry_version": "1.0",
+  "donors": [
+    {
+      "relative_path": "complex_campus_master_edit_v4.pkt",
+      "promotion_status": "acceptance_verified_curated",
+      "packet_tracer_version": "9.0.0.0810",
+      "workspace_validation": "inventory_roundtrip_verified",
+      "apply_safety_level": "acceptance-verified",
+      "archetype_tags": ["campus/core", "wireless-heavy"],
+      "validated_edit_capabilities": [
+        "management_vlan",
+        "telnet",
+        "acl",
+        "server_dns",
+        "server_email",
+        "server_aaa",
+        "wireless_mutation"
+      ],
+      "acceptance_fixtures": ["campus_core_complex"],
+      "acceptance_notes": [
+        "Known working campus example with public screenshot and inventory artifact.",
+        "Use when donor root contains the exported complex campus .pkt example."
+      ],
+      "provenance": "known-working-example:complex_campus_master_edit_v4"
+    },
+    {
+      "relative_path": "home_iot_cli_edit_v1.pkt",
+      "promotion_status": "acceptance_verified_curated",
+      "packet_tracer_version": "9.0.0.0810",
+      "workspace_validation": "inventory_roundtrip_verified",
+      "apply_safety_level": "acceptance-verified",
+      "archetype_tags": ["IoT/home gateway", "wireless-heavy"],
+      "validated_edit_capabilities": [
+        "iot",
+        "iot_registration",
+        "iot_control",
+        "wireless_ap"
+      ],
+      "acceptance_fixtures": ["home_iot_complex"],
+      "acceptance_notes": [
+        "Known working home IoT example with gateway-backed registration state.",
+        "Use when donor root contains the exported Home IoT showcase lab."
+      ],
+      "provenance": "known-working-example:home_iot_cli_edit_v1"
+    },
+    {
+      "relative_path": "service_heavy_cli_edit_v1.pkt",
+      "promotion_status": "acceptance_verified_curated",
+      "packet_tracer_version": "9.0.0.0810",
+      "workspace_validation": "inventory_roundtrip_verified",
+      "apply_safety_level": "acceptance-verified",
+      "archetype_tags": ["service-heavy"],
+      "validated_edit_capabilities": [
+        "server_dns",
+        "server_dhcp",
+        "server_ftp",
+        "server_email",
+        "server_syslog",
+        "server_aaa",
+        "end_device_mutation"
+      ],
+      "acceptance_fixtures": ["service_heavy_complex"],
+      "acceptance_notes": [
+        "Known working service-heavy example with topology and service detail screenshots.",
+        "Use when donor root contains the exported service-heavy showcase lab."
+      ],
+      "provenance": "known-working-example:service_heavy_cli_edit_v1"
+    }
+  ]
+}

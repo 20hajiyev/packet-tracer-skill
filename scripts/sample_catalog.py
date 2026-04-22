@@ -15,6 +15,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 SKILL_ROOT = SCRIPT_DIR.parent
 DEFAULT_CATALOG_JSON = SKILL_ROOT / "references" / "packettracer-sample-catalog.json"
 DEFAULT_CATALOG_MD = SKILL_ROOT / "references" / "packettracer-sample-catalog.md"
+DEFAULT_CURATED_DONOR_REGISTRY = SKILL_ROOT / "references" / "curated-donor-registry.json"
 
 CAPABILITY_KEYWORDS = {
     "vlan": ["vlan", "trunk", "access"],
@@ -30,6 +31,10 @@ CAPABILITY_KEYWORDS = {
     "nat": ["nat"],
     "acl": ["acl", "access-list"],
     "vpn": ["vpn", "ipsec", "gre"],
+    "ipsec": ["ipsec", "ike"],
+    "gre": ["gre"],
+    "ppp": ["ppp", "chap", "pap"],
+    "multilayer_switching": ["multilayer", "layer 3", "3560", "svi"],
     "wireless": ["wireless", "wlan", "wlc", "wifi", "ssid", "wpa", "wep", "5g", "bluetooth", "cellular"],
     "wireless_ap": ["wireless", "wlan", "wlc", "wifi", "ssid", "wpa", "wep"],
     "wireless_client": ["wireless", "wifi", "tablet", "smartphone", "laptop"],
@@ -56,7 +61,8 @@ TYPE_NORMALIZATION = {
     "server-pt": "Server",
     "router": "Router",
     "switch": "Switch",
-    "multilayerswitch": "Switch",
+    "multilayerswitch": "MultiLayerSwitch",
+    "layer3switch": "MultiLayerSwitch",
     "wirelessrouter": "WirelessRouter",
     "wirelessrouternewgeneration": "WirelessRouter",
     "homegateway": "WirelessRouter",
@@ -112,6 +118,14 @@ class SampleDescriptor:
     runtime_features: list[str] = field(default_factory=list)
     donor_graph_fingerprint: dict[str, Any] = field(default_factory=dict)
     apply_safety_level: str = "reference-known"
+    promotion_evidence: list[str] = field(default_factory=list)
+    validated_edit_capabilities: list[str] = field(default_factory=list)
+    acceptance_notes: list[str] = field(default_factory=list)
+    archetype_tags: list[str] = field(default_factory=list)
+    acceptance_fixtures: list[str] = field(default_factory=list)
+    provenance: str = ""
+    workspace_validation_status: str = ""
+    evidence_source: str = "inferred"
 
     def normalized_device_counts(self) -> dict[str, int]:
         counts: dict[str, int] = {}
@@ -154,6 +168,32 @@ class DonorValidationResult:
 class CuratedDonorRecord:
     sample: SampleDescriptor
     validation: DonorValidationResult
+
+
+def _normalize_registry_key(value: str) -> str:
+    return value.strip().replace("\\", "/").lower()
+
+
+@lru_cache(maxsize=4)
+def _load_curated_donor_registry_cached(path_str: str) -> dict[str, dict[str, Any]]:
+    path = Path(path_str)
+    if not path.exists():
+        return {}
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    donors = list(payload.get("donors", [])) if isinstance(payload, dict) else []
+    registry: dict[str, dict[str, Any]] = {}
+    for item in donors:
+        if not isinstance(item, dict):
+            continue
+        key = _normalize_registry_key(str(item.get("relative_path", "")))
+        if not key:
+            continue
+        registry[key] = dict(item)
+    return registry
+
+
+def load_curated_donor_registry(path: Path | None = None) -> dict[str, dict[str, Any]]:
+    return dict(_load_curated_donor_registry_cached(str(path or DEFAULT_CURATED_DONOR_REGISTRY)))
 
 
 def normalize_device_type(raw_type: str) -> str:
@@ -247,6 +287,8 @@ def infer_preferred_roles(item: dict[str, Any]) -> list[str]:
         roles.append("preferred_routing")
     if {"nat", "acl", "vpn"} & tags:
         roles.append("preferred_security")
+    if {"vpn", "ipsec", "gre", "ppp", "multilayer_switching"} & tags:
+        roles.append("preferred_wan")
     if "wireless" in tags:
         roles.append("preferred_wireless")
     if "telnet" in tags or "management_vlan" in tags:
@@ -368,6 +410,34 @@ def infer_runtime_features(item: dict[str, Any]) -> list[str]:
     return sorted(features)
 
 
+def infer_archetype_tags(item: dict[str, Any]) -> list[str]:
+    tags: set[str] = set()
+    topology = set(item.get("topology_tags", []))
+    families = set(item.get("device_families", []))
+    services = set(item.get("service_support", []))
+    wireless_modes = set(item.get("wireless_mode_tags", []))
+    iot_roles = set(item.get("iot_roles", []))
+
+    if topology & {"chain", "core_access", "department_lan", "router_on_a_stick"} or (
+        families & {"routers", "switches", "multilayer switches"}
+        and set(item.get("capability_tags", [])) & {"vlan", "router_on_a_stick", "management_vlan", "telnet"}
+    ):
+        tags.add("campus/core")
+    if services or "servers" in families or "server_services" in topology:
+        tags.add("service-heavy")
+    if wireless_modes or families & {"access points", "home/wireless routers"}:
+        tags.add("wireless-heavy")
+    if iot_roles or "iot devices" in families or "HomeGateway" in set(item.get("model_families", [])):
+        tags.add("IoT/home gateway")
+    if families & {"wan/cloud/dsl/cable devices", "security devices"} or set(item.get("capability_tags", [])) & {
+        "vpn",
+        "nat",
+        "acl",
+    }:
+        tags.add("WAN/security edge")
+    return sorted(tags)
+
+
 def infer_donor_graph_fingerprint(item: dict[str, Any]) -> dict[str, Any]:
     pairs: list[str] = []
     media_types = infer_port_media_types(item)
@@ -393,6 +463,109 @@ def infer_apply_safety_level(item: dict[str, Any]) -> str:
     if item.get("devices"):
         return "inventory-supported"
     return "reference-known"
+
+
+def infer_validated_edit_capabilities(item: dict[str, Any]) -> list[str]:
+    capabilities: set[str] = {str(tag) for tag in item.get("capability_tags", []) if str(tag).strip()}
+    service_capability_map = {
+        "dhcp": "server_dhcp",
+        "dns": "server_dns",
+        "http": "server_http",
+        "https": "server_https",
+        "ftp": "server_ftp",
+        "tftp": "server_tftp",
+        "ntp": "server_ntp",
+        "email": "server_email",
+        "syslog": "server_syslog",
+        "aaa": "server_aaa",
+    }
+    for service in item.get("service_support", []):
+        mapped = service_capability_map.get(str(service))
+        if mapped:
+            capabilities.add(mapped)
+    if item.get("wireless_mode_tags"):
+        capabilities.add("wireless_mutation")
+    if any(device_family == "end devices" for device_family in item.get("device_families", [])):
+        capabilities.add("end_device_mutation")
+    if item.get("iot_roles"):
+        capabilities.add("iot_registration")
+        if "server" in {str(role) for role in item.get("iot_roles", [])}:
+            capabilities.add("iot_control")
+    if item.get("apply_safety_level") == "inventory-supported":
+        return []
+    return sorted(capabilities)
+
+
+def infer_promotion_evidence(item: dict[str, Any]) -> list[str]:
+    evidence: list[str] = []
+    version = str(item.get("packet_tracer_version") or item.get("version") or "").strip()
+    target_version = get_packet_tracer_target_version()
+    if version and version == target_version:
+        evidence.append(f"version:{version}")
+    validation_status = str(item.get("validation_status", "")).strip()
+    if validation_status:
+        evidence.append(f"validation:{validation_status}")
+    promotion_status = str(item.get("promotion_status", "")).strip()
+    if promotion_status:
+        evidence.append(f"promotion:{promotion_status}")
+    if item.get("donor_eligible"):
+        evidence.append("donor_eligible")
+    runtime_features = set(item.get("runtime_features", []))
+    if "workspace_validated" in runtime_features:
+        evidence.append("workspace_validated")
+    workspace_validation_status = str(item.get("workspace_validation_status", "")).strip()
+    if workspace_validation_status:
+        evidence.append(f"workspace_validation:{workspace_validation_status}")
+    apply_safety_level = str(item.get("apply_safety_level", "")).strip()
+    if apply_safety_level:
+        evidence.append(f"apply_safety:{apply_safety_level}")
+    validated_edit_capabilities = list(item.get("validated_edit_capabilities", []))
+    if validated_edit_capabilities:
+        evidence.append(f"edit_capabilities:{len(validated_edit_capabilities)}")
+    explicit_fixtures = [str(fixture) for fixture in item.get("acceptance_fixtures", []) if str(fixture).strip()]
+    for fixture in explicit_fixtures:
+        evidence.append(f"acceptance_fixture:{fixture}")
+    archetype_to_fixture = {
+        "campus/core": "campus",
+        "service-heavy": "service_heavy",
+        "IoT/home gateway": "home_iot",
+        "WAN/security edge": "wan_security_edge",
+    }
+    if not explicit_fixtures and promotion_status in {"validated_primary", "validated_compat", "acceptance_verified_curated"}:
+        for archetype in item.get("archetype_tags", []):
+            fixture = archetype_to_fixture.get(str(archetype))
+            if fixture:
+                evidence.append(f"acceptance_fixture:{fixture}")
+    provenance = str(item.get("provenance", "")).strip()
+    if provenance:
+        evidence.append(f"provenance:{provenance}")
+    evidence_source = str(item.get("evidence_source", "")).strip()
+    if evidence_source:
+        evidence.append(f"evidence_source:{evidence_source}")
+    return evidence
+
+
+def infer_acceptance_notes(item: dict[str, Any]) -> list[str]:
+    notes: list[str] = []
+    workspace_validation = item.get("workspace_validation", {})
+    if isinstance(workspace_validation, dict):
+        logical_status = str(workspace_validation.get("logical_status", "")).strip()
+        physical_status = str(workspace_validation.get("physical_status", "")).strip()
+        if logical_status or physical_status:
+            notes.append(f"workspace logical={logical_status or 'unknown'} physical={physical_status or 'unknown'}")
+    wireless_modes = [str(item) for item in item.get("wireless_mode_tags", []) if str(item).strip()]
+    if wireless_modes:
+        notes.append(f"wireless modes: {', '.join(wireless_modes)}")
+    archetypes = [str(item) for item in item.get("archetype_tags", []) if str(item).strip()]
+    if archetypes:
+        notes.append(f"archetypes: {', '.join(archetypes)}")
+    acceptance_fixtures = [str(item) for item in item.get("acceptance_fixtures", []) if str(item).strip()]
+    if acceptance_fixtures:
+        notes.append(f"acceptance fixtures: {', '.join(acceptance_fixtures)}")
+    provenance = str(item.get("provenance", "")).strip()
+    if provenance:
+        notes.append(f"provenance: {provenance}")
+    return notes
 
 
 def _detect_license_or_permission(root: Path) -> str:
@@ -460,6 +633,39 @@ def validate_external_sample_summary(item: dict[str, Any], curated: bool) -> Don
     )
 
 
+def _merge_curated_registry_entry(
+    item: dict[str, Any],
+    registry_entry: dict[str, Any] | None,
+    validation: DonorValidationResult,
+) -> dict[str, Any]:
+    merged = dict(item)
+    if not registry_entry:
+        return merged
+    for field in [
+        "packet_tracer_version",
+        "apply_safety_level",
+        "archetype_tags",
+        "validated_edit_capabilities",
+        "acceptance_fixtures",
+        "acceptance_notes",
+        "provenance",
+    ]:
+        if field in registry_entry:
+            merged[field] = registry_entry[field]
+    requested_promotion = str(registry_entry.get("promotion_status", "")).strip()
+    if requested_promotion and validation.donor_eligible:
+        merged["promotion_status"] = requested_promotion
+    if not validation.donor_eligible:
+        merged["promotion_status"] = "reference_only"
+        merged["donor_eligible"] = False
+    if registry_entry:
+        merged["evidence_source"] = "registry+inferred"
+        workspace_validation_status = str(registry_entry.get("workspace_validation", "")).strip()
+        if workspace_validation_status:
+            merged["workspace_validation_status"] = workspace_validation_status
+    return merged
+
+
 def _descriptor_from_item(item: dict[str, Any]) -> SampleDescriptor:
     return SampleDescriptor(
         path=item["path"],
@@ -490,6 +696,14 @@ def _descriptor_from_item(item: dict[str, Any]) -> SampleDescriptor:
         runtime_features=item.get("runtime_features", []),
         donor_graph_fingerprint=item.get("donor_graph_fingerprint", {}),
         apply_safety_level=item.get("apply_safety_level", "reference-known"),
+        promotion_evidence=item.get("promotion_evidence", []),
+        validated_edit_capabilities=item.get("validated_edit_capabilities", []),
+        acceptance_notes=item.get("acceptance_notes", []),
+        archetype_tags=item.get("archetype_tags", []),
+        acceptance_fixtures=item.get("acceptance_fixtures", []),
+        provenance=item.get("provenance", ""),
+        workspace_validation_status=item.get("workspace_validation_status", ""),
+        evidence_source=item.get("evidence_source", "inferred"),
     )
 
 
@@ -520,6 +734,14 @@ def enrich_catalog_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         new_item.setdefault("runtime_features", infer_runtime_features(new_item))
         new_item.setdefault("donor_graph_fingerprint", infer_donor_graph_fingerprint(new_item))
         new_item.setdefault("apply_safety_level", infer_apply_safety_level(new_item))
+        new_item.setdefault("archetype_tags", infer_archetype_tags(new_item))
+        new_item.setdefault("validated_edit_capabilities", infer_validated_edit_capabilities(new_item))
+        new_item.setdefault("acceptance_fixtures", [])
+        new_item.setdefault("provenance", "")
+        new_item.setdefault("promotion_evidence", infer_promotion_evidence(new_item))
+        new_item.setdefault("acceptance_notes", infer_acceptance_notes(new_item))
+        new_item.setdefault("workspace_validation_status", "")
+        new_item.setdefault("evidence_source", "inferred")
         enriched.append(new_item)
     return enriched
 
@@ -693,6 +915,7 @@ def load_reference_catalog(reference_roots: list[Path] | None = None) -> list[Sa
 @lru_cache(maxsize=4)
 def _load_curated_donor_catalog_cached(roots_key: tuple[str, ...]) -> tuple[SampleDescriptor, ...]:
     items: list[dict[str, Any]] = []
+    registry = load_curated_donor_registry()
     for root_str in roots_key:
         root = Path(root_str)
         if not root.exists():
@@ -711,6 +934,8 @@ def _load_curated_donor_catalog_cached(roots_key: tuple[str, ...]) -> tuple[Samp
                 item["promotion_status"] = validation.promotion_status
                 item["packet_tracer_version"] = validation.packet_tracer_version
                 item["donor_eligible"] = validation.donor_eligible
+                registry_entry = registry.get(_normalize_registry_key(rel)) or registry.get(_normalize_registry_key(pkt_path.name))
+                item = _merge_curated_registry_entry(item, registry_entry, validation)
                 items.append(item)
             except Exception:
                 continue

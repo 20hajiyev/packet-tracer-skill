@@ -9,6 +9,7 @@ from sample_catalog import SampleDescriptor
 MATURITY_LEVELS = [
     "reference-known",
     "inventory-supported",
+    "edit-supported",
     "config-mutation-supported",
     "safe-open-generate-supported",
     "acceptance-verified",
@@ -65,6 +66,13 @@ CAPABILITY_PROVIDER_FAMILIES = {
     "nat": {"routers", "home/wireless routers", "security devices"},
     "pat": {"routers", "home/wireless routers", "security devices"},
     "acl": {"routers", "multilayer switches", "switches", "security devices"},
+    "vpn": {"routers", "security devices", "wan/cloud/dsl/cable devices"},
+    "ipsec": {"routers", "security devices", "wan/cloud/dsl/cable devices"},
+    "gre": {"routers", "wan/cloud/dsl/cable devices"},
+    "ppp": {"routers", "wan/cloud/dsl/cable devices"},
+    "multilayer_switching": {"multilayer switches"},
+    "wan": {"wan/cloud/dsl/cable devices", "routers"},
+    "security_edge": {"security devices", "routers"},
     "wireless": {"access points", "home/wireless routers", "end devices"},
     "wireless_ap": {"access points", "home/wireless routers"},
     "wireless_mutation": {"access points", "home/wireless routers"},
@@ -113,6 +121,7 @@ class CoverageGapReport:
     requires_curated_donor: list[str]
     requires_manual_acceptance: list[str]
     capability_statuses: list[dict[str, object]]
+    capability_parity: list[dict[str, object]]
     scenario_family: str | None = None
     scenario_generate_readiness: dict[str, object] = field(default_factory=dict)
     recommended_next_actions: list[str] = field(default_factory=list)
@@ -215,6 +224,14 @@ def _expanded_sample_capabilities(sample: SampleDescriptor, device_families: lis
         capabilities.add("iot_control")
     if sample.link_count > 0 and families & {"routers", "switches", "multilayer switches", "servers", "end devices", "access points"}:
         capabilities.add("verification")
+    if "multilayer switches" in families:
+        capabilities.add("multilayer_switching")
+    if "wan/cloud/dsl/cable devices" in families:
+        capabilities.add("wan")
+    if "security devices" in families:
+        capabilities.add("security_edge")
+    if "vpn" in capabilities:
+        capabilities.update({"ipsec", "gre"})
     return sorted(capabilities)
 
 
@@ -263,6 +280,12 @@ def _scenario_family_for_plan(plan: IntentPlan, requested_families: list[str]) -
     if capabilities & {"iot", "iot_registration", "iot_control"} or {"iot devices", "home/wireless routers"} & set(requested_families):
         return "home_iot"
     if (
+        plan.network_style == "wan_security"
+        or capabilities & {"vpn", "ipsec", "gre", "ppp", "multilayer_switching", "security_edge"}
+        or {"wan/cloud/dsl/cable devices", "security devices"} & set(requested_families)
+    ):
+        return "wan_security_edge"
+    if (
         requested_services & {"dns", "dhcp", "http", "https", "ftp", "tftp", "email", "syslog", "aaa", "ntp"}
         or capabilities & {"server_dns", "server_dhcp", "server_http", "server_https", "server_ftp", "server_tftp", "server_email", "server_syslog", "server_aaa"}
         or "servers" in requested_families
@@ -281,7 +304,90 @@ SCENARIO_CAPABILITY_SETS = {
     "campus": {"router_on_a_stick", "trunk", "access_port", "management_vlan", "telnet", "verification", "acl", "nat"},
     "service_heavy": {"server_dns", "server_dhcp", "server_http", "server_https", "server_ftp", "server_tftp", "server_email", "server_syslog", "server_aaa", "ntp"},
     "home_iot": {"iot", "iot_registration", "iot_control", "wireless_ap", "wireless_mutation"},
+    "wan_security_edge": {"vpn", "ipsec", "gre", "ppp", "acl", "nat"},
 }
+
+CAPABILITY_REQUIRED_ARCHETYPES = {
+    "router_on_a_stick": ["campus/core"],
+    "management_vlan": ["campus/core"],
+    "telnet": ["campus/core"],
+    "server_dns": ["service-heavy"],
+    "server_dhcp": ["service-heavy"],
+    "server_http": ["service-heavy"],
+    "server_https": ["service-heavy"],
+    "server_ftp": ["service-heavy"],
+    "server_tftp": ["service-heavy"],
+    "server_email": ["service-heavy"],
+    "server_syslog": ["service-heavy"],
+    "server_aaa": ["service-heavy"],
+    "iot_registration": ["IoT/home gateway"],
+    "iot_control": ["IoT/home gateway"],
+    "wireless_mutation": ["wireless-heavy"],
+    "wireless_client_association": ["wireless-heavy", "IoT/home gateway"],
+    "vpn": ["WAN/security edge"],
+    "ipsec": ["WAN/security edge"],
+    "gre": ["WAN/security edge"],
+    "ppp": ["WAN/security edge"],
+    "multilayer_switching": ["WAN/security edge", "campus/core"],
+    "security_edge": ["WAN/security edge"],
+}
+
+CAPABILITY_REQUIRED_RUNTIME_FEATURES = {
+    "server_dns": ["workspace_validated", "server_runtime"],
+    "server_dhcp": ["workspace_validated", "server_runtime"],
+    "server_http": ["workspace_validated", "server_runtime"],
+    "server_https": ["workspace_validated", "server_runtime"],
+    "server_ftp": ["workspace_validated", "server_runtime"],
+    "server_tftp": ["workspace_validated", "server_runtime"],
+    "server_email": ["workspace_validated", "server_runtime"],
+    "server_syslog": ["workspace_validated", "server_runtime"],
+    "server_aaa": ["workspace_validated", "server_runtime"],
+    "wireless_mutation": ["workspace_validated", "wireless_runtime"],
+    "wireless_client_association": ["workspace_validated", "wireless_runtime"],
+    "iot_registration": ["workspace_validated", "iot_runtime"],
+    "iot_control": ["workspace_validated", "iot_runtime"],
+}
+
+
+def _generate_mismatch_reason(status: dict[str, object]) -> str | None:
+    if not bool(status.get("inventory_supported")):
+        return "unsupported"
+    if bool(status.get("edit_supported")) and not bool(status.get("safe_open_generate_supported")):
+        return "supported_in_edit_only"
+    if bool(status.get("safe_open_generate_supported")) and bool(status.get("requires_curated_donor")):
+        return "supported_but_donor_limited"
+    if bool(status.get("safe_open_generate_supported")) and bool(status.get("requires_manual_acceptance")) and not bool(status.get("acceptance_verified")):
+        return "supported_but_acceptance_gated"
+    if bool(status.get("safe_open_generate_supported")):
+        return None
+    return "unsupported"
+
+
+def _best_maturity_level(status: dict[str, object]) -> str:
+    level = str(status.get("best_maturity_level") or "").strip()
+    if level in MATURITY_RANK:
+        return level
+    if bool(status.get("acceptance_verified")):
+        return "acceptance-verified"
+    if bool(status.get("safe_open_generate_supported")):
+        return "safe-open-generate-supported"
+    if bool(status.get("config_mutation_supported")):
+        return "config-mutation-supported"
+    if bool(status.get("edit_supported")):
+        return "edit-supported"
+    if bool(status.get("inventory_supported")):
+        return "inventory-supported"
+    return "reference-known"
+
+
+def _recommended_next_action_for_capability(capability: str, mismatch_reason: str | None) -> str:
+    if mismatch_reason == "supported_in_edit_only":
+        return f"Use donor-backed edit flow for {capability} until safe-open generate coverage is raised."
+    if mismatch_reason == "supported_but_donor_limited":
+        return f"Provide or curate a donor whose skeleton explicitly covers {capability}."
+    if mismatch_reason == "supported_but_acceptance_gated":
+        return f"Keep {capability} in explain/edit flow until acceptance evidence is promoted."
+    return f"Import or curate donor coverage for {capability} before strict generate."
 
 
 def _scenario_generate_readiness(
@@ -492,6 +598,25 @@ def build_coverage_gap_report(
 
     requires_curated_donor = sorted(dict.fromkeys(requires_curated_donor))
     requires_manual_acceptance = sorted(dict.fromkeys(requires_manual_acceptance))
+    capability_parity = [
+        {
+            "capability": str(status.get("capability")),
+            "inventory_supported": bool(status.get("inventory_supported")),
+            "edit_supported": bool(status.get("edit_supported")),
+            "generate_supported": bool(status.get("safe_open_generate_supported")),
+            "acceptance_verified": bool(status.get("acceptance_verified")),
+            "best_maturity_level": _best_maturity_level(status),
+            "generate_mismatch_reason": _generate_mismatch_reason(status),
+            "required_donor_families": sorted(_provider_families_for_capability(str(status.get("capability")), requested_families)),
+            "required_archetypes": CAPABILITY_REQUIRED_ARCHETYPES.get(str(status.get("capability")), []),
+            "required_runtime_features": CAPABILITY_REQUIRED_RUNTIME_FEATURES.get(str(status.get("capability")), []),
+            "recommended_next_action": _recommended_next_action_for_capability(
+                str(status.get("capability")),
+                _generate_mismatch_reason(status),
+            ),
+        }
+        for status in capability_statuses
+    ]
     scenario_family = _scenario_family_for_plan(plan, requested_families)
     if selected_donor is None and plan.blocked_mutations:
         requires_manual_acceptance = sorted(dict.fromkeys([*requires_manual_acceptance, *plan.blocked_mutations]))
@@ -523,6 +648,7 @@ def build_coverage_gap_report(
         requires_curated_donor=requires_curated_donor,
         requires_manual_acceptance=requires_manual_acceptance,
         capability_statuses=capability_statuses,
+        capability_parity=capability_parity,
         scenario_family=scenario_family,
         scenario_generate_readiness=scenario_generate_readiness,
         recommended_next_actions=recommended_next_actions,
@@ -533,6 +659,12 @@ def build_inventory_capability_report(payload: dict[str, Any]) -> dict[str, obje
     device_counts = dict(payload.get("topology_summary", {}).get("device_counts", {}))
     families = sorted({_device_family_for_type(device_type) for device_type in device_counts})
     capabilities: set[str] = set()
+    if "multilayer switches" in families:
+        capabilities.add("multilayer_switching")
+    if "wan/cloud/dsl/cable devices" in families:
+        capabilities.add("wan")
+    if "security devices" in families:
+        capabilities.add("security_edge")
     if payload.get("vlans"):
         capabilities.update(["vlan", "trunk", "access_port"])
     if payload.get("dhcp_pools"):
@@ -560,6 +692,8 @@ def build_inventory_capability_report(payload: dict[str, Any]) -> dict[str, obje
         capabilities.add("end_device_mutation")
     if payload.get("acl_names"):
         capabilities.add("acl")
+    if payload.get("topology_summary", {}).get("network_style") == "wan_security":
+        capabilities.update({"vpn", "ipsec", "gre", "ppp"})
     return {
         "device_families": families,
         "capabilities": sorted(capabilities),

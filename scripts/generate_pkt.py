@@ -40,6 +40,7 @@ from sample_catalog import ReferencePattern, SampleCandidate, SampleDescriptor, 
 from sample_selector import rank_curated_donor_samples, rank_reference_samples, rank_samples, select_best_sample
 from workspace_repair import inspect_donor_coherence, inspect_workspace_integrity, validate_donor_coherence, validate_workspace_integrity
 
+FIXTURE_CORPUS_PATH = Path(__file__).resolve().parents[1] / "references" / "scenario-fixture-corpus.json"
 RUNTIME_CLEANUP_MODE = "donor_preserve_runtime"
 SAFE_OPEN_COMPATIBILITY_MODE = "safe_open_strict_9_0"
 PRESERVED_VISUAL_SECTIONS = [
@@ -180,6 +181,19 @@ def _rank_generation_donors(
     donor_roots: list[Path] | None = None,
 ) -> tuple[list[SampleCandidate], list[SampleCandidate], list[SampleCandidate]]:
     requested_services = [str(service) for service in plan.service_requirements.get("services", []) if service]
+    preferred_archetypes = _preferred_donor_archetypes_for_plan(plan, topology_tags)
+    required_fixtures = _required_acceptance_fixtures_for_plan(
+        "wan_security_edge"
+        if "WAN/security edge" in preferred_archetypes
+        else "home_iot"
+        if "IoT/home gateway" in preferred_archetypes
+        else "service_heavy"
+        if "service-heavy" in preferred_archetypes and "campus/core" not in preferred_archetypes
+        else "campus"
+        if "campus/core" in preferred_archetypes
+        else None
+    )
+    required_runtime_features = _required_runtime_features_for_plan(plan)
     cisco_ranked = _existing_ranked_candidates(
         rank_samples(
             load_catalog(),
@@ -189,6 +203,8 @@ def _rank_generation_donors(
             prototype_only=True,
             wireless_mode=plan.wireless_mode,
             requested_services=requested_services,
+            required_acceptance_fixtures=required_fixtures,
+            required_runtime_features=required_runtime_features,
         )
     )
     curated_ranked = _existing_ranked_candidates(
@@ -199,6 +215,8 @@ def _rank_generation_donors(
             topology_tags=topology_tags,
             wireless_mode=plan.wireless_mode,
             requested_services=requested_services,
+            required_acceptance_fixtures=required_fixtures,
+            required_runtime_features=required_runtime_features,
         )
     )
     ordered: list[SampleCandidate] = []
@@ -258,10 +276,19 @@ def _candidate_to_dict(candidate: SampleCandidate, blueprint: dict[str, object] 
         "origin": candidate.sample.origin,
         "license_or_permission": candidate.sample.license_or_permission,
         "promotion_status": candidate.sample.promotion_status,
+        "evidence_source": candidate.sample.evidence_source,
+        "promotion_evidence": candidate.sample.promotion_evidence,
         "validation_status": candidate.sample.validation_status,
+        "validated_edit_capabilities": candidate.sample.validated_edit_capabilities,
+        "acceptance_notes": candidate.sample.acceptance_notes,
+        "acceptance_fixtures": candidate.sample.acceptance_fixtures,
+        "provenance": candidate.sample.provenance,
+        "workspace_validation": candidate.sample.workspace_validation_status,
         "wireless_mode_tags": candidate.sample.wireless_mode_tags,
+        "archetype_tags": candidate.sample.archetype_tags,
         "device_families": candidate.sample.device_families,
         "service_support": candidate.sample.service_support,
+        "runtime_features": candidate.sample.runtime_features,
         "apply_safety_level": candidate.sample.apply_safety_level,
         "total_score": candidate.total_score,
         "capability_score": candidate.capability_score,
@@ -323,6 +350,18 @@ def _preferred_donor_archetypes_for_plan(plan: IntentPlan, topology_tags: list[s
     if device_families & {"wan/cloud/dsl/cable devices", "security devices"} or capabilities & {"vpn", "nat", "pat", "acl"}:
         preferred.append("WAN/security edge")
     return preferred
+
+
+def _required_runtime_features_for_plan(plan: IntentPlan) -> list[str]:
+    features = {"workspace_validated"}
+    capabilities = set(plan.capabilities)
+    if capabilities & {"server_http", "server_https", "server_ftp", "server_tftp", "server_email", "server_syslog", "server_aaa", "server_dns", "server_dhcp", "ntp"}:
+        features.add("server_runtime")
+    if capabilities & {"wireless_ap", "wireless_mutation", "wireless_client_association"}:
+        features.add("wireless_runtime")
+    if capabilities & {"iot", "iot_registration", "iot_control"}:
+        features.add("iot_runtime")
+    return sorted(features)
 
 
 def _sample_archetypes(sample: SampleDescriptor) -> list[str]:
@@ -477,6 +516,90 @@ def _summarize_candidate_pool(
     }
 
 
+def _load_fixture_corpus() -> dict[str, object]:
+    if not FIXTURE_CORPUS_PATH.exists():
+        return {"fixture_registry_version": "missing", "fixtures": []}
+    try:
+        return json.loads(FIXTURE_CORPUS_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {"fixture_registry_version": "invalid", "fixtures": []}
+
+
+def _fixture_by_family() -> dict[str, dict[str, object]]:
+    payload = _load_fixture_corpus()
+    mapping: dict[str, dict[str, object]] = {}
+    for fixture in list(payload.get("fixtures", []) or []):
+        family = str((fixture or {}).get("scenario_family") or "").strip()
+        if family:
+            mapping[family] = dict(fixture)
+    return mapping
+
+
+def _scenario_fixture_name(family: str | None) -> str | None:
+    if not family:
+        return None
+    fixture = _fixture_by_family().get(str(family).strip())
+    return str(fixture.get("name")).strip() if fixture else None
+
+
+def _required_acceptance_fixtures_for_plan(family: str | None) -> list[str]:
+    fixture = _scenario_fixture_name(family)
+    return [fixture] if fixture else []
+
+
+def _fixture_expectation_for_family(family: str | None) -> dict[str, object] | None:
+    if not family:
+        return None
+    return _fixture_by_family().get(str(family).strip())
+
+
+def _fixture_expectation_status(payload: dict[str, object]) -> tuple[str, list[str]]:
+    row = dict(payload.get("scenario_matrix_row") or {})
+    summary = dict(payload.get("scenario_acceptance_summary") or {})
+    fixture = _fixture_expectation_for_family(row.get("family"))
+    if not fixture:
+        return "not_applicable", []
+    gaps: list[str] = []
+    expected_family = str(fixture.get("scenario_family") or "").strip()
+    if expected_family and str(row.get("family") or "").strip() != expected_family:
+        gaps.append(f"family mismatch: expected {expected_family}")
+    expected_criticals = {str(item) for item in list(fixture.get("critical_capabilities", [])) if str(item).strip()}
+    actual_criticals = {str(item) for item in list(summary.get("critical_capabilities", [])) if str(item).strip()}
+    if expected_criticals and not actual_criticals:
+        gaps.append("missing critical capability set")
+    elif expected_criticals and not (actual_criticals & expected_criticals):
+        gaps.append("critical capability set does not overlap fixture")
+    if not summary:
+        gaps.append("missing acceptance summary")
+    if not row:
+        gaps.append("missing matrix row")
+    return ("matched" if not gaps else "gapped"), gaps
+
+
+def _capability_parity_entries(coverage_gap: dict[str, object]) -> list[dict[str, object]]:
+    return [dict(item) for item in list(coverage_gap.get("capability_parity", []) or [])]
+
+
+def _critical_capability_parity(coverage_gap: dict[str, object]) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    readiness = dict(coverage_gap.get("scenario_generate_readiness") or {})
+    critical = {str(item) for item in list(readiness.get("critical_capabilities", [])) if str(item).strip()}
+    parity_entries = _capability_parity_entries(coverage_gap)
+    if not critical:
+        return [], []
+    critical_entries = [entry for entry in parity_entries if str(entry.get("capability")) in critical]
+    mismatches = [entry for entry in critical_entries if entry.get("generate_mismatch_reason")]
+    return critical_entries, mismatches
+
+
+def _parity_counts(parity_entries: list[dict[str, object]]) -> dict[str, int]:
+    return {
+        "parity_supported_count": sum(1 for entry in parity_entries if bool(entry.get("inventory_supported"))),
+        "parity_generate_ready_count": sum(1 for entry in parity_entries if bool(entry.get("generate_supported"))),
+        "parity_acceptance_verified_count": sum(1 for entry in parity_entries if bool(entry.get("acceptance_verified"))),
+        "parity_mismatch_count": sum(1 for entry in parity_entries if entry.get("generate_mismatch_reason")),
+    }
+
+
 def _selected_donor_summary(
     diagnostics: list[dict[str, object]],
     donor_archetype: DonorArchetypePlan | None = None,
@@ -488,12 +611,43 @@ def _selected_donor_summary(
     summary = {
         "relative_path": selected.get("relative_path"),
         "origin": selected.get("origin"),
+        "promotion_status": selected.get("promotion_status"),
+        "evidence_source": selected.get("evidence_source"),
+        "promotion_evidence": list(selected.get("promotion_evidence", []))[:8],
+        "validated_edit_capabilities": list(selected.get("validated_edit_capabilities", []))[:12],
+        "acceptance_notes": list(selected.get("acceptance_notes", []))[:6],
+        "acceptance_fixtures": list(selected.get("acceptance_fixtures", []))[:6],
+        "provenance": selected.get("provenance"),
+        "workspace_validation": selected.get("workspace_validation"),
         "selection_reasons": list(donor_archetype.selection_reasons if donor_archetype is not None else selected.get("reasons", []))[:8],
-        "sample_archetypes": list(selected.get("sample_archetypes", [])),
+        "sample_archetypes": list(selected.get("sample_archetypes", []) or selected.get("archetype_tags", [])),
         "archetype_match_reasons": list(selected.get("archetype_match_reasons", [])),
         "adjusted_total_score": selected.get("adjusted_total_score", selected.get("total_score")),
         "donor_graph_summary": donor_graph_summary,
+        "validated_capability_overlap": sorted(
+            {
+                str(reason).split(":", 1)[1]
+                for reason in list(selected.get("reasons", []))
+                if str(reason).startswith("capability:")
+            }
+            & set(str(item) for item in list(selected.get("validated_edit_capabilities", [])) if str(item).strip())
+        ),
     }
+    summary["donor_evidence_score"] = (
+        len(summary["promotion_evidence"]) * 2
+        + len(summary["validated_edit_capabilities"])
+        + len(summary["acceptance_fixtures"]) * 3
+    )
+    summary["promotion_reasoning"] = [
+        item
+        for item in [
+            f"promotion status: {summary['promotion_status']}" if summary.get("promotion_status") else None,
+            f"evidence source: {summary['evidence_source']}" if summary.get("evidence_source") else None,
+            f"workspace validation: {summary['workspace_validation']}" if summary.get("workspace_validation") else None,
+            f"fixtures: {', '.join(summary['acceptance_fixtures'][:3])}" if summary["acceptance_fixtures"] else None,
+        ]
+        if item
+    ]
     reusable_pair_coverage = donor_graph_summary.get("reusable_pair_coverage")
     layout_reuse_status = donor_graph_summary.get("layout_reuse_status")
     summary["why_selected"] = [
@@ -501,6 +655,9 @@ def _selected_donor_summary(
         for item in [
             f"layout reuse {reusable_pair_coverage}% ({layout_reuse_status})" if reusable_pair_coverage is not None and layout_reuse_status else None,
             f"archetype match via {', '.join(summary['archetype_match_reasons'])}" if summary["archetype_match_reasons"] else None,
+            f"promotion evidence: {', '.join(summary['promotion_evidence'][:3])}" if summary["promotion_evidence"] else None,
+            f"evidence source: {summary['evidence_source']}" if summary.get("evidence_source") else None,
+            f"validated edit capabilities: {', '.join(summary['validated_edit_capabilities'][:4])}" if summary["validated_edit_capabilities"] else None,
             f"selection reasons: {', '.join(summary['selection_reasons'][:4])}" if summary["selection_reasons"] else None,
         ]
         if item
@@ -2315,6 +2472,8 @@ def _augment_coverage_gap_actions(
         actions.append("For service-heavy prompts, prefer a donor that already contains the required server service family and core server layout.")
     if scenario_family == "home_iot" and scenario_status in {"donor_limited", "acceptance_gated", "unsupported"}:
         actions.append("For home IoT prompts, prefer a donor with Home Gateway plus existing IoT registration/control structure.")
+    if scenario_family == "wan_security_edge" and scenario_status in {"donor_limited", "acceptance_gated", "unsupported"}:
+        actions.append("For WAN/security prompts, prefer a donor with reusable serial/WAN or security-edge skeleton before generating.")
     updated["recommended_next_actions"] = list(dict.fromkeys(actions))
     return updated
 
@@ -2324,44 +2483,113 @@ def _scenario_generate_decision(
     *,
     donor_selection_summary: dict[str, object] | None = None,
     selected_donor_summary: dict[str, object] | None = None,
+    runtime_blocked: bool = False,
+    runtime_blocking_reason: str | None = None,
 ) -> dict[str, object]:
     readiness = dict(coverage_gap.get("scenario_generate_readiness") or {})
     family = str(readiness.get("family") or "").strip()
-    status = str(readiness.get("status") or "").strip()
+    readiness_status = str(readiness.get("status") or "").strip()
+    candidate_counts = dict((donor_selection_summary or {}).get("candidate_counts", {}) or {})
+    donor_state = "selected" if selected_donor_summary else "not_selected"
+    if donor_state == "not_selected" and any(int(candidate_counts.get(key, 0) or 0) > 0 for key in ("rejected", "filtered")):
+        donor_state = "candidate_pool_blocked"
+    if donor_state == "not_selected" and int(candidate_counts.get("selected", 0) or 0) > 0:
+        donor_state = "selection_pending"
     decision = {
         "family": family or None,
-        "status": status or "not_classified",
-        "allow_generate": True,
+        "status": "not_classified",
+        "readiness_status": readiness_status or "not_classified",
+        "allow_generate": False,
         "blocking_reasons": [],
+        "selected_donor_aligned": None,
+        "notes": [],
+        "runtime_blocked": runtime_blocked,
+        "what_failed": None,
+        "why_failed": None,
+        "what_would_make_it_pass": None,
+        "decision_confidence": 0.4,
+        "blocking_layer": None,
     }
-    if not family or status in {"", "not_classified", "partial", "ready"}:
+    if not family or readiness_status in {"", "not_classified", "partial"}:
+        decision["status"] = "ready_without_selected_donor"
+        decision["what_failed"] = "scenario classification"
+        decision["why_failed"] = "Scenario family is not classified strongly enough for a strict generate verdict."
+        decision["what_would_make_it_pass"] = "Provide a more explicit topology/service prompt so the scenario family and donor archetype are constrained."
+        decision["decision_confidence"] = 0.45
+        decision["blocking_layer"] = "capability"
         return decision
 
     family_label_map = {
         "campus": "campus/core",
         "service_heavy": "service-heavy",
         "home_iot": "home IoT",
+        "wan_security_edge": "WAN/security edge",
+    }
+    expected_archetype_map = {
+        "campus": "campus/core",
+        "service_heavy": "service-heavy",
+        "home_iot": "IoT/home gateway",
+        "wan_security_edge": "WAN/security edge",
     }
     family_label = family_label_map.get(family, family)
     blocking_reasons: list[str] = []
+    notes: list[str] = []
+    what_failed = None
+    why_failed = None
+    what_would_make_it_pass = next(
+        (str(item) for item in coverage_gap.get("recommended_next_actions", []) if str(item).strip()),
+        None,
+    )
+    expected_archetype = expected_archetype_map.get(family)
+    sample_archetypes = [str(item) for item in list((selected_donor_summary or {}).get("sample_archetypes", [])) if str(item).strip()]
+    donor_graph_summary = dict((selected_donor_summary or {}).get("donor_graph_summary") or {})
+    if expected_archetype and sample_archetypes:
+        aligned = expected_archetype in sample_archetypes
+        decision["selected_donor_aligned"] = aligned
+        if aligned:
+            notes.append(f"selected donor archetype aligns with {expected_archetype}")
+        else:
+            notes.append(f"selected donor archetypes ({', '.join(sample_archetypes)}) do not match expected {expected_archetype}")
+    elif expected_archetype and selected_donor_summary:
+        decision["selected_donor_aligned"] = False
+        notes.append(f"selected donor summary is missing archetype tags for expected {expected_archetype}")
 
-    if status == "unsupported":
+    if runtime_blocked:
+        blocking_reasons.append(
+            f"Scenario '{family_label}' is blocked by runtime prerequisites: {runtime_blocking_reason or 'runtime is not ready'}."
+        )
+        decision["status"] = "blocked_by_runtime"
+        decision["blocking_layer"] = "runtime"
+        decision["decision_confidence"] = 0.95
+        what_failed = "runtime readiness"
+        why_failed = runtime_blocking_reason or "Runtime prerequisites required for strict generate are not ready."
+    elif readiness_status == "unsupported":
         blocking_reasons.append(
             f"Scenario '{family_label}' is not generate-ready in safe-open mode because critical capability coverage is still missing."
         )
-    elif status == "acceptance_gated":
+        decision["status"] = "blocked_by_capability"
+        decision["blocking_layer"] = "capability"
+        decision["decision_confidence"] = 0.9
+        what_failed = "critical capability coverage"
+        why_failed = "; ".join(str(item) for item in list(readiness.get("reasons", [])) if str(item).strip()) or (
+            f"Critical capabilities for {family_label} are still unsupported."
+        )
+    elif readiness_status == "acceptance_gated":
         blocking_reasons.append(
             f"Scenario '{family_label}' is still acceptance-gated; use edit/inventory flow or donor-backed validation before prompt generate."
         )
-    elif status == "donor_limited":
-        summary = donor_selection_summary or {}
-        selected = selected_donor_summary or {}
-        selected_count = int(summary.get("candidate_counts", {}).get("selected", 0) or 0)
-        if not selected and selected_count <= 0:
+        decision["status"] = "blocked_by_acceptance"
+        decision["blocking_layer"] = "acceptance"
+        decision["decision_confidence"] = 0.85
+        what_failed = "acceptance coverage"
+        why_failed = "; ".join(str(item) for item in list(readiness.get("reasons", [])) if str(item).strip()) or (
+            f"Critical capabilities for {family_label} are still acceptance-gated."
+        )
+    elif readiness_status == "donor_limited":
+        if not selected_donor_summary and int(candidate_counts.get("selected", 0) or 0) <= 0:
             blocking_reasons.append(
                 f"Scenario '{family_label}' depends on donor-limited safe-open coverage, but no compatible donor was selected."
             )
-        donor_graph_summary = dict(selected.get("donor_graph_summary") or {})
         layout_status = str(donor_graph_summary.get("layout_reuse_status") or "").strip()
         pair_coverage = donor_graph_summary.get("reusable_pair_coverage")
         if layout_status == "weak":
@@ -2372,11 +2600,235 @@ def _scenario_generate_decision(
             blocking_reasons.append(
                 f"Scenario '{family_label}' donor selection has no reusable link-pair coverage for prompt generate."
             )
+        if layout_status in {"strong", "partial"} and isinstance(pair_coverage, int) and pair_coverage > 0:
+            notes.append(f"selected donor provides {pair_coverage}% reusable link-pair coverage ({layout_status})")
+        if selected_donor_summary and not blocking_reasons:
+            decision["status"] = "ready_with_selected_donor"
+            decision["decision_confidence"] = 0.92 if decision.get("selected_donor_aligned") is not False else 0.72
+        else:
+            decision["status"] = "blocked_by_donor_selection"
+            decision["blocking_layer"] = "donor"
+            decision["decision_confidence"] = 0.75
+            what_failed = "donor selection"
+            why_failed = "; ".join(blocking_reasons) or (
+                f"{family_label} requires a stronger donor skeleton and acceptance evidence."
+            )
+    elif selected_donor_summary:
+        decision["status"] = "ready_with_selected_donor"
+        decision["decision_confidence"] = 0.95 if decision.get("selected_donor_aligned") is not False else 0.7
+    else:
+        decision["status"] = "ready_without_selected_donor"
+        decision["blocking_layer"] = "donor"
+        decision["decision_confidence"] = 0.55
+        what_failed = "donor selection"
+        why_failed = f"{family_label} capability coverage is ready, but a compatible donor has not been selected yet."
+
+    if decision["status"] == "ready_with_selected_donor":
+        decision["allow_generate"] = True
+    else:
+        decision["allow_generate"] = False
 
     if blocking_reasons:
-        decision["allow_generate"] = False
         decision["blocking_reasons"] = blocking_reasons
+    if not decision["allow_generate"] and what_failed is None:
+        what_failed = "donor selection"
+    if not decision["allow_generate"] and why_failed is None:
+        why_failed = "; ".join(blocking_reasons) or "Strict generate prerequisites are not fully satisfied."
+    if decision["allow_generate"] and what_would_make_it_pass is None:
+        what_would_make_it_pass = "No additional action required."
+    if decision["allow_generate"]:
+        what_failed = None
+        why_failed = None
+    decision["notes"] = notes
+    decision["what_failed"] = what_failed
+    decision["why_failed"] = why_failed
+    decision["what_would_make_it_pass"] = what_would_make_it_pass
     return decision
+
+
+def _scenario_acceptance_summary(
+    coverage_gap: dict[str, object],
+    *,
+    donor_selection_summary: dict[str, object] | None = None,
+    selected_donor_summary: dict[str, object] | None = None,
+    runtime_blocked: bool = False,
+    runtime_blocking_reason: str | None = None,
+) -> dict[str, object]:
+    decision = _scenario_generate_decision(
+        coverage_gap,
+        donor_selection_summary=donor_selection_summary,
+        selected_donor_summary=selected_donor_summary,
+        runtime_blocked=runtime_blocked,
+        runtime_blocking_reason=runtime_blocking_reason,
+    )
+    readiness = dict(coverage_gap.get("scenario_generate_readiness") or {})
+    candidate_counts = dict((donor_selection_summary or {}).get("candidate_counts", {}) or {})
+    donor_state = "selected" if selected_donor_summary else "not_selected"
+    if donor_state == "not_selected" and any(int(candidate_counts.get(key, 0) or 0) > 0 for key in ("rejected", "filtered")):
+        donor_state = "candidate_pool_blocked"
+    if donor_state == "not_selected" and int(candidate_counts.get("selected", 0) or 0) > 0:
+        donor_state = "selection_pending"
+    selection_failure_type = None
+    if not selected_donor_summary:
+        if donor_state in {"candidate_pool_blocked", "selection_pending"}:
+            selection_failure_type = "viable_donor_found_but_acceptance_weak"
+        else:
+            selection_failure_type = "no_viable_donor_found"
+    key_reasons = [str(item) for item in decision.get("blocking_reasons", []) if str(item).strip()]
+    if not key_reasons:
+        key_reasons = [str(item) for item in decision.get("notes", []) if str(item).strip()]
+    next_best_action = next(
+        (str(item) for item in coverage_gap.get("recommended_next_actions", []) if str(item).strip()),
+        None,
+    )
+    top_rejection_reasons = [str(item) for item in list((donor_selection_summary or {}).get("top_rejection_reasons", [])) if str(item).strip()]
+    if not selected_donor_summary:
+        if any("archetype_gap:" in reason for reason in top_rejection_reasons):
+            selection_failure_type = "viable_donor_found_but_archetype_misaligned"
+        elif any("runtime subtree" in reason.lower() for reason in top_rejection_reasons):
+            selection_failure_type = "viable_donor_found_but_runtime_subtree_missing"
+    critical_capability_parity, critical_parity_mismatches = _critical_capability_parity(coverage_gap)
+    best_available_donor_class = next(
+        (
+            str(item)
+            for item in list((donor_selection_summary or {}).get("preferred_donor_archetypes", []))
+            if str(item).strip()
+        ),
+        None,
+    )
+    remediation_steps = [
+        str(item)
+        for item in list(coverage_gap.get("recommended_next_actions", []))
+        if str(item).strip()
+    ][:3]
+    missing_donor_classes = [best_available_donor_class] if selection_failure_type == "viable_donor_found_but_archetype_misaligned" and best_available_donor_class else []
+    critical_runtime_requirements: list[str] = []
+    if runtime_blocked:
+        critical_runtime_requirements.append("decode/edit/generate runtime")
+        if runtime_blocking_reason:
+            critical_runtime_requirements.append(str(runtime_blocking_reason))
+    return {
+        "family": decision.get("family"),
+        "readiness_status": readiness.get("status"),
+        "decision_state": decision.get("status"),
+        "generate_state": "allowed" if decision.get("allow_generate") else "blocked",
+        "donor_state": donor_state,
+        "selected_donor_aligned": decision.get("selected_donor_aligned"),
+        "candidate_counts": candidate_counts,
+        "selection_failure_type": selection_failure_type,
+        "top_rejection_reasons": top_rejection_reasons[:3],
+        "critical_capabilities": [str(item) for item in list(readiness.get("critical_capabilities", [])) if str(item).strip()],
+        "missing_critical_capabilities": [str(item) for item in list(readiness.get("missing_critical_capabilities", [])) if str(item).strip()],
+        "critical_capability_parity": critical_capability_parity,
+        "critical_parity_mismatches": critical_parity_mismatches,
+        "key_reasons": key_reasons[:3],
+        "next_best_action": next_best_action,
+        "remediation_steps": remediation_steps,
+        "best_available_donor_class": best_available_donor_class,
+        "missing_donor_classes": missing_donor_classes,
+        "critical_runtime_requirements": critical_runtime_requirements,
+        "decision_confidence": decision.get("decision_confidence"),
+        "blocking_layer": decision.get("blocking_layer"),
+    }
+
+
+def _scenario_matrix_row(
+    scenario_acceptance_summary: dict[str, object] | None,
+    *,
+    selected_donor_summary: dict[str, object] | None = None,
+) -> dict[str, object]:
+    summary = dict(scenario_acceptance_summary or {})
+    donor_relative_path = str((selected_donor_summary or {}).get("relative_path") or "").strip() or None
+    generate_state = str(summary.get("generate_state") or "").strip()
+    donor_state = str(summary.get("donor_state") or "").strip()
+    acceptance_label = str(summary.get("decision_state") or "").strip()
+    if not acceptance_label:
+        if generate_state == "allowed" and donor_state == "selected":
+            acceptance_label = "ready_with_selected_donor"
+        elif generate_state == "allowed":
+            acceptance_label = "ready_without_selected_donor"
+        elif donor_state in {"candidate_pool_blocked", "selection_pending"}:
+            acceptance_label = "blocked_by_donor_selection"
+        elif str(summary.get("readiness_status") or "").strip() == "acceptance_gated":
+            acceptance_label = "blocked_by_acceptance"
+        elif str(summary.get("readiness_status") or "").strip() == "unsupported":
+            acceptance_label = "blocked_by_capability"
+        else:
+            acceptance_label = "blocked"
+    acceptance_rank_map = {
+        "ready_with_selected_donor": 3,
+        "ready_without_selected_donor": 2,
+        "blocked_by_donor_selection": 1,
+        "blocked_by_capability": 0,
+        "blocked_by_acceptance": 0,
+        "blocked_by_runtime": 0,
+    }
+    acceptance_rank = acceptance_rank_map.get(acceptance_label, 0)
+    critical_capability_count = len(list(summary.get("critical_capabilities", []) or []))
+    missing_critical_capability_count = len(list(summary.get("missing_critical_capabilities", []) or []))
+    parity_mismatch_count = len(list(summary.get("critical_parity_mismatches", []) or []))
+    candidate_counts = dict(summary.get("candidate_counts", {}) or {})
+    comparison_score = (
+        (acceptance_rank * 100)
+        - (missing_critical_capability_count * 10)
+        - (parity_mismatch_count * 5)
+        - int(candidate_counts.get("rejected", 0) or 0)
+        - int(candidate_counts.get("filtered", 0) or 0)
+    )
+    selection_failure_type = summary.get("selection_failure_type")
+    if selection_failure_type is None and donor_state in {"candidate_pool_blocked", "selection_pending"}:
+        selection_failure_type = "viable_donor_found_but_acceptance_weak"
+    if selection_failure_type is None and donor_state == "not_selected":
+        selection_failure_type = "no_viable_donor_found"
+    comparison_summary = (
+        f"{summary.get('family')}: {acceptance_label}; "
+        f"critical={critical_capability_count}, missing={missing_critical_capability_count}, "
+        f"selected={int(candidate_counts.get('selected', 0) or 0)}, rejected={int(candidate_counts.get('rejected', 0) or 0)}, filtered={int(candidate_counts.get('filtered', 0) or 0)}"
+    )
+    return {
+        "family": summary.get("family"),
+        "readiness_status": summary.get("readiness_status"),
+        "generate_state": generate_state,
+        "donor_state": donor_state,
+        "acceptance_rank": acceptance_rank,
+        "acceptance_label": acceptance_label,
+        "comparison_score": comparison_score,
+        "comparison_summary": comparison_summary,
+        "selected_donor_aligned": summary.get("selected_donor_aligned"),
+        "selected_donor": donor_relative_path,
+        "selection_failure_type": selection_failure_type,
+        "critical_capability_count": critical_capability_count,
+        "missing_critical_capability_count": missing_critical_capability_count,
+        "parity_mismatch_count": parity_mismatch_count,
+        "top_rejection_reason": next(
+            (str(item) for item in list(summary.get("top_rejection_reasons", []) or []) if str(item).strip()),
+            None,
+        ),
+        "next_best_action": summary.get("next_best_action"),
+        "decision_confidence": summary.get("decision_confidence"),
+        "blocking_layer": summary.get("blocking_layer"),
+        "best_available_donor_class": summary.get("best_available_donor_class"),
+        "remediation_hint": next((str(item) for item in list(summary.get("remediation_steps", []) or []) if str(item).strip()), None),
+    }
+
+
+def _scenario_matrix_table(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    normalized_rows = [dict(row) for row in rows]
+    normalized_rows.sort(
+        key=lambda row: (
+            -int(row.get("comparison_score", 0) or 0),
+            int(row.get("missing_critical_capability_count", 0) or 0),
+            str(row.get("family") or ""),
+        )
+    )
+    return normalized_rows
+
+
+def _write_json_artifact(payload: dict[str, object], output_path: Path | None) -> None:
+    if output_path is None:
+        return
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def prepare_generation_plan(plan: IntentPlan) -> IntentPlan:
@@ -2540,7 +2992,7 @@ def generate_from_prompt(
     prepared_plan.coverage_gap_report = coverage_gap
     prepared_plan.unsupported_capabilities = list(coverage_gap.get("unsupported_capabilities", []))
     prepared_plan.blueprint_plan = blueprint_plan
-    if not scenario_generate_decision["allow_generate"]:
+    if scenario_generate_decision["status"] in {"blocked_by_capability", "blocked_by_acceptance", "blocked_by_runtime"}:
         for reason in scenario_generate_decision["blocking_reasons"]:
             if reason not in prepared_plan.blocking_gaps:
                 prepared_plan.blocking_gaps.append(reason)
@@ -2610,7 +3062,7 @@ def edit_from_prompt(
     print(f"Edited PKT file created: {output_path}")
 
 
-def explain_plan(
+def _explain_plan_payload(
     prompt: str,
     reference_roots: list[Path] | None = None,
     donor_roots: list[Path] | None = None,
@@ -2619,7 +3071,7 @@ def explain_plan(
     remote_provider: str = "github",
     import_cache_root: Path | None = None,
     max_remote_results: int = 10,
-) -> None:
+) -> dict[str, object]:
     raw_plan = parse_intent(prompt)
     resolved_reference_roots, resolved_donor_roots, remote_results = _resolve_remote_sources(
         raw_plan,
@@ -2661,6 +3113,9 @@ def explain_plan(
         "donor_selection_summary": _summarize_candidate_pool([], _preferred_donor_archetypes_for_plan(plan, topology_tags)),
         "selected_donor_summary": None,
         "scenario_generate_decision": None,
+        "scenario_acceptance_summary": None,
+        "scenario_matrix_row": None,
+        "capability_parity": [],
         "remote_search_results": remote_results,
     }
     cisco_ranked, curated_ranked, _ = _rank_generation_donors(plan, topology_tags, resolved_donor_roots)
@@ -2675,7 +3130,18 @@ def explain_plan(
         coverage_gap,
         donor_blocking_reason=donor_details.blocking_reason,
     )
-    result["scenario_generate_decision"] = _scenario_generate_decision(coverage_gap)
+    result["capability_parity"] = list(coverage_gap.get("capability_parity", []))
+    result["scenario_generate_decision"] = _scenario_generate_decision(
+        coverage_gap,
+        runtime_blocked=bool(donor_details.blocking_reason),
+        runtime_blocking_reason=donor_details.blocking_reason,
+    )
+    result["scenario_acceptance_summary"] = _scenario_acceptance_summary(
+        coverage_gap,
+        runtime_blocked=bool(donor_details.blocking_reason),
+        runtime_blocking_reason=donor_details.blocking_reason,
+    )
+    result["scenario_matrix_row"] = _scenario_matrix_row(result["scenario_acceptance_summary"])
     plan.capability_matrix_hits = matrix_hits
     plan.coverage_gap_report = coverage_gap
     plan.unsupported_capabilities = list(coverage_gap.get("unsupported_capabilities", []))
@@ -2737,6 +3203,13 @@ def explain_plan(
             diagnostics,
             [str(item) for item in list(blueprint.get("preferred_donor_archetypes", [])) if item],
         )
+        result["scenario_acceptance_summary"] = _scenario_acceptance_summary(
+            coverage_gap,
+            donor_selection_summary=result["donor_selection_summary"],
+            runtime_blocked=bool(donor_details.blocking_reason),
+            runtime_blocking_reason=donor_details.blocking_reason,
+        )
+        result["scenario_matrix_row"] = _scenario_matrix_row(result["scenario_acceptance_summary"])
         try:
             if evaluation is None:
                 raise PlanningError("Prompt plan is incomplete; generation was skipped.", prepared)
@@ -2782,6 +3255,19 @@ def explain_plan(
                 coverage_gap,
                 donor_selection_summary=result["donor_selection_summary"],
                 selected_donor_summary=result["selected_donor_summary"],
+                runtime_blocked=bool(donor_details.blocking_reason),
+                runtime_blocking_reason=donor_details.blocking_reason,
+            )
+            result["scenario_acceptance_summary"] = _scenario_acceptance_summary(
+                coverage_gap,
+                donor_selection_summary=result["donor_selection_summary"],
+                selected_donor_summary=result["selected_donor_summary"],
+                runtime_blocked=bool(donor_details.blocking_reason),
+                runtime_blocking_reason=donor_details.blocking_reason,
+            )
+            result["scenario_matrix_row"] = _scenario_matrix_row(
+                result["scenario_acceptance_summary"],
+                selected_donor_summary=result["selected_donor_summary"],
             )
         except PlanningError as exc:
             if result["donor_rejection_reasons"]:
@@ -2807,6 +3293,7 @@ def explain_plan(
         result["capability_matrix_hits"] = matrix_hits
         result["unsupported_capabilities"] = coverage_gap.get("unsupported_capabilities", [])
         result["coverage_gaps"] = coverage_gap
+        result["capability_parity"] = list(coverage_gap.get("capability_parity", []))
         result["blueprint_plan"] = blueprint_plan
         candidates = [_candidate_to_dict(candidate, blueprint) for candidate in cisco_ranked[:5]]
         result["cisco_sample_candidates"] = candidates
@@ -2816,6 +3303,7 @@ def explain_plan(
         result["capability_matrix_hits"] = matrix_hits
         result["unsupported_capabilities"] = coverage_gap.get("unsupported_capabilities", [])
         result["coverage_gaps"] = coverage_gap
+        result["capability_parity"] = list(coverage_gap.get("capability_parity", []))
         result["blueprint_plan"] = blueprint_plan
         result["cisco_sample_candidates"] = [_candidate_to_dict(candidate) for candidate in cisco_ranked[:5]]
         result["sample_candidates"] = result["cisco_sample_candidates"]
@@ -2845,6 +3333,37 @@ def explain_plan(
             patterns.append(pattern_dict)
         result["external_reference_patterns"] = patterns
         result["reference_patterns"] = patterns
+    result["scenario_matrix_row"]["fixture_name"] = _scenario_fixture_name(result["scenario_matrix_row"].get("family"))
+    result["scenario_matrix_row"]["matrix_version"] = "2.1"
+    result["scenario_matrix_row"].update(_parity_counts(_capability_parity_entries(result.get("coverage_gaps", {}))))
+    fixture_status, fixture_gaps = _fixture_expectation_status(result)
+    result["fixture_registry_version"] = _load_fixture_corpus().get("fixture_registry_version", "unknown")
+    result["fixture_expectation_status"] = fixture_status
+    result["fixture_expectation_gaps"] = fixture_gaps
+    return result
+
+
+def explain_plan(
+    prompt: str,
+    reference_roots: list[Path] | None = None,
+    donor_roots: list[Path] | None = None,
+    *,
+    search_remote: bool = False,
+    remote_provider: str = "github",
+    import_cache_root: Path | None = None,
+    max_remote_results: int = 10,
+    acceptance_json_out: Path | None = None,
+) -> None:
+    result = _explain_plan_payload(
+        prompt,
+        reference_roots,
+        donor_roots,
+        search_remote=search_remote,
+        remote_provider=remote_provider,
+        import_cache_root=import_cache_root,
+        max_remote_results=max_remote_results,
+    )
+    _write_json_artifact(result, acceptance_json_out)
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
@@ -3024,6 +3543,98 @@ def coverage_report(
     print(json.dumps({"coverage_matrix": entries, "count": len(entries)}, indent=2, ensure_ascii=False))
 
 
+def parity_report(
+    prompt: str,
+    reference_roots: list[Path] | None = None,
+    donor_roots: list[Path] | None = None,
+    *,
+    search_remote: bool = False,
+    remote_provider: str = "github",
+    import_cache_root: Path | None = None,
+    max_remote_results: int = 10,
+    acceptance_json_out: Path | None = None,
+) -> None:
+    payload = _explain_plan_payload(
+        prompt,
+        reference_roots,
+        donor_roots,
+        search_remote=search_remote,
+        remote_provider=remote_provider,
+        import_cache_root=import_cache_root,
+        max_remote_results=max_remote_results,
+    )
+    coverage_gap = dict(payload.get("coverage_gaps") or {})
+    if "capability_parity" not in coverage_gap:
+        coverage_gap["capability_parity"] = list(payload.get("capability_parity", []))
+    critical_capability_parity, critical_parity_mismatches = _critical_capability_parity(coverage_gap)
+    result = {
+        "prompt": prompt,
+        "scenario_family": coverage_gap.get("scenario_family"),
+        "capability_parity": list(payload.get("capability_parity", [])),
+        "critical_capability_parity": critical_capability_parity,
+        "critical_parity_mismatches": critical_parity_mismatches,
+        **_parity_counts(list(payload.get("capability_parity", []))),
+    }
+    _write_json_artifact(result, acceptance_json_out)
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
+def compare_scenarios(
+    prompts: list[str],
+    reference_roots: list[Path] | None = None,
+    donor_roots: list[Path] | None = None,
+    *,
+    search_remote: bool = False,
+    remote_provider: str = "github",
+    import_cache_root: Path | None = None,
+    max_remote_results: int = 10,
+    matrix_out: Path | None = None,
+    acceptance_json_out: Path | None = None,
+) -> None:
+    payloads: list[dict[str, object]] = []
+    matrix_rows: list[dict[str, object]] = []
+    for prompt in prompts:
+        payload = _explain_plan_payload(
+            prompt,
+            reference_roots,
+            donor_roots,
+            search_remote=search_remote,
+            remote_provider=remote_provider,
+            import_cache_root=import_cache_root,
+            max_remote_results=max_remote_results,
+        )
+        fixture_status, fixture_gaps = _fixture_expectation_status(payload)
+        payloads.append(
+            {
+                "prompt": prompt,
+                "scenario_matrix_row": payload.get("scenario_matrix_row"),
+                "scenario_acceptance_summary": payload.get("scenario_acceptance_summary"),
+                "scenario_generate_decision": payload.get("scenario_generate_decision"),
+                "selected_donor_summary": payload.get("selected_donor_summary"),
+                "donor_selection_summary": payload.get("donor_selection_summary"),
+                "capability_parity": payload.get("capability_parity"),
+                "fixture_name": _scenario_fixture_name((payload.get("scenario_matrix_row") or {}).get("family")),
+                "fixture_expectation_status": fixture_status,
+                "fixture_expectation_gaps": fixture_gaps,
+            }
+        )
+        row = dict(payload.get("scenario_matrix_row") or {})
+        row["prompt"] = prompt
+        matrix_rows.append(row)
+    fixture_registry = _load_fixture_corpus()
+    result = {
+        "matrix_version": "2.1",
+        "fixture_registry_version": fixture_registry.get("fixture_registry_version", "unknown"),
+        "scenario_count": len(prompts),
+        "matrix": _scenario_matrix_table(matrix_rows),
+        "scenarios": payloads,
+    }
+    rendered = json.dumps(result, indent=2, ensure_ascii=False)
+    _write_json_artifact(result, matrix_out)
+    _write_json_artifact(result, acceptance_json_out)
+    print(rendered)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate or inspect Cisco Packet Tracer 9.0 .pkt files")
     parser.add_argument("--blueprint", help="Path to the topology blueprint JSON")
@@ -3034,6 +3645,8 @@ def main() -> None:
     parser.add_argument("--inventory", help="Print device/link/service inventory for an existing .pkt file")
     parser.add_argument("--edit", help="Edit an existing .pkt file with --prompt and write the result to --output")
     parser.add_argument("--explain-plan", help="Print the parsed prompt plan as JSON")
+    parser.add_argument("--compare-scenarios", action="append", help="Compare multiple prompts and print a scenario acceptance matrix")
+    parser.add_argument("--parity-report", help="Print prompt-scoped capability parity JSON")
     parser.add_argument("--validate-open", help="Launch Packet Tracer with the given .pkt file")
     parser.add_argument("--validate-open-debug", help="Build staged donor compatibility debug report for a prompt")
     parser.add_argument("--compat-donor", help="Explicit Packet Tracer 9.0 donor .pkt path for strict compatibility mode")
@@ -3047,6 +3660,8 @@ def main() -> None:
     parser.add_argument("--coverage-report", action="store_true", help="Print the aggregated capability coverage matrix")
     parser.add_argument("--inventory-capabilities", action="store_true", help="Include inferred capability inventory when using --inventory")
     parser.add_argument("--inventory-out", help="Optional JSON output path when using --inventory")
+    parser.add_argument("--matrix-out", help="Optional JSON output path when using --compare-scenarios")
+    parser.add_argument("--acceptance-json-out", help="Optional JSON output path for explain/compare/parity payloads")
     parser.add_argument("--device-family", help="Optional device family filter for --coverage-report")
     args = parser.parse_args()
     if args.compat_donor:
@@ -3064,6 +3679,32 @@ def main() -> None:
             remote_provider=args.remote_provider,
             import_cache_root=import_cache_root,
             max_remote_results=args.max_remote_results,
+            acceptance_json_out=Path(args.acceptance_json_out) if args.acceptance_json_out else None,
+        )
+        return
+    if args.compare_scenarios:
+        compare_scenarios(
+            args.compare_scenarios,
+            reference_roots,
+            donor_roots,
+            search_remote=args.search_remote,
+            remote_provider=args.remote_provider,
+            import_cache_root=import_cache_root,
+            max_remote_results=args.max_remote_results,
+            matrix_out=Path(args.matrix_out) if args.matrix_out else None,
+            acceptance_json_out=Path(args.acceptance_json_out) if args.acceptance_json_out else None,
+        )
+        return
+    if args.parity_report:
+        parity_report(
+            args.parity_report,
+            reference_roots,
+            donor_roots,
+            search_remote=args.search_remote,
+            remote_provider=args.remote_provider,
+            import_cache_root=import_cache_root,
+            max_remote_results=args.max_remote_results,
+            acceptance_json_out=Path(args.acceptance_json_out) if args.acceptance_json_out else None,
         )
         return
     if args.inventory:

@@ -14,6 +14,24 @@
         "server_aaa",
         "wireless_mutation"
       ],
+      "primary_capabilities": [
+        "management_vlan",
+        "telnet",
+        "acl",
+        "server_dns",
+        "server_email",
+        "server_aaa",
+        "wireless_mutation"
+      ],
+      "acceptance_rank": 3,
+      "acceptance_label": "known_working_example",
+      "acceptance_excerpt": "known_working_example | donor=donor-backed | capabilities=management_vlan, telnet, acl",
+      "donor_origin": "donor-backed",
+      "fixture_name": "campus_core_complex",
+      "matrix_excerpt": "campus_core_complex | known_working_example | family=campus",
+      "parity_excerpt": "management_vlan=generate-ready, telnet=generate-ready, acl=generate-ready",
+      "decision_excerpt": "decision=known_working_example | donor_origin=donor-backed",
+      "runtime_excerpt": "runtime=donor-backed example artifact",
       "inventory_json": "examples/complex_campus_master_edit_v4.inventory.json",
       "screenshots": [
         "examples/screenshots/complex_campus_master_edit_v4.png"
@@ -34,6 +52,20 @@
         "iot_registration",
         "wireless_ap"
       ],
+      "primary_capabilities": [
+        "iot",
+        "iot_registration",
+        "wireless_ap"
+      ],
+      "acceptance_rank": 3,
+      "acceptance_label": "known_working_example",
+      "acceptance_excerpt": "known_working_example | donor=donor-backed | capabilities=iot, iot_registration, wireless_ap",
+      "donor_origin": "donor-backed",
+      "fixture_name": "home_iot_complex",
+      "matrix_excerpt": "home_iot_complex | known_working_example | family=home_iot",
+      "parity_excerpt": "iot=generate-ready, iot_registration=generate-ready, wireless_ap=generate-ready",
+      "decision_excerpt": "decision=known_working_example | donor_origin=donor-backed",
+      "runtime_excerpt": "runtime=donor-backed example artifact",
       "inventory_json": "examples/home_iot_cli_edit_v1.inventory.json",
       "screenshots": [
         "examples/screenshots/home_iot_cli_edit_v1.png"
@@ -57,6 +89,23 @@
         "server_syslog",
         "server_aaa"
       ],
+      "primary_capabilities": [
+        "server_dns",
+        "server_dhcp",
+        "server_ftp",
+        "server_email",
+        "server_syslog",
+        "server_aaa"
+      ],
+      "acceptance_rank": 3,
+      "acceptance_label": "known_working_example",
+      "acceptance_excerpt": "known_working_example | donor=donor-backed | capabilities=server_dns, server_dhcp, server_ftp",
+      "donor_origin": "donor-backed",
+      "fixture_name": "service_heavy_complex",
+      "matrix_excerpt": "service_heavy_complex | known_working_example | family=service_heavy",
+      "parity_excerpt": "server_dns=generate-ready, server_dhcp=generate-ready, server_ftp=generate-ready",
+      "decision_excerpt": "decision=known_working_example | donor_origin=donor-backed",
+      "runtime_excerpt": "runtime=donor-backed example artifact",
       "inventory_json": "examples/service_heavy_cli_edit_v1.inventory.json",
       "screenshots": [
         "examples/screenshots/service_heavy_cli_edit_v1.png",

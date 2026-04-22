@@ -2,14 +2,38 @@
   "name": "packet-tracer-skill",
   "version": "0.1.0",
   "private": false,
-  "description": "Install and verify the pkt skill for Codex, Cursor, Claude Code, Kiro, AdaL, and custom skill hosts.",
+  "description": "Donor-backed Cisco Packet Tracer 9.x skill for natural-language planning, safe-open generation, editing, parity reporting, and runtime diagnostics across coding hosts.",
   "keywords": [
     "packet-tracer",
     "cisco",
+    "pkt",
+    "network-topology-generator",
+    "packet-tracer-generator",
+    "packet-tracer-editor",
+    "network-lab",
+    "network-automation",
+    "network-lab-generator",
+    "natural-language",
+    "prompt-to-topology",
+    "vlan",
+    "dhcp",
+    "dns",
+    "acl",
+    "nat",
+    "router-on-a-stick",
+    "telnet",
+    "wireless",
+    "ccna",
+    "ccnp",
     "skill",
+    "ai-skill",
+    "llm-skill",
     "codex",
     "cursor",
-    "claude"
+    "claude",
+    "gemini",
+    "github-copilot-skill",
+    "npx"
   ],
   "license": "MIT",
   "repository": {
@@ -23,18 +47,31 @@
   "bin": {
     "packet-tracer-skill": "bin/packet-tracer-skill.js"
   },
+  "scripts": {
+    "test": "python -m pytest tests -q",
+    "test:python": "python -m pytest tests -q",
+    "examples:build": "python scripts/build_examples_index.py",
+    "doctor": "node bin/packet-tracer-skill.js --doctor",
+    "smoke:parity": "python scripts/generate_pkt.py --parity-report \"campus with VLAN DHCP ACL\""
+  },
   "files": [
     "SKILL.md",
     "LICENSE",
     "LICENSES",
     "README.md",
+    "CONTRIBUTING.md",
+    "CHANGELOG.md",
+    "CITATION.cff",
+    "SECURITY.md",
+    "CODE_OF_CONDUCT.md",
     "requirements.txt",
     "requirements-dev.txt",
     "scripts",
     "templates",
     "references",
     "examples",
-    "bin"
+    "bin",
+    "docs"
   ],
   "engines": {
     "node": ">=18"

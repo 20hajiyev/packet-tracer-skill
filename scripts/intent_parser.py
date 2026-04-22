@@ -40,6 +40,11 @@ CAPABILITY_PATTERNS = {
     "rip": [r"\brip\b"],
     "nat": [r"\bnat\b"],
     "acl": [r"\bacl\b", r"\baccess-list\b"],
+    "vpn": [r"\bvpn\b", r"\bsite-to-site\b", r"\bipsec\b", r"\btunnel\b"],
+    "ipsec": [r"\bipsec\b", r"\bike\b", r"\bphase 1\b", r"\bphase 2\b"],
+    "gre": [r"\bgre\b", r"\bgre tunnel\b"],
+    "ppp": [r"\bppp\b", r"\bchap\b", r"\bpap\b"],
+    "multilayer_switching": [r"\bmultilayer switch\b", r"\blayer 3 switch\b", r"\b3560\b", r"\bsvi\b"],
 }
 
 DEVICE_SYNONYMS = {
@@ -58,6 +63,18 @@ DEVICE_SYNONYMS = {
     "laptop": "Laptop",
     "smartphone": "Smartphone",
     "printer": "Printer",
+    "multilayer-switch": "MultiLayerSwitch",
+    "multilayerswitch": "MultiLayerSwitch",
+    "layer3-switch": "MultiLayerSwitch",
+    "layer-3-switch": "MultiLayerSwitch",
+    "cloud": "Cloud",
+    "cable-modem": "Cable Modem",
+    "cablemodem": "Cable Modem",
+    "dsl-modem": "Dsl Modem",
+    "dslmodem": "Dsl Modem",
+    "security-appliance": "Security Appliance",
+    "securityappliance": "Security Appliance",
+    "asa": "ASA",
 }
 
 NATURAL_DEVICE_ALIASES = {
@@ -70,6 +87,11 @@ NATURAL_DEVICE_ALIASES = {
     "Laptop": ["laptop", "laptoplar"],
     "Printer": ["printer", "printerler"],
     "LightWeightAccessPoint": ["ap", "aps", "accesspoint", "access-point", "access point", "apler"],
+    "MultiLayerSwitch": ["multilayer switch", "multilayer-switch", "multilayerswitch", "layer 3 switch", "layer3 switch", "3560"],
+    "Cloud": ["cloud", "wan cloud"],
+    "Cable Modem": ["cable modem", "cable-modem", "cablemodem"],
+    "Dsl Modem": ["dsl modem", "dsl-modem", "dslmodem"],
+    "ASA": ["asa", "security appliance", "security-appliance", "firewall"],
 }
 
 NETWORK_STYLE_PATTERNS = {
@@ -77,6 +99,7 @@ NETWORK_STYLE_PATTERNS = {
     "branch": [r"\bbranch\b", r"\bfilial\b"],
     "small_office": [r"\bsmall office\b", r"\bhome\b", r"\bofis\b"],
     "wireless_branch": [r"\bwireless\b", r"\bwifi\b", r"\bssid\b"],
+    "wan_security": [r"\bwan\b", r"\bgre\b", r"\bppp\b", r"\bipsec\b", r"\bvpn\b", r"\bsecurity edge\b", r"\bfirewall\b", r"\basa\b"],
 }
 
 PER_DEPARTMENT_DEVICE_ALIASES = {
@@ -366,7 +389,7 @@ def _extract_service_requirements(capabilities: list[str], prompt: str) -> dict[
     for service in ["dhcp", "dns", "http", "https", "ftp", "tftp", "ntp", "email", "syslog", "aaa"]:
         if service in lowered:
             requirements["services"].append(service)
-    for security in ["acl", "telnet", "wpa2", "wpa", "wep", "nat"]:
+    for security in ["acl", "telnet", "wpa2", "wpa", "wep", "nat", "vpn", "ipsec", "gre", "ppp", "ssh"]:
         if security in lowered:
             requirements["security"].append(security)
     return requirements
@@ -774,6 +797,8 @@ def parse_intent(prompt: str) -> IntentPlan:
         capability_set.add("end_device_mutation")
     if iot_ops:
         capability_set.update({"iot", "iot_registration"})
+    if capability_set & {"vpn", "ipsec", "gre", "ppp"}:
+        network_style = network_style or "wan_security"
 
     capabilities = sorted(capability_set)
 
@@ -803,6 +828,8 @@ def parse_intent(prompt: str) -> IntentPlan:
     if department_groups and not network_style:
         network_style = "campus"
         assumptions_used.append("Interpreted department-based prompt as campus style.")
+    if network_style == "wan_security":
+        assumptions_used.append("Interpreted VPN/WAN/security wording as WAN-security edge style.")
 
     goal = "edit" if pkt_path or any(word in normalized_prompt for word in ["deyis", "edit", "modify", "change", "rename", "update"]) else "generate"
     confidence_score = _estimate_confidence(device_requirements, capabilities, parse_warnings, blocking_gaps, devices, links)

@@ -26,9 +26,14 @@ from generate_pkt import (  # noqa: E402
     _evaluate_donor_prune_candidates,
     _collect_donor_groups,
     _preferred_donor_archetypes_for_plan,
+    _scenario_acceptance_summary,
+    _scenario_matrix_table,
+    _scenario_matrix_row,
     _scenario_generate_decision,
     _selected_donor_summary,
     _summarize_candidate_pool,
+    compare_scenarios,
+    parity_report,
     build_prompt_blueprint,
     edit_from_prompt,
     inventory_pkt,
@@ -1274,6 +1279,10 @@ def test_selected_donor_summary_reports_why_selected() -> None:
             {
                 "relative_path": "donor.pkt",
                 "origin": "cisco-local",
+                "promotion_status": "validated_primary",
+                "promotion_evidence": ["validation:validated", "apply_safety:acceptance-verified"],
+                "validated_edit_capabilities": ["vlan", "management_vlan", "telnet"],
+                "acceptance_notes": ["workspace logical=ok physical=ok"],
                 "status": "selected",
                 "reasons": ["capability:vlan"],
                 "sample_archetypes": ["campus/core"],
@@ -1290,8 +1299,11 @@ def test_selected_donor_summary_reports_why_selected() -> None:
     assert summary is not None
     assert summary["relative_path"] == "donor.pkt"
     assert summary["selection_reasons"] == ["capability:vlan", "origin:cisco-local"]
+    assert summary["promotion_status"] == "validated_primary"
+    assert summary["validated_edit_capabilities"] == ["vlan", "management_vlan", "telnet"]
     assert any("layout reuse 100% (strong)" == item for item in summary["why_selected"])
     assert any("archetype match via archetype:campus/core" == item for item in summary["why_selected"])
+    assert any("promotion evidence: validation:validated, apply_safety:acceptance-verified" == item for item in summary["why_selected"])
 
 
 def test_scenario_generate_decision_blocks_acceptance_gated_and_unsupported() -> None:
@@ -1313,12 +1325,14 @@ def test_scenario_generate_decision_blocks_acceptance_gated_and_unsupported() ->
     )
 
     assert acceptance_gated["allow_generate"] is False
+    assert acceptance_gated["status"] == "blocked_by_acceptance"
     assert any("acceptance-gated" in item for item in acceptance_gated["blocking_reasons"])
     assert unsupported["allow_generate"] is False
+    assert unsupported["status"] == "blocked_by_capability"
     assert any("not generate-ready" in item for item in unsupported["blocking_reasons"])
 
 
-def test_scenario_generate_decision_allows_ready_and_strong_donor_limited() -> None:
+def test_scenario_generate_decision_requires_selected_donor_before_allowing_ready_generate() -> None:
     ready = _scenario_generate_decision(
         {
             "scenario_generate_readiness": {
@@ -1336,6 +1350,7 @@ def test_scenario_generate_decision_allows_ready_and_strong_donor_limited() -> N
         },
         donor_selection_summary={"candidate_counts": {"selected": 1}},
         selected_donor_summary={
+            "sample_archetypes": ["service-heavy", "wireless-heavy"],
             "donor_graph_summary": {
                 "layout_reuse_status": "strong",
                 "reusable_pair_coverage": 100,
@@ -1343,8 +1358,479 @@ def test_scenario_generate_decision_allows_ready_and_strong_donor_limited() -> N
         },
     )
 
-    assert ready["allow_generate"] is True
+    assert ready["allow_generate"] is False
+    assert ready["status"] == "ready_without_selected_donor"
+    assert ready["what_failed"] == "donor selection"
+    assert ready["blocking_layer"] == "donor"
+    assert ready["decision_confidence"] == 0.55
     assert donor_limited["allow_generate"] is True
+    assert donor_limited["status"] == "ready_with_selected_donor"
+    assert donor_limited["selected_donor_aligned"] is True
+    assert donor_limited["blocking_layer"] is None
+    assert any("selected donor archetype aligns" in item for item in donor_limited["notes"])
+    assert any("100% reusable link-pair coverage" in item for item in donor_limited["notes"])
+
+
+def test_scenario_generate_decision_reports_selected_donor_mismatch() -> None:
+    decision = _scenario_generate_decision(
+        {
+            "scenario_generate_readiness": {
+                "family": "home_iot",
+                "status": "ready",
+            }
+        },
+        selected_donor_summary={
+            "sample_archetypes": ["campus/core", "service-heavy"],
+            "donor_graph_summary": {
+                "layout_reuse_status": "strong",
+                "reusable_pair_coverage": 80,
+            },
+        },
+    )
+
+    assert decision["allow_generate"] is True
+    assert decision["status"] == "ready_with_selected_donor"
+    assert decision["selected_donor_aligned"] is False
+    assert any("do not match expected IoT/home gateway" in item for item in decision["notes"])
+
+
+def test_scenario_acceptance_summary_reports_blocked_candidate_pool() -> None:
+    summary = _scenario_acceptance_summary(
+        {
+            "recommended_next_actions": ["Choose a donor closer to the requested archetype."],
+            "scenario_generate_readiness": {
+                "family": "campus",
+                "status": "unsupported",
+                "critical_capabilities": ["router_on_a_stick", "trunk"],
+                "missing_critical_capabilities": ["router_on_a_stick"],
+            },
+        },
+        donor_selection_summary={
+            "candidate_counts": {"selected": 0, "rejected": 2, "filtered": 1},
+            "top_rejection_reasons": ["archetype_gap:wireless-heavy", "missing_link_pairs:4"],
+        },
+    )
+
+    assert summary["family"] == "campus"
+    assert summary["generate_state"] == "blocked"
+    assert summary["donor_state"] == "candidate_pool_blocked"
+    assert summary["decision_state"] == "blocked_by_capability"
+    assert summary["candidate_counts"] == {"selected": 0, "rejected": 2, "filtered": 1}
+    assert summary["top_rejection_reasons"] == ["archetype_gap:wireless-heavy", "missing_link_pairs:4"]
+    assert summary["critical_capabilities"] == ["router_on_a_stick", "trunk"]
+    assert summary["missing_critical_capabilities"] == ["router_on_a_stick"]
+    assert len(summary["critical_capability_parity"]) == 0
+    assert len(summary["critical_parity_mismatches"]) == 0
+    assert summary["next_best_action"] == "Choose a donor closer to the requested archetype."
+    assert summary["selection_failure_type"] == "viable_donor_found_but_archetype_misaligned"
+    assert summary["decision_confidence"] == 0.9
+    assert summary["key_reasons"]
+
+
+def test_scenario_acceptance_summary_reports_selected_aligned_donor() -> None:
+    summary = _scenario_acceptance_summary(
+        {
+            "recommended_next_actions": ["No action required."],
+            "scenario_generate_readiness": {
+                "family": "service_heavy",
+                "status": "donor_limited",
+                "critical_capabilities": ["server_dns", "server_ftp"],
+                "missing_critical_capabilities": [],
+            },
+        },
+        donor_selection_summary={"candidate_counts": {"selected": 1, "rejected": 0, "filtered": 0}},
+        selected_donor_summary={
+            "sample_archetypes": ["service-heavy"],
+            "donor_graph_summary": {
+                "layout_reuse_status": "strong",
+                "reusable_pair_coverage": 100,
+            },
+        },
+    )
+
+    assert summary["generate_state"] == "allowed"
+    assert summary["donor_state"] == "selected"
+    assert summary["selected_donor_aligned"] is True
+    assert summary["selection_failure_type"] is None
+    assert summary["decision_state"] == "ready_with_selected_donor"
+    assert summary["candidate_counts"] == {"selected": 1, "rejected": 0, "filtered": 0}
+    assert summary["critical_capabilities"] == ["server_dns", "server_ftp"]
+    assert summary["missing_critical_capabilities"] == []
+    assert summary["key_reasons"]
+
+
+def test_scenario_matrix_row_reports_blocked_summary() -> None:
+    row = _scenario_matrix_row(
+        {
+            "family": "campus",
+            "readiness_status": "unsupported",
+            "generate_state": "blocked",
+            "donor_state": "candidate_pool_blocked",
+            "selected_donor_aligned": None,
+            "candidate_counts": {"selected": 0, "rejected": 2, "filtered": 1},
+            "critical_capabilities": ["router_on_a_stick", "trunk"],
+            "missing_critical_capabilities": ["router_on_a_stick"],
+            "top_rejection_reasons": ["missing_link_pairs:4"],
+            "next_best_action": "Choose a donor closer to the requested archetype.",
+            "decision_confidence": 0.9,
+            "blocking_layer": "capability",
+            "best_available_donor_class": "campus/core",
+            "remediation_steps": ["Choose a donor closer to the requested archetype."],
+        }
+    )
+
+    assert row["family"] == "campus"
+    assert row["generate_state"] == "blocked"
+    assert row["acceptance_rank"] == 1
+    assert row["acceptance_label"] == "blocked_by_donor_selection"
+    assert row["comparison_score"] == 87
+    assert "campus: blocked_by_donor_selection" in row["comparison_summary"]
+    assert row["selection_failure_type"] == "viable_donor_found_but_acceptance_weak"
+    assert row["critical_capability_count"] == 2
+    assert row["missing_critical_capability_count"] == 1
+    assert row["parity_mismatch_count"] == 0
+    assert row["top_rejection_reason"] == "missing_link_pairs:4"
+    assert row["decision_confidence"] == 0.9
+    assert row["blocking_layer"] == "capability"
+    assert row["best_available_donor_class"] == "campus/core"
+    assert row["remediation_hint"] == "Choose a donor closer to the requested archetype."
+
+
+def test_scenario_matrix_row_reports_selected_donor() -> None:
+    row = _scenario_matrix_row(
+        {
+            "family": "service_heavy",
+            "readiness_status": "donor_limited",
+            "generate_state": "allowed",
+            "donor_state": "selected",
+            "selected_donor_aligned": True,
+            "candidate_counts": {"selected": 1, "rejected": 0, "filtered": 0},
+            "critical_capabilities": ["server_dns", "server_ftp"],
+            "missing_critical_capabilities": [],
+            "top_rejection_reasons": [],
+            "next_best_action": "No action required.",
+        },
+        selected_donor_summary={"relative_path": "service_donor.pkt"},
+    )
+
+    assert row["family"] == "service_heavy"
+    assert row["donor_state"] == "selected"
+    assert row["acceptance_rank"] == 3
+    assert row["acceptance_label"] == "ready_with_selected_donor"
+    assert row["comparison_score"] == 300
+    assert "service_heavy: ready_with_selected_donor" in row["comparison_summary"]
+    assert row["selected_donor"] == "service_donor.pkt"
+    assert row["selected_donor_aligned"] is True
+    assert row["selection_failure_type"] is None
+    assert row["parity_mismatch_count"] == 0
+
+
+def test_selected_donor_summary_reports_registry_backed_evidence_source() -> None:
+    summary = _selected_donor_summary(
+        [
+            {
+                "status": "selected",
+                "relative_path": "service_heavy_cli_edit_v1.pkt",
+                "origin": "external-curated",
+                "promotion_status": "acceptance_verified_curated",
+                "evidence_source": "registry+inferred",
+                "promotion_evidence": [
+                    "promotion:acceptance_verified_curated",
+                    "acceptance_fixture:service_heavy_complex",
+                    "evidence_source:registry+inferred",
+                ],
+                "validated_edit_capabilities": ["server_dns", "server_dhcp", "server_ftp"],
+                "acceptance_notes": ["Known working service-heavy example."],
+                "acceptance_fixtures": ["service_heavy_complex"],
+                "provenance": "known-working-example:service_heavy_cli_edit_v1",
+                "workspace_validation": "inventory_roundtrip_verified",
+                "sample_archetypes": ["service-heavy"],
+                "archetype_match_reasons": ["archetype:service-heavy"],
+                "adjusted_total_score": 42,
+                "donor_graph_summary": {
+                    "reusable_pair_coverage": 100,
+                    "layout_reuse_status": "strong",
+                },
+                "reasons": ["capability:server_dns", "capability:server_ftp"],
+            }
+        ]
+    )
+
+    assert summary is not None
+    assert summary["evidence_source"] == "registry+inferred"
+    assert summary["workspace_validation"] == "inventory_roundtrip_verified"
+    assert any("evidence source: registry+inferred" == item for item in summary["promotion_reasoning"])
+    assert any("workspace validation: inventory_roundtrip_verified" == item for item in summary["promotion_reasoning"])
+    assert any("evidence source: registry+inferred" == item for item in summary["why_selected"])
+
+
+def test_scenario_generate_decision_handles_wan_security_edge() -> None:
+    decision = _scenario_generate_decision(
+        {
+            "scenario_generate_readiness": {
+                "family": "wan_security_edge",
+                "status": "donor_limited",
+                "critical_capabilities": ["vpn", "ipsec", "gre"],
+                "missing_critical_capabilities": [],
+            }
+        },
+        donor_selection_summary={"candidate_counts": {"selected": 0, "rejected": 1, "filtered": 1}},
+        selected_donor_summary=None,
+    )
+    assert decision["family"] == "wan_security_edge"
+    assert decision["allow_generate"] is False
+    assert decision["status"] == "blocked_by_donor_selection"
+    assert any("WAN/security edge" in item for item in decision["blocking_reasons"])
+
+
+def test_scenario_generate_decision_reports_runtime_blocker() -> None:
+    decision = _scenario_generate_decision(
+        {
+            "scenario_generate_readiness": {
+                "family": "campus",
+                "status": "ready",
+            },
+            "recommended_next_actions": ["Set PACKET_TRACER_COMPAT_DONOR first."],
+        },
+        runtime_blocked=True,
+        runtime_blocking_reason="missing_or_incompatible_donor",
+    )
+    assert decision["allow_generate"] is False
+    assert decision["runtime_blocked"] is True
+    assert decision["status"] == "blocked_by_runtime"
+    assert decision["what_failed"] == "runtime readiness"
+    assert decision["why_failed"] == "missing_or_incompatible_donor"
+    assert decision["blocking_layer"] == "runtime"
+
+
+def test_scenario_acceptance_matrix_examples_cover_campus_service_heavy_and_home_iot() -> None:
+    cases = [
+        {
+            "coverage_gap": {
+                "recommended_next_actions": ["Choose a donor closer to the requested archetype."],
+                "scenario_generate_readiness": {
+                    "family": "campus",
+                    "status": "unsupported",
+                    "critical_capabilities": ["router_on_a_stick", "trunk"],
+                    "missing_critical_capabilities": ["router_on_a_stick"],
+                },
+            },
+            "donor_selection_summary": {
+                "candidate_counts": {"selected": 0, "rejected": 2, "filtered": 1},
+                "top_rejection_reasons": ["missing_link_pairs:4"],
+            },
+            "selected_donor_summary": None,
+            "expected": {
+                "family": "campus",
+                "generate_state": "blocked",
+                "donor_state": "candidate_pool_blocked",
+                "critical_capability_count": 2,
+                "missing_critical_capability_count": 1,
+            },
+        },
+        {
+            "coverage_gap": {
+                "recommended_next_actions": ["No action required."],
+                "scenario_generate_readiness": {
+                    "family": "service_heavy",
+                    "status": "donor_limited",
+                    "critical_capabilities": ["server_dns", "server_ftp"],
+                    "missing_critical_capabilities": [],
+                },
+            },
+            "donor_selection_summary": {
+                "candidate_counts": {"selected": 1, "rejected": 0, "filtered": 0},
+                "top_rejection_reasons": [],
+            },
+            "selected_donor_summary": {
+                "relative_path": "service_donor.pkt",
+                "sample_archetypes": ["service-heavy"],
+                "donor_graph_summary": {
+                    "layout_reuse_status": "strong",
+                    "reusable_pair_coverage": 100,
+                },
+            },
+            "expected": {
+                "family": "service_heavy",
+                "generate_state": "allowed",
+                "donor_state": "selected",
+                "critical_capability_count": 2,
+                "missing_critical_capability_count": 0,
+            },
+        },
+        {
+            "coverage_gap": {
+                "recommended_next_actions": ["Use edit/inventory flow before prompt generate."],
+                "scenario_generate_readiness": {
+                    "family": "home_iot",
+                    "status": "acceptance_gated",
+                    "critical_capabilities": ["iot_registration", "iot_control"],
+                    "missing_critical_capabilities": [],
+                },
+            },
+            "donor_selection_summary": {
+                "candidate_counts": {"selected": 0, "rejected": 1, "filtered": 0},
+                "top_rejection_reasons": ["acceptance_gated:iot_registration"],
+            },
+            "selected_donor_summary": None,
+            "expected": {
+                "family": "home_iot",
+                "generate_state": "blocked",
+                "donor_state": "candidate_pool_blocked",
+                "critical_capability_count": 2,
+                "missing_critical_capability_count": 0,
+            },
+        },
+    ]
+
+    for case in cases:
+        summary = _scenario_acceptance_summary(
+            case["coverage_gap"],
+            donor_selection_summary=case["donor_selection_summary"],
+            selected_donor_summary=case["selected_donor_summary"],
+        )
+        row = _scenario_matrix_row(
+            summary,
+            selected_donor_summary=case["selected_donor_summary"],
+        )
+        assert row["family"] == case["expected"]["family"]
+        assert row["generate_state"] == case["expected"]["generate_state"]
+        assert row["donor_state"] == case["expected"]["donor_state"]
+        assert row["critical_capability_count"] == case["expected"]["critical_capability_count"]
+        assert row["missing_critical_capability_count"] == case["expected"]["missing_critical_capability_count"]
+        assert "acceptance_rank" in row
+        assert "acceptance_label" in row
+        assert "comparison_score" in row
+        assert "comparison_summary" in row
+
+
+def test_scenario_matrix_table_sorts_by_comparison_score_then_missing_capabilities() -> None:
+    rows = [
+        {
+            "family": "campus",
+            "comparison_score": 87,
+            "missing_critical_capability_count": 1,
+        },
+        {
+            "family": "service_heavy",
+            "comparison_score": 300,
+            "missing_critical_capability_count": 0,
+        },
+        {
+            "family": "home_iot",
+            "comparison_score": 98,
+            "missing_critical_capability_count": 0,
+        },
+    ]
+
+    table = _scenario_matrix_table(rows)
+
+    assert [row["family"] for row in table] == ["service_heavy", "home_iot", "campus"]
+
+
+def test_compare_scenarios_builds_sorted_matrix_and_writes_output(tmp_path: Path, monkeypatch) -> None:
+    payloads = {
+        "campus prompt": {
+            "scenario_matrix_row": {
+                "family": "campus",
+                "comparison_score": 87,
+                "missing_critical_capability_count": 1,
+                "fixture_name": "campus_core_complex",
+                "matrix_version": "2.1",
+                "parity_supported_count": 2,
+                "parity_generate_ready_count": 1,
+                "parity_acceptance_verified_count": 0,
+                "parity_mismatch_count": 1,
+            },
+            "scenario_acceptance_summary": {"family": "campus"},
+            "scenario_generate_decision": {"family": "campus"},
+            "selected_donor_summary": None,
+            "donor_selection_summary": {"candidate_counts": {"selected": 0, "rejected": 1, "filtered": 1}},
+            "capability_parity": [{"capability": "router_on_a_stick", "generate_mismatch_reason": "supported_but_donor_limited"}],
+        },
+        "service prompt": {
+            "scenario_matrix_row": {
+                "family": "service_heavy",
+                "comparison_score": 300,
+                "missing_critical_capability_count": 0,
+                "fixture_name": "service_heavy_complex",
+                "matrix_version": "2.1",
+                "parity_supported_count": 3,
+                "parity_generate_ready_count": 3,
+                "parity_acceptance_verified_count": 2,
+                "parity_mismatch_count": 0,
+            },
+            "scenario_acceptance_summary": {"family": "service_heavy"},
+            "scenario_generate_decision": {"family": "service_heavy"},
+            "selected_donor_summary": {"relative_path": "service_donor.pkt"},
+            "donor_selection_summary": {"candidate_counts": {"selected": 1, "rejected": 0, "filtered": 0}},
+            "capability_parity": [{"capability": "server_dns", "generate_mismatch_reason": None}],
+        },
+    }
+
+    monkeypatch.setattr(
+        generate_pkt_module,
+        "_explain_plan_payload",
+        lambda prompt, *args, **kwargs: payloads[prompt],
+    )
+
+    matrix_out = tmp_path / "matrix.json"
+    compare_scenarios(["campus prompt", "service prompt"], matrix_out=matrix_out)
+
+    assert matrix_out.exists()
+    payload = json.loads(matrix_out.read_text(encoding="utf-8"))
+    assert payload["matrix_version"] == "2.1"
+    assert payload["fixture_registry_version"] == "1.0"
+    assert payload["scenario_count"] == 2
+    assert [row["family"] for row in payload["matrix"]] == ["service_heavy", "campus"]
+    assert payload["scenarios"][0]["fixture_name"] == "campus_core_complex"
+    assert payload["scenarios"][0]["fixture_expectation_status"] == "gapped"
+
+
+def test_parity_report_writes_prompt_scoped_parity_payload(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        generate_pkt_module,
+        "_explain_plan_payload",
+        lambda prompt, *args, **kwargs: {
+            "coverage_gaps": {
+                "scenario_family": "service_heavy",
+                "scenario_generate_readiness": {
+                    "critical_capabilities": ["server_dns", "server_email"],
+                },
+            },
+            "capability_parity": [
+                {
+                    "capability": "server_dns",
+                    "inventory_supported": True,
+                    "edit_supported": True,
+                    "generate_supported": True,
+                    "acceptance_verified": True,
+                    "best_maturity_level": "acceptance-verified",
+                    "generate_mismatch_reason": None,
+                },
+                {
+                    "capability": "server_email",
+                    "inventory_supported": True,
+                    "edit_supported": True,
+                    "generate_supported": True,
+                    "acceptance_verified": False,
+                    "best_maturity_level": "safe-open-generate-supported",
+                    "generate_mismatch_reason": "supported_but_donor_limited",
+                },
+            ],
+        },
+    )
+    out_path = tmp_path / "parity.json"
+    parity_report("service-heavy", acceptance_json_out=out_path)
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["scenario_family"] == "service_heavy"
+    assert payload["parity_supported_count"] == 2
+    assert payload["parity_generate_ready_count"] == 2
+    assert payload["parity_acceptance_verified_count"] == 1
+    assert payload["parity_mismatch_count"] == 1
+    assert len(payload["critical_capability_parity"]) == 2
+    assert len(payload["critical_parity_mismatches"]) == 1
+    assert out_path.exists()
 
 
 def test_augment_coverage_gap_actions_adds_runtime_and_link_guidance() -> None:

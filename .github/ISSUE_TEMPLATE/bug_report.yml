@@ -1,0 +1,44 @@
+name: Bug report
+description: Report a reproducible problem in planning, donor selection, parity reporting, runtime doctor, or docs.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for real defects. Include the product surface that failed and the exact command or prompt.
+  - type: input
+    id: surface
+    attributes:
+      label: Affected surface
+      description: Example: explain-plan, compare-scenarios, doctor, examples gallery, install
+      placeholder: explain-plan
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command or prompt
+      description: Paste the exact CLI command or natural-language request
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include OS, Python version, Node version, Packet Tracer version, and whether a repo-local or external bridge was used
+    validations:
+      required: true

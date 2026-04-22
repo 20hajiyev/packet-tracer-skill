@@ -1,6 +1,6 @@
-## Example Artifacts
+## Known Working Scenario Set
 
-This repo keeps text-based example artifacts under `examples/`.
+This repo keeps text-based example artifacts under `examples/` and treats them as a known working scenario set, not just a screenshot folder.
 
 Policy:
 - generated `.pkt` and `.xml` files stay gitignored
@@ -45,7 +45,7 @@ Generated outputs:
 - `index.json`
   Machine-readable curated example index.
 - `gallery.md`
-  Human-readable markdown gallery generated from the same source, including extra detail links when present.
+  Human-readable markdown gallery generated from the same source, positioned as the known working scenario set.
 - `previews/*.svg`
   Generated fallback preview images for examples that do not yet have real Packet Tracer screenshots.
 

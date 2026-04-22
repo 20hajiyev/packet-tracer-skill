@@ -190,6 +190,15 @@ def test_parse_explicit_iot_rule_state_operation() -> None:
     assert op["enabled"] is False
 
 
+def test_parse_wan_security_prompt_recognizes_phase_d_intent() -> None:
+    plan = parse_intent("wan security edge qur gre tunnel ve ipsec vpn ppp olsun 1 multilayer switch 1 asa 1 cloud")
+    assert plan.network_style == "wan_security"
+    assert {"gre", "ipsec", "vpn", "ppp", "multilayer_switching"} <= set(plan.capabilities)
+    assert plan.device_requirements["MultiLayerSwitch"] == 1
+    assert plan.device_requirements["ASA"] == 1
+    assert plan.device_requirements["Cloud"] == 1
+
+
 def test_parse_management_ops_with_spaced_device_name() -> None:
     plan = parse_intent(
         "set Switch Management management vlan 99 ip 192.168.99.2/24 gateway 192.168.99.1 "

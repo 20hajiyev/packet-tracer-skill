@@ -1,0 +1,53 @@
+{
+  "fixture_registry_version": "1.0",
+  "fixtures": [
+    {
+      "name": "campus_core_complex",
+      "scenario_family": "campus",
+      "preferred_donor_archetypes": ["campus/core"],
+      "critical_capabilities": ["router_on_a_stick", "trunk", "management_vlan", "telnet", "acl", "nat"],
+      "minimum_expectations": {
+        "requires_family_match": true,
+        "requires_nonempty_summary": true,
+        "requires_nonempty_matrix_row": true
+      },
+      "canonical_prompt": "6 şöbəli kampus, VLAN 10 20 30 40 50 60, management VLAN 99, Telnet, ACL, NAT, printer, wireless AP/client, router-on-a-stick"
+    },
+    {
+      "name": "service_heavy_complex",
+      "scenario_family": "service_heavy",
+      "preferred_donor_archetypes": ["service-heavy"],
+      "critical_capabilities": ["server_dns", "server_dhcp", "server_http", "server_https", "server_ftp", "server_tftp", "server_email", "server_syslog", "server_aaa", "ntp"],
+      "minimum_expectations": {
+        "requires_family_match": true,
+        "requires_nonempty_summary": true,
+        "requires_nonempty_matrix_row": true
+      },
+      "canonical_prompt": "server yönümlü lab, DNS, DHCP, HTTP, HTTPS, FTP, TFTP, NTP, email, syslog, AAA, end-device DNS/IP mutation"
+    },
+    {
+      "name": "home_iot_complex",
+      "scenario_family": "home_iot",
+      "preferred_donor_archetypes": ["IoT/home gateway", "wireless-heavy"],
+      "critical_capabilities": ["iot", "iot_registration", "iot_control", "wireless_ap"],
+      "minimum_expectations": {
+        "requires_family_match": true,
+        "requires_nonempty_summary": true,
+        "requires_nonempty_matrix_row": true
+      },
+      "canonical_prompt": "smart home, home gateway, IoT registration, IoT control, wireless edge"
+    },
+    {
+      "name": "wan_security_complex",
+      "scenario_family": "wan_security_edge",
+      "preferred_donor_archetypes": ["WAN/security edge"],
+      "critical_capabilities": ["vpn", "ipsec", "gre", "ppp", "multilayer_switching", "security_edge"],
+      "minimum_expectations": {
+        "requires_family_match": true,
+        "requires_nonempty_summary": true,
+        "requires_nonempty_matrix_row": true
+      },
+      "canonical_prompt": "wan security edge, multilayer switch, cloud, firewall/ASA, GRE, PPP, site-to-site VPN, IPsec, ACL, NAT"
+    }
+  ]
+}

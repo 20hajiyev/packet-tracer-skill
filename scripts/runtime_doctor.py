@@ -127,6 +127,16 @@ def collect_runtime_doctor() -> dict[str, object]:
     vendor_dir = Path(__file__).resolve().parent / "vendor"
     resolved_patterns = twofish.get("expected_twofish_patterns") or expected_bridge_patterns()
     resolved_search_roots = twofish.get("twofish_search_roots") or recommended_search_roots(vendor_dir)
+    resolved_twofish_path = str(twofish.get("resolved_twofish_path") or "")
+    if resolved_twofish_path:
+        try:
+            repo_vendor = vendor_dir.resolve()
+            bridge_path = Path(resolved_twofish_path).resolve()
+            bridge_resolution = "repo_local" if repo_vendor in bridge_path.parents else "external_env"
+        except Exception:
+            bridge_resolution = "external_env"
+    else:
+        bridge_resolution = "missing"
 
     runtime_supported = host_os == "Windows"
     if runtime_supported:
@@ -168,6 +178,54 @@ def collect_runtime_doctor() -> dict[str, object]:
         runtime_supported=runtime_supported,
         runtime_message=runtime_message,
     )
+    capability_impact = {
+        "inventory": "ready" if donor.get("status") == "ok" and twofish.get("twofish_load_status") == "ok" else "blocked",
+        "decode": "ready" if twofish.get("twofish_load_status") == "ok" else "blocked",
+        "edit": "ready" if donor.get("status") == "ok" and twofish.get("twofish_load_status") == "ok" else "blocked",
+        "generate": "ready" if runtime_supported and donor.get("status") == "ok" and twofish.get("twofish_load_status") == "ok" else "blocked",
+        "validate_open": "ready" if packet_tracer_exe is not None else "blocked",
+    }
+    ready_operations = [name for name, status in capability_impact.items() if status == "ready"]
+    blocked_operations = [name for name, status in capability_impact.items() if status != "ready"]
+    runtime_blockers: list[str] = []
+    if donor.get("status") != "ok":
+        runtime_blockers.append("missing_or_incompatible_donor")
+    if twofish.get("twofish_load_status") != "ok":
+        runtime_blockers.append("missing_twofish_bridge")
+    if packet_tracer_root is None:
+        runtime_blockers.append("missing_packet_tracer_root")
+    if packet_tracer_exe is None:
+        runtime_blockers.append("missing_packet_tracer_executable")
+    if not runtime_supported:
+        runtime_blockers.append("windows_first_runtime")
+    if bridge_resolution == "external_env" and "using_external_bridge_only" not in runtime_blockers:
+        runtime_blockers.append("using_external_bridge_only")
+    if runtime_blockers:
+        runtime_grade = "blocked" if len(ready_operations) == 0 else "partially_ready"
+    else:
+        runtime_grade = "ready"
+    if runtime_grade == "ready":
+        doctor_summary = "Runtime looks ready for decode, edit, generate, and validate-open."
+    elif runtime_grade == "partially_ready":
+        doctor_summary = "Runtime is partially ready: some operations work, but strict .pkt generation is still blocked."
+    else:
+        doctor_summary = "Runtime is blocked: required donor, bridge, or Packet Tracer runtime pieces are missing."
+    if bridge_resolution == "external_env":
+        doctor_summary = f"{doctor_summary} External bridge is being used instead of a repo-local vendor bridge."
+    bridge_recommendation = (
+        "Use or install a repo-local vendor bridge for fully self-contained runtime readiness."
+        if bridge_resolution == "external_env"
+        else "Provide PKT_TWOFISH_LIBRARY or PKT_TWOFISH_SEARCH_ROOTS to resolve a local bridge."
+        if bridge_resolution == "missing"
+        else "Repo-local bridge is resolved."
+    )
+    runtime_contract_notes = (
+        "Repo-local bridge and donor are present."
+        if bridge_resolution == "repo_local"
+        else "External bridge resolves decode/edit, but repo-local runtime packaging is still incomplete."
+        if bridge_resolution == "external_env"
+        else "Bridge resolution is missing, so strict runtime remains blocked."
+    )
 
     return {
         "host_os": host_os,
@@ -191,11 +249,15 @@ def collect_runtime_doctor() -> dict[str, object]:
         "python_support_message": twofish.get("python_support_message", "unknown"),
         "expected_twofish_patterns": resolved_patterns,
         "twofish_search_roots": resolved_search_roots,
-        "resolved_twofish_path": twofish.get("resolved_twofish_path", ""),
+        "resolved_twofish_path": resolved_twofish_path,
         "twofish_source": twofish.get("twofish_source", ""),
         "twofish_load_status": twofish.get("twofish_load_status", "unknown"),
         "twofish_message": twofish.get("twofish_message", "unknown"),
         "twofish_sha256": twofish.get("twofish_sha256", ""),
+        "bridge_resolution": bridge_resolution,
+        "bridge_path_source": "env" if bridge_resolution == "external_env" else "repo" if bridge_resolution == "repo_local" else "",
+        "bridge_recommendation": bridge_recommendation,
+        "runtime_contract_notes": runtime_contract_notes,
         "target_version": donor.get("target_version", ""),
         "resolved_donor_path": donor.get("resolved_donor_path", ""),
         "donor_version": donor.get("donor_version", ""),
@@ -204,6 +266,12 @@ def collect_runtime_doctor() -> dict[str, object]:
         "donor_message": donor.get("message", "unknown"),
         "donor_blocking_reason": donor.get("blocking_reason", ""),
         "donor_candidates": donor.get("candidate_paths", []),
+        "capability_impact": capability_impact,
+        "runtime_blockers": runtime_blockers,
+        "ready_operations": ready_operations,
+        "blocked_operations": blocked_operations,
+        "doctor_summary": doctor_summary,
+        "runtime_grade": runtime_grade,
         "recommended_next_steps": recommended_next_steps,
         "blocking_reason": " | ".join(blocking_reasons) if blocking_reasons else "",
     }

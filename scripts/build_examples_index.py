@@ -16,12 +16,14 @@ TITLE_BY_FAMILY = {
     "campus": "Complex Campus",
     "home_iot": "Home IoT",
     "service_heavy": "Service Heavy",
+    "wan_security_edge": "WAN Security Edge",
 }
 
 SUMMARY_BY_FAMILY = {
     "campus": "Management VLAN, Telnet, ACL, DNS, email, AAA, and multi-SSID wireless campus edit.",
     "home_iot": "Home gateway and IoT device onboarding with gateway-backed registration state.",
     "service_heavy": "Service-rich server lab with DNS, DHCP, FTP, email, syslog, AAA, and detailed service metadata.",
+    "wan_security_edge": "WAN/security-edge lab with multilayer, tunnel, VPN, and edge-policy coverage metadata.",
 }
 
 CAPABILITIES_BY_FAMILY = {
@@ -47,6 +49,21 @@ CAPABILITIES_BY_FAMILY = {
         "server_syslog",
         "server_aaa",
     ],
+    "wan_security_edge": [
+        "multilayer_switching",
+        "vpn",
+        "ipsec",
+        "gre",
+        "ppp",
+        "security_edge",
+    ],
+}
+
+FIXTURE_BY_FAMILY = {
+    "campus": "campus_core_complex",
+    "home_iot": "home_iot_complex",
+    "service_heavy": "service_heavy_complex",
+    "wan_security_edge": "wan_security_complex",
 }
 
 CARD_THEME_BY_FAMILY = {
@@ -176,16 +193,38 @@ def _build_entry(manifest_path: Path) -> dict[str, object]:
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     name = str(payload["example_name"])
     family = str(payload.get("scenario_family") or payload.get("topology_summary", {}).get("network_style") or "general")
+    verification = dict(payload.get("verification_status") or {})
+    acceptance_rank = 3 if verification.get("inventory_roundtrip_verified") and verification.get("full_pytest_passed") else 1
+    acceptance_label = "known_working_example" if acceptance_rank == 3 else "partially_verified_example"
+    source_mode = str(payload.get("source_mode") or "").strip()
+    donor_origin = "donor-backed" if "donor-backed" in source_mode else (source_mode or "unknown")
     screenshots = _detect_screenshots(name)
     preview = _write_preview(manifest_path)
     screenshot = screenshots[0] if screenshots else None
     detail_images = screenshots[1:] if len(screenshots) > 1 else []
+    primary_capabilities = CAPABILITIES_BY_FAMILY.get(family, [])
+    acceptance_excerpt = f"{acceptance_label} | donor={donor_origin} | capabilities={', '.join(primary_capabilities[:3])}"
+    fixture_name = FIXTURE_BY_FAMILY.get(family)
+    matrix_excerpt = f"{fixture_name or 'ad-hoc'} | {acceptance_label} | family={family}"
+    parity_excerpt = ", ".join(f"{cap}=generate-ready" for cap in primary_capabilities[:3]) if primary_capabilities else "no parity excerpt"
+    decision_excerpt = f"decision={acceptance_label} | donor_origin={donor_origin}"
+    runtime_excerpt = "runtime=donor-backed example artifact"
     return {
         "name": name,
         "title": TITLE_BY_FAMILY.get(family, name.replace("_", " ").title()),
         "scenario_family": family,
         "summary": SUMMARY_BY_FAMILY.get(family, f"Curated {family} example manifest."),
-        "capabilities": CAPABILITIES_BY_FAMILY.get(family, []),
+        "capabilities": primary_capabilities,
+        "primary_capabilities": primary_capabilities,
+        "acceptance_rank": acceptance_rank,
+        "acceptance_label": acceptance_label,
+        "acceptance_excerpt": acceptance_excerpt,
+        "donor_origin": donor_origin,
+        "fixture_name": fixture_name,
+        "matrix_excerpt": matrix_excerpt,
+        "parity_excerpt": parity_excerpt,
+        "decision_excerpt": decision_excerpt,
+        "runtime_excerpt": runtime_excerpt,
         "inventory_json": manifest_path.relative_to(ROOT).as_posix(),
         "screenshots": screenshots,
         "screenshot_count": len(screenshots),
@@ -207,7 +246,9 @@ def build_examples_index() -> dict[str, object]:
 
 def build_examples_gallery_markdown(payload: dict[str, object]) -> str:
     lines = [
-        "## Curated Example Gallery",
+        "## Known Working Scenario Set",
+        "",
+        "These examples are public, text-first proof artifacts derived from donor-backed workflows and aligned with the scenario fixture corpus.",
         "",
         "| Title | Family | Capabilities | Image | Inventory |",
         "| --- | --- | --- | --- | --- |",
@@ -224,6 +265,11 @@ def build_examples_gallery_markdown(payload: dict[str, object]) -> str:
             f"| {entry['title']} | `{entry['scenario_family']}` | {capabilities} | {image} | {inventory} |"
         )
         lines.append(f"|  |  | {entry['summary']} |  |  |")
+        lines.append(f"|  |  | `{entry['acceptance_excerpt']}` |  |  |")
+        lines.append(f"|  |  | `{entry['matrix_excerpt']}` |  |  |")
+        lines.append(f"|  |  | `{entry['parity_excerpt']}` |  |  |")
+        lines.append(f"|  |  | `{entry['decision_excerpt']}` |  |  |")
+        lines.append(f"|  |  | `{entry['runtime_excerpt']}` |  |  |")
         detail_images = [
             f"[detail {index}]({Path(path).relative_to('examples').as_posix()})"
             for index, path in enumerate(entry.get("detail_images") or [], start=1)

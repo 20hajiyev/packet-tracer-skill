@@ -11,6 +11,14 @@ APPLY_SAFETY_SCORES = {
     "acceptance-verified": 12,
 }
 
+PROMOTION_STATUS_SCORES = {
+    "validated_compat": 14,
+    "validated_primary": 11,
+    "acceptance_verified_curated": 10,
+    "validated_curated": 9,
+    "reference_only": 0,
+}
+
 
 DEVICE_FAMILY_MAP = {
     "Router": "routers",
@@ -56,6 +64,55 @@ def _available_capabilities(sample: SampleDescriptor) -> set[str]:
     return set(_expanded_sample_capabilities(sample, _sample_device_families(sample)))
 
 
+def _curated_promotion_rank(sample: SampleDescriptor) -> int:
+    return PROMOTION_STATUS_SCORES.get(sample.promotion_status, 0)
+
+
+def _curated_acceptance_evidence_score(sample: SampleDescriptor) -> int:
+    score = 0
+    evidence = {str(item) for item in sample.promotion_evidence if str(item).strip()}
+    for item in evidence:
+        if item.startswith("acceptance_fixture:"):
+            score += 4
+        elif item.startswith("apply_safety:acceptance-verified"):
+            score += 4
+        elif item.startswith("validation:validated"):
+            score += 2
+        elif item == "workspace_validated":
+            score += 2
+    return score
+
+
+def _acceptance_fixture_overlap_score(sample: SampleDescriptor, required_fixtures: list[str] | None) -> tuple[int, list[str]]:
+    if not required_fixtures:
+        return 0, []
+    sample_fixtures = {
+        str(item).strip()
+        for item in list(sample.acceptance_fixtures or [])
+        if str(item).strip()
+    }
+    if not sample_fixtures:
+        sample_fixtures = {
+            str(item).split(":", 1)[1]
+            for item in list(sample.promotion_evidence or [])
+            if str(item).startswith("acceptance_fixture:")
+        }
+    overlap = sorted(sample_fixtures & {str(item).strip() for item in required_fixtures if str(item).strip()})
+    if not overlap:
+        return 0, []
+    return len(overlap) * 6, [f"fixture:{item}" for item in overlap]
+
+
+def _runtime_feature_overlap_score(sample: SampleDescriptor, required_runtime_features: list[str] | None) -> tuple[int, list[str]]:
+    if not required_runtime_features:
+        return 0, []
+    required = {str(item).strip() for item in required_runtime_features if str(item).strip()}
+    overlap = sorted(required & {str(item).strip() for item in list(sample.runtime_features or []) if str(item).strip()})
+    if not overlap:
+        return 0, []
+    return len(overlap) * 3, [f"runtime:{item}" for item in overlap]
+
+
 def _device_fit_score(sample: SampleDescriptor, device_requirements: dict[str, int]) -> tuple[int, list[str]]:
     score = 0
     reasons: list[str] = []
@@ -79,6 +136,8 @@ def _score_sample(
     *,
     wireless_mode: str | None = None,
     requested_services: list[str] | None = None,
+    required_acceptance_fixtures: list[str] | None = None,
+    required_runtime_features: list[str] | None = None,
 ) -> SampleCandidate:
     score = 0
     topology_score = 0
@@ -126,6 +185,25 @@ def _score_sample(
     if sample.trust_level == "curated":
         score += 3
         reasons.append("trust:curated")
+    promotion_bonus = _curated_promotion_rank(sample)
+    if promotion_bonus:
+        score += promotion_bonus
+        reasons.append(f"promotion:{sample.promotion_status}")
+    acceptance_evidence_score = _curated_acceptance_evidence_score(sample)
+    if acceptance_evidence_score:
+        score += acceptance_evidence_score
+        reasons.append(f"acceptance-evidence:{acceptance_evidence_score}")
+    if sample.validated_edit_capabilities:
+        score += min(len(sample.validated_edit_capabilities), 8)
+        reasons.append(f"edit-evidence:{min(len(sample.validated_edit_capabilities), 8)}")
+    fixture_score, fixture_reasons = _acceptance_fixture_overlap_score(sample, required_acceptance_fixtures)
+    if fixture_score:
+        score += fixture_score
+        reasons.extend(fixture_reasons)
+    runtime_score, runtime_reasons = _runtime_feature_overlap_score(sample, required_runtime_features)
+    if runtime_score:
+        score += runtime_score
+        reasons.extend(runtime_reasons)
     if wireless_mode and wireless_mode in set(sample.wireless_mode_tags):
         score += 10
         reasons.append(f"wireless-mode:{wireless_mode}")
@@ -207,6 +285,8 @@ def rank_samples(
     *,
     wireless_mode: str | None = None,
     requested_services: list[str] | None = None,
+    required_acceptance_fixtures: list[str] | None = None,
+    required_runtime_features: list[str] | None = None,
 ) -> list[SampleCandidate]:
     filtered: list[SampleDescriptor] = []
     for sample in samples:
@@ -225,6 +305,8 @@ def rank_samples(
                 topology_tags,
                 wireless_mode=wireless_mode,
                 requested_services=requested_services,
+                required_acceptance_fixtures=required_acceptance_fixtures,
+                required_runtime_features=required_runtime_features,
             )
             for sample in candidates
             if (sample.prototype_eligible or not prototype_only)
@@ -272,6 +354,8 @@ def rank_curated_donor_samples(
     *,
     wireless_mode: str | None = None,
     requested_services: list[str] | None = None,
+    required_acceptance_fixtures: list[str] | None = None,
+    required_runtime_features: list[str] | None = None,
 ) -> list[SampleCandidate]:
     curated_only = [sample for sample in samples if sample.origin == "external-curated" and sample.donor_eligible]
     candidates = curated_only or [sample for sample in samples if sample.donor_eligible]
@@ -284,6 +368,8 @@ def rank_curated_donor_samples(
                 topology_tags,
                 wireless_mode=wireless_mode,
                 requested_services=requested_services,
+                required_acceptance_fixtures=required_acceptance_fixtures,
+                required_runtime_features=required_runtime_features,
             )
             for sample in candidates
         ),

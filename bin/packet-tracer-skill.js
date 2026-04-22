@@ -390,6 +390,20 @@ function runtimeDoctorDiagnostics() {
       detectedLayoutType: "missing",
       recommendedPacketTracerRoot: "",
       recommendedPacketTracerSavesRoot: "",
+      capabilityImpact: {},
+      runtimeBlockers: [],
+      readyOperations: [],
+      blockedOperations: [],
+      doctorSummary: "Runtime is blocked: python was not found in PATH.",
+      runtimeGrade: "blocked",
+      bridgeResolution: process.env.PKT_TWOFISH_LIBRARY ? "external_env" : "missing",
+      bridgePathSource: process.env.PKT_TWOFISH_LIBRARY ? "env" : "",
+      bridgeRecommendation: process.env.PKT_TWOFISH_LIBRARY
+        ? "Use or install a repo-local vendor bridge for fully self-contained runtime readiness."
+        : "Provide PKT_TWOFISH_LIBRARY or PKT_TWOFISH_SEARCH_ROOTS to resolve a local bridge.",
+      runtimeContractNotes: process.env.PKT_TWOFISH_LIBRARY
+        ? "External bridge resolves decode/edit, but repo-local runtime packaging is still incomplete."
+        : "Bridge resolution is missing, so strict runtime remains blocked.",
       pythonVersion: "",
       pythonSupportStatus: "missing",
       pythonSupportMessage: "python was not found in PATH",
@@ -437,6 +451,16 @@ function runtimeDoctorDiagnostics() {
       recommendedPacketTracerRoot: parsed.recommended_packet_tracer_root || "",
       recommendedPacketTracerSavesRoot: parsed.recommended_packet_tracer_saves_root || "",
       recommendedNextSteps: parsed.recommended_next_steps || [],
+      capabilityImpact: parsed.capability_impact || {},
+      runtimeBlockers: parsed.runtime_blockers || [],
+      readyOperations: parsed.ready_operations || [],
+      blockedOperations: parsed.blocked_operations || [],
+      doctorSummary: parsed.doctor_summary || "",
+      runtimeGrade: parsed.runtime_grade || "blocked",
+      bridgeResolution: parsed.bridge_resolution || "missing",
+      bridgePathSource: parsed.bridge_path_source || "",
+      bridgeRecommendation: parsed.bridge_recommendation || "",
+      runtimeContractNotes: parsed.runtime_contract_notes || "",
       packetTracerRoot: parsed.packet_tracer_root || process.env.PACKET_TRACER_ROOT || "",
       packetTracerSavesRoot: parsed.packet_tracer_saves_root || "",
       packetTracerExe: parsed.packet_tracer_exe || "",
@@ -752,6 +776,114 @@ function doctorChecks() {
     "TWOFISH_SEARCH_ROOTS",
     (twofish.twofishSearchRoots || []).length > 0,
     (twofish.twofishSearchRoots || []).join(" | ") || "not available",
+  ]);
+  const runtimeBlockers = runtimeDoctor.available
+    ? runtimeDoctor.runtimeBlockers || []
+    : [
+        donorDiagnostics.status === "ok" ? "" : "missing_or_incompatible_donor",
+        twofish.twofishLoadStatus === "ok" ? "" : "missing_twofish_bridge",
+        packetTracerRoot ? "" : "missing_packet_tracer_root",
+        process.platform === "win32" ? "" : "windows_first_runtime",
+      ].filter(Boolean);
+  const readyOperations = runtimeDoctor.available
+    ? runtimeDoctor.readyOperations || []
+    : [
+        donorDiagnostics.status === "ok" && twofish.twofishLoadStatus === "ok" ? "decode" : "",
+        donorDiagnostics.status === "ok" && twofish.twofishLoadStatus === "ok" ? "edit" : "",
+        donorDiagnostics.status === "ok" &&
+        twofish.twofishLoadStatus === "ok" &&
+        packetTracerRoot
+          ? "generate"
+          : "",
+      ].filter(Boolean);
+  const capabilityImpact = runtimeDoctor.available
+    ? runtimeDoctor.capabilityImpact || {}
+    : {
+        inventory: donorDiagnostics.status === "ok" ? "ready" : "blocked",
+        decode: donorDiagnostics.status === "ok" && twofish.twofishLoadStatus === "ok" ? "ready" : "blocked",
+        edit: donorDiagnostics.status === "ok" && twofish.twofishLoadStatus === "ok" ? "ready" : "blocked",
+        generate:
+          donorDiagnostics.status === "ok" && twofish.twofishLoadStatus === "ok" && packetTracerRoot
+            ? "ready"
+            : "blocked",
+        validate_open: packetTracerRoot ? "ready" : "blocked",
+      };
+  const blockedOperations = runtimeDoctor.available
+    ? runtimeDoctor.blockedOperations || []
+    : Object.entries(capabilityImpact)
+        .filter(([, status]) => status !== "ready")
+        .map(([name]) => name);
+  const runtimeGrade = runtimeDoctor.available
+    ? runtimeDoctor.runtimeGrade || "blocked"
+    : runtimeBlockers.length === 0
+      ? "ready"
+      : readyOperations.length > 0
+        ? "partially_ready"
+        : "blocked";
+  const doctorSummary = runtimeDoctor.available
+    ? runtimeDoctor.doctorSummary || ""
+    : runtimeGrade === "ready"
+      ? "Runtime looks ready for decode, edit, generate, and validate-open."
+      : runtimeGrade === "partially_ready"
+        ? "Runtime is partially ready: some operations work, but strict .pkt generation is still blocked."
+        : "Runtime is blocked: required donor, bridge, or Packet Tracer runtime pieces are missing.";
+  const bridgeResolution = runtimeDoctor.available ? runtimeDoctor.bridgeResolution || "missing" : (process.env.PKT_TWOFISH_LIBRARY ? "external_env" : "missing");
+  const bridgeRecommendation = runtimeDoctor.available ? runtimeDoctor.bridgeRecommendation || "" : (process.env.PKT_TWOFISH_LIBRARY
+    ? "Use or install a repo-local vendor bridge for fully self-contained runtime readiness."
+    : "Provide PKT_TWOFISH_LIBRARY or PKT_TWOFISH_SEARCH_ROOTS to resolve a local bridge.");
+  const runtimeContractNotes = runtimeDoctor.available ? runtimeDoctor.runtimeContractNotes || "" : (process.env.PKT_TWOFISH_LIBRARY
+    ? "External bridge resolves decode/edit, but repo-local runtime packaging is still incomplete."
+    : "Bridge resolution is missing, so strict runtime remains blocked.");
+  const runtimeBlockerSummary = runtimeBlockers.join(" | ");
+  const readyOperationSummary = readyOperations.join(" | ");
+  const blockedOperationSummary = blockedOperations.join(" | ");
+  const capabilityImpactSummary = Object.entries(capabilityImpact)
+    .map(([name, status]) => `${name}=${status}`)
+    .join(" | ");
+  checks.push([
+    "RUNTIME_BLOCKERS",
+    runtimeBlockers.length === 0,
+    runtimeBlockerSummary || "none",
+  ]);
+  checks.push([
+    "READY_OPERATIONS",
+    readyOperations.length > 0,
+    readyOperationSummary || "none",
+  ]);
+  checks.push([
+    "BLOCKED_OPERATIONS",
+    blockedOperations.length === 0,
+    blockedOperationSummary || "none",
+  ]);
+  checks.push([
+    "RUNTIME_GRADE",
+    runtimeGrade === "ready",
+    runtimeGrade,
+  ]);
+  checks.push([
+    "DOCTOR_SUMMARY",
+    doctorSummary !== "",
+    doctorSummary || "not available",
+  ]);
+  checks.push([
+    "BRIDGE_RESOLUTION",
+    bridgeResolution !== "missing",
+    bridgeResolution,
+  ]);
+  checks.push([
+    "BRIDGE_RECOMMENDATION",
+    bridgeRecommendation !== "",
+    bridgeRecommendation || "not available",
+  ]);
+  checks.push([
+    "RUNTIME_CONTRACT_NOTES",
+    runtimeContractNotes !== "",
+    runtimeContractNotes || "not available",
+  ]);
+  checks.push([
+    "CAPABILITY_IMPACT",
+    capabilityImpactSummary !== "",
+    capabilityImpactSummary || "not available",
   ]);
 
   return checks;

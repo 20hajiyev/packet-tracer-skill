@@ -360,6 +360,82 @@ def test_build_coverage_gap_report_marks_curated_and_manual_acceptance() -> None
     assert report.recommended_next_actions
 
 
+def test_build_coverage_gap_report_exposes_capability_parity() -> None:
+    plan = parse_intent("enable email on Server0 enable syslog on Server0 enable aaa on Server0")
+    sample = SampleDescriptor(
+        path="advanced_services.pkt",
+        relative_path="advanced_services.pkt",
+        version="9.0.0.0810",
+        device_count=1,
+        link_count=0,
+        devices=[{"name": "Server0", "type": "Server", "model": "Server-PT"}],
+        links=[],
+        capability_tags=[],
+        topology_tags=["server_services"],
+        preferred_roles=["preferred_services"],
+        trust_level="trusted",
+        origin="external-curated",
+        role="secondary",
+        prototype_eligible=True,
+        donor_eligible=True,
+        service_support=["email", "syslog", "aaa"],
+        device_families=["servers"],
+        apply_safety_level="safe-open-generate-supported",
+    )
+    report = build_coverage_gap_report(plan, [sample])
+    parity = {entry["capability"]: entry for entry in report.capability_parity}
+    assert parity["server_email"]["generate_supported"] is True
+    assert parity["server_email"]["best_maturity_level"] == "safe-open-generate-supported"
+    assert parity["server_email"]["generate_mismatch_reason"] == "supported_but_donor_limited"
+    assert parity["server_email"]["required_donor_families"] == ["servers"]
+    assert parity["server_email"]["required_archetypes"] == ["service-heavy"]
+    assert "server_runtime" in parity["server_email"]["required_runtime_features"]
+    assert "donor" in parity["server_email"]["recommended_next_action"].lower()
+
+
+def test_build_coverage_gap_report_classifies_wan_security_edge_family() -> None:
+    plan = parse_intent("wan security edge qur gre tunnel ve ipsec vpn ppp olsun 1 multilayer switch 1 asa 1 cloud")
+    sample = SampleDescriptor(
+        path="wan_edge.pkt",
+        relative_path="wan_edge.pkt",
+        version="9.0.0.0810",
+        device_count=3,
+        link_count=2,
+        devices=[
+            {"name": "MLS1", "type": "MultiLayerSwitch", "model": "3560"},
+            {"name": "ASA1", "type": "ASA", "model": "ASA-5505"},
+            {"name": "Cloud0", "type": "Cloud", "model": "Cloud-PT"},
+        ],
+        links=[],
+        capability_tags=["vpn", "acl", "nat", "ppp"],
+        topology_tags=["general"],
+        preferred_roles=["preferred_security", "preferred_wan"],
+        trust_level="trusted",
+        origin="external-curated",
+        role="secondary",
+        prototype_eligible=True,
+        donor_eligible=True,
+        device_families=["multilayer switches", "security devices", "wan/cloud/dsl/cable devices"],
+        apply_safety_level="safe-open-generate-supported",
+    )
+    report = build_coverage_gap_report(plan, [sample])
+    assert report.scenario_family == "wan_security_edge"
+    assert report.scenario_generate_readiness["family"] == "wan_security_edge"
+    assert {"vpn", "ipsec", "gre", "ppp"} <= set(report.supported_capabilities)
+
+
+def test_build_inventory_capability_report_derives_phase_d_wan_security_capabilities() -> None:
+    payload = {
+        "topology_summary": {
+            "device_counts": {"MultiLayerSwitch": 1, "ASA": 1, "Cloud": 1},
+            "network_style": "wan_security",
+        },
+        "acl_names": ["EDGE_FILTER"],
+    }
+    report = build_inventory_capability_report(payload)
+    assert {"multilayer_switching", "security_edge", "wan", "vpn", "ipsec", "gre", "ppp", "acl"} <= set(report["capabilities"])
+
+
 def test_build_coverage_gap_report_uses_best_entry_for_manual_acceptance() -> None:
     plan = parse_intent("campus sebekesi qur wifi")
     plan.capabilities = ["wireless_ap"]

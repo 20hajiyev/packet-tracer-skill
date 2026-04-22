@@ -1,0 +1,42 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Python dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements-dev.txt
+
+      - name: Rebuild examples index
+        run: python .\scripts\build_examples_index.py
+
+      - name: Node syntax check
+        run: node --check .\bin\packet-tracer-skill.js
+
+      - name: Parity smoke
+        run: python .\scripts\generate_pkt.py --parity-report "campus with VLAN DHCP ACL"
+
+      - name: Runtime doctor smoke
+        run: python .\scripts\runtime_doctor.py
+
+      - name: Run tests
+        run: python -m pytest tests -q
