@@ -303,6 +303,11 @@ What the proof now tries to surface explicitly:
 - the blocking layer is donor selection, not runtime
 - the closest rejected donor class and rejection code should be visible in the decision payload
 
+Classifier truth matters here too:
+
+- shorthand campus prompts should still resolve to the `campus` family
+- donor-limited campus refusal should be read as a campus selector result, not a service-heavy misclassification
+
 ## Security and Privacy
 
 This repo is prepared to avoid accidental sharing of local private material:

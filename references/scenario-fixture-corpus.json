@@ -6,6 +6,7 @@
       "scenario_family": "campus",
       "preferred_donor_archetypes": ["campus/core"],
       "critical_capabilities": ["router_on_a_stick", "trunk", "management_vlan", "telnet", "acl", "nat"],
+      "prompt_aliases": ["campus with VLAN DHCP ACL"],
       "minimum_expectations": {
         "requires_family_match": true,
         "requires_nonempty_summary": true,

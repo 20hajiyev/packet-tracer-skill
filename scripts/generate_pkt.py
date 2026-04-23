@@ -327,28 +327,71 @@ def _preferred_donor_archetypes_for_plan(plan: IntentPlan, topology_tags: list[s
     }
     capabilities = set(plan.capabilities)
     tags = set(topology_tags or [])
-    if plan.department_groups or tags & {"chain", "core_access", "router_on_a_stick", "acl_policy"}:
-        preferred.append("campus/core")
-    elif device_families & {"routers", "switches", "multilayer switches"} and capabilities & {
-        "vlan",
-        "router_on_a_stick",
-        "management_vlan",
-        "telnet",
-    }:
-        preferred.append("campus/core")
-    if requested_services & {"dhcp", "dns", "http", "https", "ftp", "tftp", "email", "syslog", "aaa", "ntp"} or "servers" in device_families:
-        preferred.append("service-heavy")
-    if plan.wireless_mode or capabilities & {
+    prompt_lower = str(plan.prompt or "").lower()
+    family_hints: list[str] = []
+    campus_signal = (
+        plan.network_style == "campus"
+        or "campus" in prompt_lower
+        or "kampus" in prompt_lower
+        or bool(plan.department_groups)
+        or bool(tags & {"chain", "core_access", "router_on_a_stick", "acl_policy"})
+        or bool(
+            device_families & {"routers", "switches", "multilayer switches"}
+            and capabilities & {"vlan", "router_on_a_stick", "management_vlan", "telnet", "acl", "trunk", "access_port"}
+        )
+    )
+    home_iot_signal = (
+        plan.network_style in {"home_iot", "smart_home"}
+        or bool(capabilities & {"iot", "iot_registration", "iot_control"})
+        or bool("iot devices" in device_families)
+    )
+    wan_signal = (
+        plan.network_style == "wan_security"
+        or bool(device_families & {"wan/cloud/dsl/cable devices", "security devices"})
+        or bool(capabilities & {"vpn", "ipsec", "gre", "ppp", "multilayer_switching", "security_edge"})
+    )
+    wireless_signal = plan.wireless_mode or capabilities & {
         "wireless_ap",
         "wireless_client",
         "wireless_mutation",
         "wireless_client_association",
-    }:
-        preferred.append("wireless-heavy")
-    if capabilities & {"iot", "iot_registration", "iot_control"} or "iot devices" in device_families:
-        preferred.append("IoT/home gateway")
-    if device_families & {"wan/cloud/dsl/cable devices", "security devices"} or capabilities & {"vpn", "nat", "pat", "acl"}:
-        preferred.append("WAN/security edge")
+    }
+    service_signal = (
+        requested_services & {"dns", "dhcp", "http", "https", "ftp", "tftp", "email", "syslog", "aaa", "ntp"}
+        or capabilities & {"server_dns", "server_dhcp", "server_http", "server_https", "server_ftp", "server_tftp", "server_email", "server_syslog", "server_aaa"}
+        or "servers" in device_families
+    )
+
+    if campus_signal:
+        family_hints.append("campus/core")
+        if wireless_signal:
+            family_hints.append("wireless-heavy")
+        if service_signal and requested_services & {"email", "syslog", "aaa", "http", "https", "ftp", "tftp"}:
+            family_hints.append("service-heavy")
+    elif home_iot_signal:
+        family_hints.append("IoT/home gateway")
+        if wireless_signal:
+            family_hints.append("wireless-heavy")
+    elif wan_signal:
+        family_hints.append("WAN/security edge")
+    elif service_signal:
+        family_hints.append("service-heavy")
+    elif wireless_signal:
+        family_hints.append("wireless-heavy")
+
+    if not family_hints:
+        if service_signal:
+            family_hints.append("service-heavy")
+        if wireless_signal:
+            family_hints.append("wireless-heavy")
+        if home_iot_signal:
+            family_hints.append("IoT/home gateway")
+        if wan_signal:
+            family_hints.append("WAN/security edge")
+
+    for item in family_hints:
+        if item not in preferred:
+            preferred.append(item)
     return preferred
 
 

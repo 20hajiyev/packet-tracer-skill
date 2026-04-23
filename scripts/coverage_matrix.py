@@ -277,26 +277,44 @@ def _requested_device_families(plan: IntentPlan) -> list[str]:
 def _scenario_family_for_plan(plan: IntentPlan, requested_families: list[str]) -> str | None:
     capabilities = set(plan.capabilities)
     requested_services = {str(service) for service in plan.service_requirements.get("services", []) if service}
-    if capabilities & {"iot", "iot_registration", "iot_control"} or {"iot devices", "home/wireless routers"} & set(requested_families):
-        return "home_iot"
-    if (
+    requested_family_set = set(requested_families)
+    campus_capabilities = {"vlan", "router_on_a_stick", "management_vlan", "telnet", "acl", "nat", "pat", "trunk", "access_port"}
+    service_capabilities = {"server_dns", "server_dhcp", "server_http", "server_https", "server_ftp", "server_tftp", "server_email", "server_syslog", "server_aaa"}
+    explicit_campus_style = plan.network_style in {"campus", "department_lan"}
+    explicit_service_style = plan.network_style == "service_heavy"
+    explicit_home_style = plan.network_style in {"home_iot", "smart_home"}
+    campus_signal = (
+        explicit_campus_style
+        or bool(plan.department_groups)
+        or "campus" in str(plan.prompt or "").lower()
+        or "kampus" in str(plan.prompt or "").lower()
+        or (requested_family_set & {"switches", "multilayer switches"} and capabilities & campus_capabilities)
+        or len(capabilities & campus_capabilities) >= 3
+    )
+    home_iot_signal = (
+        explicit_home_style
+        or capabilities & {"iot", "iot_registration", "iot_control"}
+        or {"iot devices", "home/wireless routers"} & requested_family_set
+    )
+    wan_signal = (
         plan.network_style == "wan_security"
         or capabilities & {"vpn", "ipsec", "gre", "ppp", "multilayer_switching", "security_edge"}
-        or {"wan/cloud/dsl/cable devices", "security devices"} & set(requested_families)
-    ):
+        or {"wan/cloud/dsl/cable devices", "security devices"} & requested_family_set
+    )
+    service_signal = (
+        explicit_service_style
+        or requested_services & {"dns", "dhcp", "http", "https", "ftp", "tftp", "email", "syslog", "aaa", "ntp"}
+        or capabilities & service_capabilities
+        or "servers" in requested_family_set
+    )
+    if home_iot_signal:
+        return "home_iot"
+    if wan_signal:
         return "wan_security_edge"
-    if (
-        requested_services & {"dns", "dhcp", "http", "https", "ftp", "tftp", "email", "syslog", "aaa", "ntp"}
-        or capabilities & {"server_dns", "server_dhcp", "server_http", "server_https", "server_ftp", "server_tftp", "server_email", "server_syslog", "server_aaa"}
-        or "servers" in requested_families
-    ) and not (plan.department_groups or {"switches", "multilayer switches"} & set(requested_families) and capabilities & {"vlan", "router_on_a_stick", "management_vlan", "telnet"}):
-        return "service_heavy"
-    if (
-        plan.department_groups
-        or {"switches", "multilayer switches"} & set(requested_families)
-        or capabilities & {"vlan", "router_on_a_stick", "management_vlan", "telnet", "acl", "nat", "pat"}
-    ):
+    if campus_signal:
         return "campus"
+    if service_signal:
+        return "service_heavy"
     return None
 
 

@@ -9,6 +9,7 @@
 ## Next Technical Proof Batch
 
 - use the canonical `campus` donor proof path first
+- close shorthand campus family fidelity before broadening scenario scope
 - improve selected donor reasoning visibility before adding new capability scope
 - preserve the difference between donor-limited refusal and runtime-blocked refusal
 - make the closest rejected donor class and primary rejection code visible in the public decision surface

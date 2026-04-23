@@ -87,6 +87,8 @@ This proof means two different things at once:
 
 That refusal is the correct product behavior. In this proof run, runtime was not the blocking layer. Donor selection quality was.
 
+The shorthand campus classifier should still resolve this prompt family as `campus`; the refusal should be read as donor-limited campus semantics, not as a service-heavy family drift.
+
 ## Public Message Guardrail
 
 Say:

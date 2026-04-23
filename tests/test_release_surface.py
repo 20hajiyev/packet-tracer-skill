@@ -65,6 +65,7 @@ def test_readme_highlights_release_and_runtime_contracts() -> None:
     assert "primary_rejection_code" in readme
     assert "what_currently_works" in readme
     assert "best_next_fix" in readme
+    assert "shorthand campus prompts should still resolve to the `campus` family" in readme
 
 
 def test_package_metadata_is_publish_ready() -> None:
@@ -138,8 +139,10 @@ def test_launch_prep_docs_are_decision_complete() -> None:
     assert "What This Proves" in donor_proof
     assert "What This Does Not Prove" in donor_proof
     assert "generalized campus generation can still be donor-limited" in donor_proof
+    assert "the refusal should be read as donor-limited campus semantics" in donor_proof
     assert "Trigger Conditions for `0.2.2` or the Next Minor" in follow_up
     assert "closest rejected donor class" in follow_up
+    assert "close shorthand campus family fidelity before broadening scenario scope" in follow_up
     assert "what_currently_works" in (ROOT / "docs" / "runtime-truth.md").read_text(encoding="utf-8")
     assert "best_next_fix" in (ROOT / "docs" / "runtime-truth.md").read_text(encoding="utf-8")
     assert "registry entry exists" in (ROOT / "docs" / "curated-donor-registry.md").read_text(encoding="utf-8")

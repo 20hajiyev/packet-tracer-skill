@@ -1938,8 +1938,66 @@ def test_augment_coverage_gap_actions_adds_runtime_and_link_guidance() -> None:
     assert any("--blueprint-out" in action for action in updated["recommended_next_actions"])
     assert any("campus/core, service-heavy" in action for action in updated["recommended_next_actions"])
     assert any("Simplify the topology" in action for action in updated["recommended_next_actions"])
+
+
+def test_preferred_donor_archetypes_keep_campus_primary_for_shorthand_prompt() -> None:
+    plan = parse_intent("campus with VLAN DHCP ACL")
+
+    preferred = _preferred_donor_archetypes_for_plan(plan, [])
+
+    assert preferred[0] == "campus/core"
+    assert "service-heavy" not in preferred
+
+
+def test_explain_plan_classifies_campus_shorthand_prompt_as_campus() -> None:
+    payload = generate_pkt_module._explain_plan_payload("campus with VLAN DHCP ACL")
+
+    assert payload["coverage_gaps"]["scenario_family"] == "campus"
+    assert payload["coverage_gaps"]["scenario_generate_readiness"]["family"] == "campus"
+    assert payload["scenario_generate_decision"]["family"] == "campus"
+    assert payload["scenario_matrix_row"]["family"] == "campus"
+    assert payload["scenario_matrix_row"]["fixture_name"] == "campus_core_complex"
+    assert payload["fixture_expectation_status"] == "matched"
+    assert payload["preferred_donor_archetypes"][0] == "campus/core"
+    assert payload["preferred_donor_archetypes"].count("campus/core") == 1
+
+
+def test_explain_plan_keeps_home_iot_public_family_even_with_small_office_style() -> None:
+    payload = generate_pkt_module._explain_plan_payload("home with IoT registration and wireless gateway")
+
+    assert payload["intent_plan"]["network_style"] == "small_office"
+    assert payload["coverage_gaps"]["scenario_family"] == "home_iot"
+    assert payload["coverage_gaps"]["scenario_generate_readiness"]["family"] == "home_iot"
+    assert payload["scenario_generate_decision"]["family"] == "home_iot"
+
+
+def test_fixture_corpus_uses_utf8_prompts_and_campus_alias() -> None:
+    payload = json.loads((ROOT / "references" / "scenario-fixture-corpus.json").read_text(encoding="utf-8"))
+    fixtures = {item["name"]: item for item in payload["fixtures"]}
+
+    assert fixtures["campus_core_complex"]["canonical_prompt"].startswith("6 şöbəli kampus")
+    assert fixtures["service_heavy_complex"]["canonical_prompt"].startswith("server yönümlü lab")
+    assert fixtures["campus_core_complex"]["prompt_aliases"] == ["campus with VLAN DHCP ACL"]
     assert any("closer to the requested scenario" in action for action in updated["recommended_next_actions"])
     assert any("campus/core donor" in action for action in updated["recommended_next_actions"])
+
+
+def test_fixture_corpus_uses_utf8_prompts_and_campus_alias_override() -> None:
+    payload = json.loads((ROOT / "references" / "scenario-fixture-corpus.json").read_text(encoding="utf-8"))
+    fixtures = {item["name"]: item for item in payload["fixtures"]}
+
+    assert fixtures["campus_core_complex"]["canonical_prompt"].startswith("6 şöbəli kampus")
+    assert fixtures["service_heavy_complex"]["canonical_prompt"].startswith("server yönümlü lab")
+    assert fixtures["campus_core_complex"]["prompt_aliases"] == ["campus with VLAN DHCP ACL"]
+
+
+def test_fixture_corpus_uses_utf8_prompts_and_campus_alias() -> None:
+    payload = json.loads((ROOT / "references" / "scenario-fixture-corpus.json").read_text(encoding="utf-8"))
+    fixtures = {item["name"]: item for item in payload["fixtures"]}
+
+    assert fixtures["campus_core_complex"]["canonical_prompt"].startswith("6 şöbəli kampus")
+    assert fixtures["service_heavy_complex"]["canonical_prompt"].startswith("server yönümlü lab")
+    assert fixtures["campus_core_complex"]["prompt_aliases"] == ["campus with VLAN DHCP ACL"]
 
 
 def test_augment_coverage_gap_actions_adds_service_heavy_and_home_iot_guidance() -> None:
