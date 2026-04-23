@@ -64,6 +64,40 @@ def _format_operation_list(operations: list[str]) -> str:
     return ", ".join(operations) if operations else "none"
 
 
+def _best_next_fix(runtime_blockers: list[str], recommended_next_steps: list[str]) -> str:
+    blocker_map = {
+        "missing_or_incompatible_donor": "Fix the donor path first so inventory/edit/generate can use a compatible 9.0 donor.",
+        "missing_twofish_bridge": "Fix the Twofish bridge next so strict decode/edit/generate can run locally.",
+        "missing_packet_tracer_root": "Fix PACKET_TRACER_ROOT so the doctor can resolve the install layout deterministically.",
+        "missing_packet_tracer_executable": "Fix the Packet Tracer install root or executable path before relying on validate_open.",
+        "windows_first_runtime": "Do not assume non-Windows strict runtime support without a custom native bridge and explicit Packet Tracer paths.",
+        "using_external_bridge_only": "Move the external bridge into the repo-local vendor path if you need a self-contained runtime claim.",
+    }
+    for blocker in runtime_blockers:
+        if blocker in blocker_map:
+            return blocker_map[blocker]
+    return recommended_next_steps[0] if recommended_next_steps else "No immediate fix is required."
+
+
+def _why_it_is_blocked(runtime_blockers: list[str], bridge_resolution: str) -> str:
+    if not runtime_blockers:
+        return "No runtime blocker is currently active."
+    reasons: list[str] = []
+    if "missing_or_incompatible_donor" in runtime_blockers:
+        reasons.append("no compatible donor is resolved")
+    if "missing_twofish_bridge" in runtime_blockers:
+        reasons.append("no local Twofish bridge is resolved")
+    if "missing_packet_tracer_root" in runtime_blockers:
+        reasons.append("Packet Tracer root is not resolved")
+    if "missing_packet_tracer_executable" in runtime_blockers:
+        reasons.append("Packet Tracer executable is not resolved")
+    if "windows_first_runtime" in runtime_blockers:
+        reasons.append("strict bundled validation is still Windows-first")
+    if bridge_resolution == "external_env":
+        reasons.append("strict runtime currently relies on an external bridge override")
+    return "; ".join(reasons) + "."
+
+
 def build_recommended_next_steps(
     *,
     host_os: str,
@@ -234,6 +268,18 @@ def collect_runtime_doctor() -> dict[str, object]:
         doctor_summary = f"{doctor_summary} External bridge is being used instead of a repo-local vendor bridge."
     elif bridge_resolution == "missing" and runtime_grade != "ready":
         doctor_summary = f"{doctor_summary} Strict decode/edit/generate remain blocked until a local bridge is resolved."
+    what_currently_works = (
+        f"Currently working operations: {_format_operation_list(ready_operations)}."
+        if ready_operations
+        else "No strict runtime operations are currently working."
+    )
+    what_is_blocked = (
+        f"Blocked operations: {_format_operation_list(blocked_operations)}."
+        if blocked_operations
+        else "No runtime operations are currently blocked."
+    )
+    why_it_is_blocked = _why_it_is_blocked(runtime_blockers, bridge_resolution)
+    best_next_fix = _best_next_fix(runtime_blockers, recommended_next_steps)
     bridge_recommendation = (
         "Use or install a repo-local vendor bridge for fully self-contained runtime readiness."
         if bridge_resolution == "external_env"
@@ -292,6 +338,10 @@ def collect_runtime_doctor() -> dict[str, object]:
         "runtime_blockers": runtime_blockers,
         "ready_operations": ready_operations,
         "blocked_operations": blocked_operations,
+        "what_currently_works": what_currently_works,
+        "what_is_blocked": what_is_blocked,
+        "why_it_is_blocked": why_it_is_blocked,
+        "best_next_fix": best_next_fix,
         "doctor_summary": doctor_summary,
         "runtime_grade": runtime_grade,
         "recommended_next_steps": recommended_next_steps,

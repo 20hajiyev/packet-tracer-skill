@@ -73,6 +73,10 @@ def test_collect_runtime_doctor_windows_ready(monkeypatch) -> None:
     assert payload["runtime_blockers"] == []
     assert "generate" in payload["ready_operations"]
     assert payload["blocked_operations"] == []
+    assert payload["what_currently_works"] == "Currently working operations: inventory, decode, edit, generate, validate_open."
+    assert payload["what_is_blocked"] == "No runtime operations are currently blocked."
+    assert payload["why_it_is_blocked"] == "No runtime blocker is currently active."
+    assert payload["best_next_fix"] == "No immediate fix is required."
     assert payload["runtime_grade"] == "ready"
     assert "Runtime is ready." in payload["doctor_summary"]
     assert "Ready operations: inventory, decode, edit, generate, validate_open." in payload["doctor_summary"]
@@ -134,6 +138,11 @@ def test_collect_runtime_doctor_linux_reports_windows_first_runtime(monkeypatch)
     assert "missing_twofish_bridge" in payload["runtime_blockers"]
     assert "windows_first_runtime" in payload["runtime_blockers"]
     assert "generate" in payload["blocked_operations"]
+    assert payload["what_currently_works"] == "No strict runtime operations are currently working."
+    assert payload["what_is_blocked"] == "Blocked operations: inventory, decode, edit, generate, validate_open."
+    assert "no compatible donor is resolved" in payload["why_it_is_blocked"]
+    assert "no local Twofish bridge is resolved" in payload["why_it_is_blocked"]
+    assert payload["best_next_fix"] == "Fix the donor path first so inventory/edit/generate can use a compatible 9.0 donor."
     assert payload["runtime_grade"] == "blocked"
     assert "Runtime is blocked." in payload["doctor_summary"]
     assert "Blocked operations:" in payload["doctor_summary"]
@@ -186,6 +195,10 @@ def test_collect_runtime_doctor_reports_external_bridge_resolution(monkeypatch) 
     assert payload["runtime_grade"] == "partially_ready"
     assert payload["bridge_resolution"] == "external_env"
     assert payload["bridge_path_source"] == "env"
+    assert payload["what_currently_works"] == "Currently working operations: inventory, decode, edit, generate, validate_open."
+    assert payload["what_is_blocked"] == "No runtime operations are currently blocked."
+    assert "external bridge override" in payload["why_it_is_blocked"]
+    assert payload["best_next_fix"] == "Move the external bridge into the repo-local vendor path if you need a self-contained runtime claim."
     assert "Runtime operations are ready" in payload["doctor_summary"]
     assert "external environment" in payload["doctor_summary"]
     assert "repo-local vendor bridge" in payload["bridge_recommendation"]
@@ -235,6 +248,11 @@ def test_collect_runtime_doctor_reports_validate_open_only_partial_state(monkeyp
     assert "decode" in payload["blocked_operations"]
     assert "edit" in payload["blocked_operations"]
     assert "generate" in payload["blocked_operations"]
+    assert payload["what_currently_works"] == "Currently working operations: validate_open."
+    assert payload["what_is_blocked"] == "Blocked operations: inventory, decode, edit, generate."
+    assert "no compatible donor is resolved" in payload["why_it_is_blocked"]
+    assert "no local Twofish bridge is resolved" in payload["why_it_is_blocked"]
+    assert payload["best_next_fix"] == "Fix the donor path first so inventory/edit/generate can use a compatible 9.0 donor."
     assert "Ready operations: validate_open." in payload["doctor_summary"]
     assert "Blocked operations: inventory, decode, edit, generate." in payload["doctor_summary"]
     assert "Strict decode/edit/generate remain blocked until a local bridge is resolved." in payload["doctor_summary"]

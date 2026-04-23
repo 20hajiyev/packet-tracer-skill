@@ -507,13 +507,100 @@ def _summarize_candidate_pool(
                 break
         if len(top_rejection_reasons) >= 5:
             continue
+    primary_rejection_code = _primary_rejection_code(top_rejection_reasons)
+    primary_rejection_layer = _primary_rejection_layer(primary_rejection_code)
+    best_rejected_donor_class = (
+        next((str(item) for item in list(preferred_archetypes or []) if str(item).strip()), None)
+        if any(counts[key] > 0 for key in ("rejected", "filtered"))
+        else None
+    )
     return {
         "preferred_donor_archetypes": list(preferred_archetypes or []),
         "candidate_counts": counts,
         "best_adjusted_total_score": best_adjusted_score,
         "best_layout_reuse_score": best_layout_reuse_score,
         "top_rejection_reasons": top_rejection_reasons,
+        "best_rejected_donor_class": best_rejected_donor_class,
+        "primary_rejection_code": primary_rejection_code,
+        "primary_rejection_layer": primary_rejection_layer,
     }
+
+
+def _primary_rejection_code(rejection_reasons: list[str]) -> str | None:
+    normalized = [str(item).strip().lower() for item in rejection_reasons if str(item).strip()]
+    if any("runtime subtree" in reason for reason in normalized):
+        return "runtime_subtree_missing"
+    if any("archetype_gap:" in reason or "archetype does not align" in reason for reason in normalized):
+        return "archetype_misaligned"
+    if any(
+        marker in reason
+        for reason in normalized
+        for marker in (
+            "missing_link_pairs:",
+            "no reusable link pairs",
+            "reuses too little of the requested link skeleton",
+            "cannot create new donor link pair",
+            "requires donor link reuse",
+            "port mismatch",
+            "media mismatch",
+            "ports/media",
+        )
+    ):
+        return "layout_reuse_too_weak"
+    if any(
+        marker in reason
+        for reason in normalized
+        for marker in (
+            "acceptance penalty",
+            "acceptance_gated",
+            "acceptance-gated",
+            "acceptance fixture",
+            "acceptance evidence",
+            "acceptance risk",
+        )
+    ):
+        return "acceptance_evidence_too_weak"
+    return None
+
+
+def _primary_rejection_layer(primary_rejection_code: str | None) -> str | None:
+    if primary_rejection_code == "acceptance_evidence_too_weak":
+        return "acceptance"
+    if primary_rejection_code in {
+        "layout_reuse_too_weak",
+        "archetype_misaligned",
+        "runtime_subtree_missing",
+    }:
+        return "donor"
+    return None
+
+
+def _best_rejected_donor_summary(
+    best_rejected_donor_class: str | None,
+    primary_rejection_code: str | None,
+    top_rejection_reasons: list[str],
+) -> str | None:
+    if not best_rejected_donor_class and not primary_rejection_code:
+        return None
+    reason_sentence_map = {
+        "layout_reuse_too_weak": "its reusable link skeleton is still too weak for the requested topology",
+        "acceptance_evidence_too_weak": "its acceptance evidence is still too weak for prompt-level generate",
+        "archetype_misaligned": "its donor shape does not align with the requested scenario archetype",
+        "runtime_subtree_missing": "the required runtime subtree is missing from the donor path",
+    }
+    next_shape_map = {
+        "layout_reuse_too_weak": "choose a donor with the same family but a stronger reusable router-switch-service skeleton",
+        "acceptance_evidence_too_weak": "choose a donor with explicit acceptance-backed coverage for the same scenario family",
+        "archetype_misaligned": "choose a donor whose archetype already matches the requested family",
+        "runtime_subtree_missing": "choose a donor that already contains the required runtime subtree and open-state structure",
+    }
+    donor_class = best_rejected_donor_class or "the closest donor class"
+    reason = reason_sentence_map.get(primary_rejection_code or "", "it still did not satisfy strict donor selection")
+    next_shape = next_shape_map.get(primary_rejection_code or "", "choose a closer donor before prompt generate")
+    summary = f"Best rejected donor class {donor_class} was closest, but {reason}; {next_shape}."
+    if top_rejection_reasons:
+        summary = f"{summary} Top rejection signal: {top_rejection_reasons[0]}."
+    return summary
 
 
 def _load_fixture_corpus() -> dict[str, object]:
@@ -2543,6 +2630,13 @@ def _scenario_generate_decision(
     expected_archetype = expected_archetype_map.get(family)
     sample_archetypes = [str(item) for item in list((selected_donor_summary or {}).get("sample_archetypes", [])) if str(item).strip()]
     donor_graph_summary = dict((selected_donor_summary or {}).get("donor_graph_summary") or {})
+    best_rejected_donor_class = str((donor_selection_summary or {}).get("best_rejected_donor_class") or "").strip() or None
+    primary_rejection_code = str((donor_selection_summary or {}).get("primary_rejection_code") or "").strip() or None
+    best_rejected_donor_summary = _best_rejected_donor_summary(
+        best_rejected_donor_class,
+        primary_rejection_code,
+        [str(item) for item in list((donor_selection_summary or {}).get("top_rejection_reasons", [])) if str(item).strip()],
+    )
     if expected_archetype and sample_archetypes:
         aligned = expected_archetype in sample_archetypes
         decision["selected_donor_aligned"] = aligned
@@ -2590,6 +2684,8 @@ def _scenario_generate_decision(
             blocking_reasons.append(
                 f"Scenario '{family_label}' depends on donor-limited safe-open coverage, but no compatible donor was selected."
             )
+        if best_rejected_donor_summary:
+            notes.append(best_rejected_donor_summary)
         layout_status = str(donor_graph_summary.get("layout_reuse_status") or "").strip()
         pair_coverage = donor_graph_summary.get("reusable_pair_coverage")
         if layout_status == "weak":
@@ -2599,6 +2695,18 @@ def _scenario_generate_decision(
         if isinstance(pair_coverage, int) and pair_coverage <= 0:
             blocking_reasons.append(
                 f"Scenario '{family_label}' donor selection has no reusable link-pair coverage for prompt generate."
+            )
+        if primary_rejection_code == "archetype_misaligned":
+            blocking_reasons.append(
+                f"Scenario '{family_label}' best donor class is still archetype-misaligned with the requested prompt shape."
+            )
+        elif primary_rejection_code == "runtime_subtree_missing":
+            blocking_reasons.append(
+                f"Scenario '{family_label}' donor candidates are missing required runtime subtree coverage for strict reuse."
+            )
+        elif primary_rejection_code == "acceptance_evidence_too_weak":
+            blocking_reasons.append(
+                f"Scenario '{family_label}' donor candidates still lack strong enough acceptance evidence for strict prompt generate."
             )
         if layout_status in {"strong", "partial"} and isinstance(pair_coverage, int) and pair_coverage > 0:
             notes.append(f"selected donor provides {pair_coverage}% reusable link-pair coverage ({layout_status})")
@@ -2668,12 +2776,6 @@ def _scenario_acceptance_summary(
         donor_state = "candidate_pool_blocked"
     if donor_state == "not_selected" and int(candidate_counts.get("selected", 0) or 0) > 0:
         donor_state = "selection_pending"
-    selection_failure_type = None
-    if not selected_donor_summary:
-        if donor_state in {"candidate_pool_blocked", "selection_pending"}:
-            selection_failure_type = "viable_donor_found_but_acceptance_weak"
-        else:
-            selection_failure_type = "no_viable_donor_found"
     key_reasons = [str(item) for item in decision.get("blocking_reasons", []) if str(item).strip()]
     if not key_reasons:
         key_reasons = [str(item) for item in decision.get("notes", []) if str(item).strip()]
@@ -2682,11 +2784,19 @@ def _scenario_acceptance_summary(
         None,
     )
     top_rejection_reasons = [str(item) for item in list((donor_selection_summary or {}).get("top_rejection_reasons", [])) if str(item).strip()]
+    primary_rejection_code = str((donor_selection_summary or {}).get("primary_rejection_code") or "").strip() or _primary_rejection_code(top_rejection_reasons)
+    primary_rejection_layer = str((donor_selection_summary or {}).get("primary_rejection_layer") or "").strip() or _primary_rejection_layer(primary_rejection_code)
+    best_rejected_donor_class = str((donor_selection_summary or {}).get("best_rejected_donor_class") or "").strip() or None
+    selection_failure_type = None
     if not selected_donor_summary:
-        if any("archetype_gap:" in reason for reason in top_rejection_reasons):
+        if primary_rejection_code == "archetype_misaligned":
             selection_failure_type = "viable_donor_found_but_archetype_misaligned"
-        elif any("runtime subtree" in reason.lower() for reason in top_rejection_reasons):
+        elif primary_rejection_code == "runtime_subtree_missing":
             selection_failure_type = "viable_donor_found_but_runtime_subtree_missing"
+        elif donor_state in {"candidate_pool_blocked", "selection_pending"}:
+            selection_failure_type = "viable_donor_found_but_acceptance_weak"
+        else:
+            selection_failure_type = "no_viable_donor_found"
     critical_capability_parity, critical_parity_mismatches = _critical_capability_parity(coverage_gap)
     best_available_donor_class = next(
         (
@@ -2696,11 +2806,32 @@ def _scenario_acceptance_summary(
         ),
         None,
     )
+    if best_available_donor_class is None:
+        family_donor_class_map = {
+            "campus": "campus/core",
+            "service_heavy": "service-heavy",
+            "home_iot": "IoT/home gateway",
+            "wan_security_edge": "WAN/security edge",
+        }
+        best_available_donor_class = family_donor_class_map.get(str(readiness.get("family") or "").strip())
+    if selected_donor_summary:
+        best_rejected_donor_class = None
+        primary_rejection_code = None
+        primary_rejection_layer = None
+    elif best_rejected_donor_class is None:
+        best_rejected_donor_class = best_available_donor_class
     remediation_steps = [
         str(item)
         for item in list(coverage_gap.get("recommended_next_actions", []))
         if str(item).strip()
     ][:3]
+    best_rejected_donor_summary = _best_rejected_donor_summary(
+        best_rejected_donor_class,
+        primary_rejection_code,
+        top_rejection_reasons,
+    )
+    if best_rejected_donor_summary:
+        remediation_steps = [best_rejected_donor_summary, *remediation_steps][:3]
     missing_donor_classes = [best_available_donor_class] if selection_failure_type == "viable_donor_found_but_archetype_misaligned" and best_available_donor_class else []
     critical_runtime_requirements: list[str] = []
     if runtime_blocked:
@@ -2725,10 +2856,14 @@ def _scenario_acceptance_summary(
         "next_best_action": next_best_action,
         "remediation_steps": remediation_steps,
         "best_available_donor_class": best_available_donor_class,
+        "best_rejected_donor_class": best_rejected_donor_class,
+        "best_rejected_donor_summary": best_rejected_donor_summary,
         "missing_donor_classes": missing_donor_classes,
         "critical_runtime_requirements": critical_runtime_requirements,
         "decision_confidence": decision.get("decision_confidence"),
         "blocking_layer": decision.get("blocking_layer"),
+        "primary_rejection_layer": primary_rejection_layer,
+        "primary_rejection_code": primary_rejection_code,
     }
 
 
@@ -2808,6 +2943,7 @@ def _scenario_matrix_row(
         "decision_confidence": summary.get("decision_confidence"),
         "blocking_layer": summary.get("blocking_layer"),
         "best_available_donor_class": summary.get("best_available_donor_class"),
+        "primary_rejection_code": summary.get("primary_rejection_code"),
         "remediation_hint": next((str(item) for item in list(summary.get("remediation_steps", []) or []) if str(item).strip()), None),
     }
 

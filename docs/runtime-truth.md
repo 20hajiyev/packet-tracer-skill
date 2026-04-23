@@ -24,10 +24,28 @@ That distinction is part of the public product contract.
 - if `runtime_grade=partially_ready`, at least one operation still works, but the product contract is not fully satisfied
 - if `runtime_grade=blocked`, no critical runtime path is ready enough to claim strict `.pkt` support
 
+High-signal fields:
+
+- `what_currently_works`
+  Short sentence for the operations that are usable right now.
+- `what_is_blocked`
+  Short sentence for the operations that are still blocked.
+- `why_it_is_blocked`
+  Product-facing reason for the current blocker set.
+- `best_next_fix`
+  The single next fix that should be done first.
+
 High-signal mixed case:
 
 - `validate_open` can be `ready` while `inventory`, `decode`, `edit`, and `generate` are blocked
 - this means Packet Tracer is installed, but the donor and/or bridge path is still not sufficient for strict `.pkt` work
+- in that state, `best_next_fix` should point at donor or bridge remediation before anything else
+
+Another mixed case:
+
+- all listed operations can be operationally ready while `bridge_resolution=external_env`
+- that still means the checkout is only partially ready as a packaged repo surface
+- docs should continue saying `validated with external bridge override` rather than implying repo-local readiness
 
 ## Bridge Resolution
 
@@ -59,3 +77,4 @@ If tests pass only with an external bridge:
 - do say "validated with external bridge override"
 - do preserve the difference between repo-local readiness and external fallback
 - do say when `validate_open` is ready but strict decode/edit/generate are still blocked
+- do keep `what_currently_works`, `what_is_blocked`, and `best_next_fix` aligned with `doctor_summary`

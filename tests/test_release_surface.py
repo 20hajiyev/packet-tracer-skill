@@ -61,6 +61,10 @@ def test_readme_highlights_release_and_runtime_contracts() -> None:
     assert "docs/release-checklist.md" in readme
     assert "docs/runtime-truth.md" in readme
     assert "docs/curated-donor-registry.md" in readme
+    assert "best_rejected_donor_class" in readme
+    assert "primary_rejection_code" in readme
+    assert "what_currently_works" in readme
+    assert "best_next_fix" in readme
 
 
 def test_package_metadata_is_publish_ready() -> None:
@@ -129,8 +133,16 @@ def test_launch_prep_docs_are_decision_complete() -> None:
     assert "v0.2.1" in launch_ops
     assert "docs/release-notes-0.2.1.md" in launch_ops
     assert "selection_failure_type=viable_donor_found_but_acceptance_weak" in donor_proof
+    assert "best_rejected_donor_class=campus/core" in donor_proof
+    assert "primary_rejection_code=layout_reuse_too_weak" in donor_proof
+    assert "What This Proves" in donor_proof
+    assert "What This Does Not Prove" in donor_proof
     assert "generalized campus generation can still be donor-limited" in donor_proof
     assert "Trigger Conditions for `0.2.2` or the Next Minor" in follow_up
+    assert "closest rejected donor class" in follow_up
+    assert "what_currently_works" in (ROOT / "docs" / "runtime-truth.md").read_text(encoding="utf-8")
+    assert "best_next_fix" in (ROOT / "docs" / "runtime-truth.md").read_text(encoding="utf-8")
+    assert "registry entry exists" in (ROOT / "docs" / "curated-donor-registry.md").read_text(encoding="utf-8")
     assert "canonical public set" in gallery
     assert "complex campus screenshot" in gallery
     assert "campus donor proof" in gallery

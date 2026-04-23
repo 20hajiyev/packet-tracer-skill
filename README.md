@@ -134,6 +134,10 @@ Launch references:
 - `runtime_blockers`
 - `blocked_operations`
 - `ready_operations`
+- `what_currently_works`
+- `what_is_blocked`
+- `why_it_is_blocked`
+- `best_next_fix`
 - `recommended_next_steps`
 - `doctor_summary`
 - `runtime_grade`
@@ -159,6 +163,13 @@ Important distinction:
 - tests can pass with an external bridge override
 - that does not mean the repo is self-contained runtime-ready
 - the difference between repo-local readiness and external bridge fallback is part of the public contract
+- mixed states should still read like a decision guide, not a debug dump
+
+Selector and runtime are intentionally kept separate:
+
+- donor selection can still block a prompt even when runtime is healthy
+- runtime can still block strict `.pkt` work even when a donor artifact exists
+- campus donor proof currently shows the first case more clearly than the second
 
 Runtime truth reference:
 
@@ -233,6 +244,12 @@ Curated donor registry reference:
 
 - [docs/curated-donor-registry.md](docs/curated-donor-registry.md)
 
+Current selector truth:
+
+- a registry-backed donor can be inventory-proof without being prompt-selected
+- selector output should explain the closest rejected donor class when generate is blocked
+- `best_rejected_donor_class` and `primary_rejection_code` are intended to keep donor-limited refusals specific
+
 ## Known Working Scenario Set
 
 Public examples stay text-first and review-friendly. Raw `.pkt` binaries are not committed.
@@ -277,6 +294,14 @@ Canonical public proof:
 - [docs/campus-donor-proof.md](docs/campus-donor-proof.md)
 
 The campus donor proof is intentionally more specific than the gallery cards. It shows that a real donor artifact inventories correctly, but it also shows that a generalized campus prompt can still be donor-limited. That is exactly the kind of nuance the public docs should preserve.
+
+What the proof now tries to surface explicitly:
+
+- a real donor exists
+- inventory succeeds
+- the larger generalized prompt is still refused
+- the blocking layer is donor selection, not runtime
+- the closest rejected donor class and rejection code should be visible in the decision payload
 
 ## Security and Privacy
 

@@ -1261,6 +1261,9 @@ def test_summarize_candidate_pool_reports_counts_and_top_reasons() -> None:
     assert summary["best_adjusted_total_score"] == 20
     assert summary["best_layout_reuse_score"] == 21
     assert summary["top_rejection_reasons"] == ["reason-a", "reason-b", "reason-c"]
+    assert summary["best_rejected_donor_class"] == "campus/core"
+    assert summary["primary_rejection_code"] is None
+    assert summary["primary_rejection_layer"] is None
 
 
 def test_selected_donor_summary_reports_why_selected() -> None:
@@ -1423,6 +1426,10 @@ def test_scenario_acceptance_summary_reports_blocked_candidate_pool() -> None:
     assert len(summary["critical_parity_mismatches"]) == 0
     assert summary["next_best_action"] == "Choose a donor closer to the requested archetype."
     assert summary["selection_failure_type"] == "viable_donor_found_but_archetype_misaligned"
+    assert summary["best_rejected_donor_class"] == "campus/core"
+    assert summary["primary_rejection_layer"] == "donor"
+    assert summary["primary_rejection_code"] == "archetype_misaligned"
+    assert "Best rejected donor class campus/core was closest" in summary["best_rejected_donor_summary"]
     assert summary["decision_confidence"] == 0.9
     assert summary["key_reasons"]
 
@@ -1452,6 +1459,10 @@ def test_scenario_acceptance_summary_reports_selected_aligned_donor() -> None:
     assert summary["donor_state"] == "selected"
     assert summary["selected_donor_aligned"] is True
     assert summary["selection_failure_type"] is None
+    assert summary["best_rejected_donor_class"] is None
+    assert summary["primary_rejection_layer"] is None
+    assert summary["primary_rejection_code"] is None
+    assert summary["best_rejected_donor_summary"] is None
     assert summary["decision_state"] == "ready_with_selected_donor"
     assert summary["candidate_counts"] == {"selected": 1, "rejected": 0, "filtered": 0}
     assert summary["critical_capabilities"] == ["server_dns", "server_ftp"]
@@ -1475,6 +1486,9 @@ def test_scenario_matrix_row_reports_blocked_summary() -> None:
             "decision_confidence": 0.9,
             "blocking_layer": "capability",
             "best_available_donor_class": "campus/core",
+            "best_rejected_donor_class": "campus/core",
+            "primary_rejection_layer": "donor",
+            "primary_rejection_code": "layout_reuse_too_weak",
             "remediation_steps": ["Choose a donor closer to the requested archetype."],
         }
     )
@@ -1493,6 +1507,7 @@ def test_scenario_matrix_row_reports_blocked_summary() -> None:
     assert row["decision_confidence"] == 0.9
     assert row["blocking_layer"] == "capability"
     assert row["best_available_donor_class"] == "campus/core"
+    assert row["primary_rejection_code"] == "layout_reuse_too_weak"
     assert row["remediation_hint"] == "Choose a donor closer to the requested archetype."
 
 
@@ -1522,7 +1537,65 @@ def test_scenario_matrix_row_reports_selected_donor() -> None:
     assert row["selected_donor"] == "service_donor.pkt"
     assert row["selected_donor_aligned"] is True
     assert row["selection_failure_type"] is None
+    assert row["primary_rejection_code"] is None
     assert row["parity_mismatch_count"] == 0
+
+
+def test_scenario_acceptance_summary_reports_runtime_subtree_missing_code() -> None:
+    summary = _scenario_acceptance_summary(
+        {
+            "recommended_next_actions": ["Import a donor with the required runtime subtree first."],
+            "scenario_generate_readiness": {
+                "family": "campus",
+                "status": "donor_limited",
+                "critical_capabilities": ["management_vlan"],
+                "missing_critical_capabilities": [],
+            },
+        },
+        donor_selection_summary={
+            "candidate_counts": {"selected": 0, "rejected": 1, "filtered": 0},
+            "preferred_donor_archetypes": ["campus/core"],
+            "top_rejection_reasons": ["runtime subtree is missing for donor reuse"],
+            "primary_rejection_code": "runtime_subtree_missing",
+            "primary_rejection_layer": "donor",
+            "best_rejected_donor_class": "campus/core",
+        },
+    )
+
+    assert summary["selection_failure_type"] == "viable_donor_found_but_runtime_subtree_missing"
+    assert summary["primary_rejection_code"] == "runtime_subtree_missing"
+    assert summary["primary_rejection_layer"] == "donor"
+    assert summary["best_rejected_donor_class"] == "campus/core"
+    assert "runtime subtree is missing" in summary["best_rejected_donor_summary"]
+
+
+def test_scenario_acceptance_summary_reports_campus_layout_reuse_blocker() -> None:
+    summary = _scenario_acceptance_summary(
+        {
+            "recommended_next_actions": ["Import a campus/core donor with a reusable router-switch-management skeleton."],
+            "scenario_generate_readiness": {
+                "family": "campus",
+                "status": "donor_limited",
+                "critical_capabilities": ["management_vlan", "telnet", "acl"],
+                "missing_critical_capabilities": [],
+            },
+        },
+        donor_selection_summary={
+            "candidate_counts": {"selected": 0, "rejected": 2, "filtered": 1},
+            "preferred_donor_archetypes": ["campus/core"],
+            "top_rejection_reasons": ["missing_link_pairs:6", "sample reuses too little of the requested link skeleton"],
+            "primary_rejection_code": "layout_reuse_too_weak",
+            "primary_rejection_layer": "donor",
+            "best_rejected_donor_class": "campus/core",
+        },
+    )
+
+    assert summary["family"] == "campus"
+    assert summary["decision_state"] == "blocked_by_donor_selection"
+    assert summary["selection_failure_type"] == "viable_donor_found_but_acceptance_weak"
+    assert summary["best_rejected_donor_class"] == "campus/core"
+    assert summary["primary_rejection_layer"] == "donor"
+    assert summary["primary_rejection_code"] == "layout_reuse_too_weak"
 
 
 def test_selected_donor_summary_reports_registry_backed_evidence_source() -> None:

@@ -46,6 +46,9 @@ Observed decision result:
 - `status=blocked_by_donor_selection`
 - `selection_failure_type=viable_donor_found_but_acceptance_weak`
 - `best_available_donor_class=campus/core`
+- `best_rejected_donor_class=campus/core`
+- `primary_rejection_layer=donor`
+- `primary_rejection_code=layout_reuse_too_weak`
 - `candidate_counts.selected=0`
 - `candidate_counts.filtered=269`
 
@@ -54,6 +57,26 @@ Top rejection reasons:
 - donor graph has no reusable link pairs for the requested topology
 - sample reuses too little of the requested link skeleton
 - `missing_link_pairs:6`
+
+Closest rejected donor summary:
+
+- the closest donor class is still `campus/core`
+- registry-backed donor evidence exists for that class
+- prompt-level selection still refuses it because reusable link skeleton quality is too weak
+
+## What This Proves
+
+- a real donor path exists for the canonical campus proof artifact
+- donor inventory works
+- planner refusal is still explicit and deterministic
+- the blocker for the generalized campus prompt is donor selection quality
+
+## What This Does Not Prove
+
+- it does not prove synthetic campus generation is solved
+- it does not prove every campus prompt is generate-ready
+- it does not prove runtime was the blocker for this prompt
+- it does not make registry-backed donor evidence equivalent to prompt-level donor selection
 
 ## Interpretation
 
