@@ -21,7 +21,7 @@ TITLE_BY_FAMILY = {
 
 SUMMARY_BY_FAMILY = {
     "campus": "Management VLAN, Telnet, ACL, DNS, email, AAA, and multi-SSID wireless campus edit.",
-    "home_iot": "Home gateway and IoT device onboarding with gateway-backed registration state.",
+    "home_iot": "Home gateway and IoT device onboarding with donor-backed registration state and constrained wireless readiness.",
     "service_heavy": "Service-rich server lab with DNS, DHCP, FTP, email, syslog, AAA, and detailed service metadata.",
     "wan_security_edge": "WAN/security-edge lab with multilayer, tunnel, VPN, and edge-policy coverage metadata.",
 }
@@ -204,9 +204,14 @@ def _build_entry(manifest_path: Path) -> dict[str, object]:
     detail_images = screenshots[1:] if len(screenshots) > 1 else []
     primary_capabilities = CAPABILITIES_BY_FAMILY.get(family, [])
     acceptance_excerpt = f"{acceptance_label} | donor={donor_origin} | capabilities={', '.join(primary_capabilities[:3])}"
+    if family == "home_iot":
+        acceptance_excerpt += " | mode=donor-backed constrained-generate"
     fixture_name = FIXTURE_BY_FAMILY.get(family)
     matrix_excerpt = f"{fixture_name or 'ad-hoc'} | {acceptance_label} | family={family}"
-    parity_excerpt = ", ".join(f"{cap}=generate-ready" for cap in primary_capabilities[:3]) if primary_capabilities else "no parity excerpt"
+    if family == "home_iot":
+        parity_excerpt = "iot=generate-ready, iot_registration=donor-backed constrained-generate, wireless_ap=generate-ready"
+    else:
+        parity_excerpt = ", ".join(f"{cap}=generate-ready" for cap in primary_capabilities[:3]) if primary_capabilities else "no parity excerpt"
     decision_excerpt = f"decision={acceptance_label} | donor_origin={donor_origin}"
     runtime_excerpt = "runtime=donor-backed example artifact"
     return {

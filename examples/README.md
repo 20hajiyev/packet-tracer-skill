@@ -33,7 +33,7 @@ Current curated example:
 
 Additional curated examples:
 - `home_iot_cli_edit_v1.inventory.json`
-  Home gateway and IoT registration example focused on gateway-backed device onboarding.
+  Home gateway and IoT registration example focused on donor-backed, constrained gateway device onboarding.
 - `screenshots/home_iot_cli_edit_v1.png`
   Topology snapshot for the Home IoT example.
 - `service_heavy_cli_edit_v1.inventory.json`
@@ -63,7 +63,7 @@ Gallery families:
 - `campus`
   VLAN, management, ACL, server services, and wireless edits.
 - `home_iot`
-  Home gateway, IoT things, and registration-focused examples.
+  Home gateway, IoT things, registration, and constrained donor-backed wireless examples.
 - `service_heavy`
   Server-centric service labs with richer metadata.
 
@@ -71,3 +71,4 @@ Launch references:
 - `..\docs\hero-demo-plan.md`
 - `..\docs\release-notes-0.2.1.md`
 - `..\docs\campus-donor-proof.md`
+- `..\docs\home-iot-donor-proof.md`

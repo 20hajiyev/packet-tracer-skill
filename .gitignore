@@ -9,6 +9,7 @@ output/
 !templates/
 !templates/**/*.xml
 .pytest_cache/
+.vendor_pytest/
 scripts/vendor/_twofish*.pyd
 scripts/vendor/_twofish*.so
 scripts/vendor/_twofish*.dll

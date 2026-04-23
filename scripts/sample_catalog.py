@@ -215,6 +215,7 @@ def infer_capability_tags(item: dict[str, Any]) -> list[str]:
     rel = item.get("relative_path", "").lower().replace("\\", "/")
     rel_flat = rel.replace("/", " ")
     devices = item.get("devices", [])
+    raw_types = {str(device.get("type", "")).strip() for device in devices if str(device.get("type", "")).strip()}
     normalized_types = [normalize_device_type(device.get("type", "")) for device in devices]
     router_count = normalized_types.count("Router")
     switch_count = normalized_types.count("Switch")
@@ -232,6 +233,8 @@ def infer_capability_tags(item: dict[str, Any]) -> list[str]:
     if any(dtype in {"WirelessRouter", "LightWeightAccessPoint"} for dtype in normalized_types):
         tags.add("wireless")
         tags.add("wireless_ap")
+    if "HomeGateway" in raw_types or any(dtype == "IoT" for dtype in normalized_types):
+        tags.add("iot")
     if any(dtype in {"Tablet", "Laptop", "Smartphone"} for dtype in normalized_types):
         tags.add("wireless_client")
     if any(dtype == "Tablet" for dtype in normalized_types):
@@ -312,6 +315,23 @@ def infer_wireless_mode_tags(item: dict[str, Any]) -> list[str]:
     if len(tags) > 1:
         tags.add("mixed")
     return sorted(tags)
+
+
+def infer_iot_roles(item: dict[str, Any]) -> list[str]:
+    roles = {str(role).strip() for role in item.get("iot_roles", []) if str(role).strip()}
+    raw_types = {str(device.get("type", "")).strip() for device in item.get("devices", []) if str(device.get("type", "")).strip()}
+    normalized_types = {normalize_device_type(device.get("type", "")) for device in item.get("devices", []) if device.get("type")}
+    families = set(item.get("device_families", []) or infer_device_families(item))
+    has_thing = bool(raw_types & {"MCUComponent", "Board", "Sensor", "Actuator"}) or "iot devices" in families
+    has_gateway = "HomeGateway" in raw_types or ("home/wireless routers" in families and has_thing)
+    has_server = "Server" in normalized_types or "servers" in families
+    if has_thing:
+        roles.add("thing")
+    if has_gateway:
+        roles.add("gateway")
+    if has_server:
+        roles.add("server")
+    return sorted(roles)
 
 
 def infer_device_families(item: dict[str, Any]) -> list[str]:
@@ -401,7 +421,7 @@ def infer_runtime_features(item: dict[str, Any]) -> list[str]:
         features.add("wireless_runtime")
     if item.get("service_support"):
         features.add("service_runtime")
-    if item.get("iot_roles"):
+    if infer_iot_roles(item):
         features.add("iot_runtime")
     if item.get("workspace_validation"):
         features.add("workspace_validated")
@@ -416,7 +436,7 @@ def infer_archetype_tags(item: dict[str, Any]) -> list[str]:
     families = set(item.get("device_families", []))
     services = set(item.get("service_support", []))
     wireless_modes = set(item.get("wireless_mode_tags", []))
-    iot_roles = set(item.get("iot_roles", []))
+    iot_roles = set(infer_iot_roles(item))
 
     if topology & {"chain", "core_access", "department_lan", "router_on_a_stick"} or (
         families & {"routers", "switches", "multilayer switches"}
@@ -467,6 +487,7 @@ def infer_apply_safety_level(item: dict[str, Any]) -> str:
 
 def infer_validated_edit_capabilities(item: dict[str, Any]) -> list[str]:
     capabilities: set[str] = {str(tag) for tag in item.get("capability_tags", []) if str(tag).strip()}
+    inferred_iot_roles = set(infer_iot_roles(item))
     service_capability_map = {
         "dhcp": "server_dhcp",
         "dns": "server_dns",
@@ -487,9 +508,10 @@ def infer_validated_edit_capabilities(item: dict[str, Any]) -> list[str]:
         capabilities.add("wireless_mutation")
     if any(device_family == "end devices" for device_family in item.get("device_families", [])):
         capabilities.add("end_device_mutation")
-    if item.get("iot_roles"):
+    if inferred_iot_roles:
+        capabilities.add("iot")
         capabilities.add("iot_registration")
-        if "server" in {str(role) for role in item.get("iot_roles", [])}:
+        if {"server", "gateway"} & inferred_iot_roles:
             capabilities.add("iot_control")
     if item.get("apply_safety_level") == "inventory-supported":
         return []
@@ -731,6 +753,7 @@ def enrich_catalog_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         new_item.setdefault("model_families", infer_model_families(new_item))
         new_item.setdefault("port_media_types", infer_port_media_types(new_item))
         new_item.setdefault("service_support", infer_service_support(new_item))
+        new_item.setdefault("iot_roles", infer_iot_roles(new_item))
         new_item.setdefault("runtime_features", infer_runtime_features(new_item))
         new_item.setdefault("donor_graph_fingerprint", infer_donor_graph_fingerprint(new_item))
         new_item.setdefault("apply_safety_level", infer_apply_safety_level(new_item))

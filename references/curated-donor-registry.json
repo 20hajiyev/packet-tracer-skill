@@ -42,7 +42,8 @@
       "acceptance_fixtures": ["home_iot_complex"],
       "acceptance_notes": [
         "Known working home IoT example with gateway-backed registration state.",
-        "Use when donor root contains the exported Home IoT showcase lab."
+        "Use when donor root contains the exported Home IoT showcase lab.",
+        "See docs/home-iot-donor-proof.md for the public proof note: constrained donor-backed generate is valid, but broad smart-home synthesis is still intentionally out of scope."
       ],
       "provenance": "known-working-example:home_iot_cli_edit_v1"
     },

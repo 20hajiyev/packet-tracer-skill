@@ -4,6 +4,7 @@
 
 - complete GitHub launch ops from `docs/github-launch-ops-0.2.1.md`
 - publish one canonical donor proof artifact: `docs/campus-donor-proof.md`
+- publish one Home IoT donor proof artifact: `docs/home-iot-donor-proof.md`
 - keep README, release notes, launch announcement, and GitHub metadata in sync
 
 ## Next Technical Proof Batch
@@ -13,6 +14,7 @@
 - improve selected donor reasoning visibility before adding new capability scope
 - preserve the difference between donor-limited refusal and runtime-blocked refusal
 - make the closest rejected donor class and primary rejection code visible in the public decision surface
+- lift Home IoT only through donor-backed deterministic targets, not broad smart-home synthesis
 
 ## Runtime Clarity Improvements
 
@@ -28,3 +30,9 @@
 - runtime doctor wording becomes ambiguous again
 - examples and public proof artifacts stop matching current behavior
 - selected donor refusal becomes too generic to explain the closest rejected donor class
+
+## Next Integration Wave
+
+- after the Home IoT and wireless internal gate closes, move the next wave to `wan_security_edge`
+- keep that wave scoped to donor-backed `vpn`, `ipsec`, `gre`, `ppp`, `security_edge`, and `multilayer_switching`
+- do not open that wave until the Home IoT proof and readiness wording are stable

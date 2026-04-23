@@ -82,6 +82,7 @@
     "examples/screenshots/*.png",
     "docs/curated-donor-registry.md",
     "docs/campus-donor-proof.md",
+    "docs/home-iot-donor-proof.md",
     "docs/discovery-keywords.md",
     "docs/github-discussions-setup.md",
     "docs/github-launch-ops-0.2.1.md",

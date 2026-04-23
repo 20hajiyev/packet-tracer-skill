@@ -278,21 +278,28 @@ def _scenario_family_for_plan(plan: IntentPlan, requested_families: list[str]) -
     capabilities = set(plan.capabilities)
     requested_services = {str(service) for service in plan.service_requirements.get("services", []) if service}
     requested_family_set = set(requested_families)
+    prompt_lower = str(plan.prompt or "").lower()
     campus_capabilities = {"vlan", "router_on_a_stick", "management_vlan", "telnet", "acl", "nat", "pat", "trunk", "access_port"}
     service_capabilities = {"server_dns", "server_dhcp", "server_http", "server_https", "server_ftp", "server_tftp", "server_email", "server_syslog", "server_aaa"}
     explicit_campus_style = plan.network_style in {"campus", "department_lan"}
     explicit_service_style = plan.network_style == "service_heavy"
     explicit_home_style = plan.network_style in {"home_iot", "smart_home"}
+    explicit_home_gateway_prompt = any(
+        token in prompt_lower
+        for token in ["home gateway", "homegateway", "smart home", "iot "]
+    )
     campus_signal = (
         explicit_campus_style
         or bool(plan.department_groups)
-        or "campus" in str(plan.prompt or "").lower()
-        or "kampus" in str(plan.prompt or "").lower()
+        or "campus" in prompt_lower
+        or "kampus" in prompt_lower
         or (requested_family_set & {"switches", "multilayer switches"} and capabilities & campus_capabilities)
         or len(capabilities & campus_capabilities) >= 3
     )
     home_iot_signal = (
         explicit_home_style
+        or explicit_home_gateway_prompt
+        or plan.wireless_mode == "home_router_edge"
         or capabilities & {"iot", "iot_registration", "iot_control"}
         or {"iot devices", "home/wireless routers"} & requested_family_set
     )
@@ -381,6 +388,97 @@ def _generate_mismatch_reason(status: dict[str, object]) -> str | None:
     return "unsupported"
 
 
+def _selected_sample_for_donor(
+    samples: list[SampleDescriptor],
+    selected_donor: str | None,
+) -> SampleDescriptor | None:
+    if not selected_donor:
+        return None
+    needle = str(selected_donor).replace("\\", "/").lower()
+    for sample in samples:
+        candidates = {
+            str(sample.path).replace("\\", "/").lower(),
+            str(sample.relative_path).replace("\\", "/").lower(),
+            str(sample.path).replace("\\", "/").split("/")[-1].lower(),
+            str(sample.relative_path).replace("\\", "/").split("/")[-1].lower(),
+        }
+        if needle in candidates:
+            return sample
+    return None
+
+
+def _has_explicit_iot_registration(plan: IntentPlan) -> bool:
+    return any(
+        op.get("op") == "set_iot_registration"
+        and str(op.get("device", "")).strip()
+        and str(op.get("target", "")).strip()
+        for op in plan.iot_ops
+    )
+
+
+def _has_explicit_iot_control(plan: IntentPlan) -> bool:
+    return any(
+        op.get("op") == "set_iot_rule_state"
+        and str(op.get("device", "")).strip()
+        and str(op.get("rule_name", "")).strip()
+        for op in plan.iot_ops
+    )
+
+
+def _has_explicit_wireless_association(plan: IntentPlan) -> bool:
+    return any(
+        op.get("op") == "associate_wireless_client"
+        and str(op.get("device", "")).strip()
+        and str(op.get("ap", "")).strip()
+        and str(op.get("ssid", "")).strip()
+        for op in plan.wireless_ops
+    )
+
+
+def _selected_donor_capability_override(
+    plan: IntentPlan,
+    capability: str,
+    selected_sample: SampleDescriptor | None,
+) -> bool:
+    if selected_sample is None:
+        return False
+    device_families = sorted({_device_family_for_type(device.get("type", "")) for device in selected_sample.devices if device.get("type")})
+    sample_capabilities = set(_expanded_sample_capabilities(selected_sample, device_families))
+    sample_capabilities.update(str(item) for item in selected_sample.validated_edit_capabilities if str(item).strip())
+    archetypes = {str(item) for item in selected_sample.archetype_tags if str(item).strip()}
+    runtime_features = {str(item) for item in selected_sample.runtime_features if str(item).strip()}
+
+    if capability == "iot":
+        return (
+            bool(archetypes & {"IoT/home gateway"})
+            and bool(sample_capabilities & {"iot", "iot_registration", "iot_control"})
+            and bool(runtime_features & {"iot_runtime"})
+            and (_has_explicit_iot_registration(plan) or _has_explicit_iot_control(plan))
+        )
+    if capability == "iot_registration":
+        return (
+            "IoT/home gateway" in archetypes
+            and "iot_registration" in sample_capabilities
+            and "iot_runtime" in runtime_features
+            and _has_explicit_iot_registration(plan)
+        )
+    if capability == "iot_control":
+        return (
+            "IoT/home gateway" in archetypes
+            and "iot_control" in sample_capabilities
+            and "iot_runtime" in runtime_features
+            and _has_explicit_iot_control(plan)
+        )
+    if capability == "wireless_client_association":
+        return (
+            bool(archetypes & {"IoT/home gateway", "wireless-heavy"})
+            and "wireless_client_association" in sample_capabilities
+            and "wireless_runtime" in runtime_features
+            and _has_explicit_wireless_association(plan)
+        )
+    return False
+
+
 def _best_maturity_level(status: dict[str, object]) -> str:
     level = str(status.get("best_maturity_level") or "").strip()
     if level in MATURITY_RANK:
@@ -399,6 +497,18 @@ def _best_maturity_level(status: dict[str, object]) -> str:
 
 
 def _recommended_next_action_for_capability(capability: str, mismatch_reason: str | None) -> str:
+    if capability == "iot_registration":
+        if mismatch_reason == "supported_but_acceptance_gated":
+            return "Use an IoT/home gateway donor and explicitly name the thing plus gateway/server target before strict generate."
+        return "Prefer an IoT/home gateway donor and explicitly name the thing plus gateway/server target."
+    if capability == "iot_control":
+        if mismatch_reason == "supported_but_acceptance_gated":
+            return "Use a donor that already contains IoT rules and explicitly name the rule-bearing device before strict generate."
+        return "Prefer an IoT/home gateway donor with existing rule/control structure before strict generate."
+    if capability == "wireless_client_association":
+        if mismatch_reason == "supported_but_acceptance_gated":
+            return "Use a donor-backed wireless prompt that explicitly names the client, AP/router, and SSID before strict generate."
+        return "Prefer a wireless-heavy or IoT/home gateway donor and explicitly name the client, AP/router, and SSID."
     if mismatch_reason == "supported_in_edit_only":
         return f"Use donor-backed edit flow for {capability} until safe-open generate coverage is raised."
     if mismatch_reason == "supported_but_donor_limited":
@@ -546,6 +656,7 @@ def build_coverage_gap_report(
     selected_donor: str | None = None,
 ) -> CoverageGapReport:
     iot_acceptance_gated = {"iot", "iot_registration", "iot_control"}
+    selected_sample = _selected_sample_for_donor(samples, selected_donor)
     matrix = build_capability_matrix(samples)
     by_capability: dict[str, list[CapabilityMatrixEntry]] = {}
     by_family: dict[str, list[CapabilityMatrixEntry]] = {}
@@ -562,6 +673,7 @@ def build_coverage_gap_report(
     capability_statuses: list[dict[str, object]] = []
     for capability in requested_capabilities:
         provider_families = _provider_families_for_capability(capability, requested_families)
+        selected_donor_backed = _selected_donor_capability_override(plan, capability, selected_sample)
         matching_entries = [
             entry
             for entry in by_capability.get(capability, [])
@@ -570,8 +682,12 @@ def build_coverage_gap_report(
         if matching_entries:
             supported_capabilities.append(capability)
             best_entry = max(matching_entries, key=lambda entry: MATURITY_RANK[entry.maturity_level])
-            acceptance_verified = any(entry.maturity_level == "acceptance-verified" for entry in matching_entries) and capability not in iot_acceptance_gated
-            if best_entry.maturity_level == "safe-open-generate-supported":
+            acceptance_verified = (
+                (any(entry.maturity_level == "acceptance-verified" for entry in matching_entries) and capability not in iot_acceptance_gated)
+                or selected_donor_backed
+            )
+            requires_curated = best_entry.maturity_level == "safe-open-generate-supported" and not selected_donor_backed
+            if requires_curated:
                 requires_curated_donor.append(capability)
             if not acceptance_verified:
                 requires_manual_acceptance.append(capability)
@@ -586,10 +702,29 @@ def build_coverage_gap_report(
                     "config_mutation_supported": any(MATURITY_RANK[entry.maturity_level] >= MATURITY_RANK["config-mutation-supported"] for entry in matching_entries),
                     "safe_open_generate_supported": any(MATURITY_RANK[entry.maturity_level] >= MATURITY_RANK["safe-open-generate-supported"] for entry in matching_entries),
                     "acceptance_verified": acceptance_verified,
-                    "requires_curated_donor": best_entry.maturity_level == "safe-open-generate-supported",
+                    "requires_curated_donor": requires_curated,
                     "requires_manual_acceptance": not acceptance_verified,
                     "recommended_donors": list(dict.fromkeys(donor for entry in matching_entries for donor in entry.accepted_donors))[:10],
                     "known_limitations": list(dict.fromkeys(item for entry in matching_entries for item in entry.known_limitations)),
+                }
+            )
+        elif selected_donor_backed and selected_sample is not None:
+            supported_capabilities.append(capability)
+            capability_statuses.append(
+                {
+                    "capability": capability,
+                    "provider_families": sorted(provider_families),
+                    "matching_device_families": sorted({family for family in (selected_sample.device_families or []) if not provider_families or family in provider_families}),
+                    "best_maturity_level": selected_sample.apply_safety_level or "safe-open-generate-supported",
+                    "inventory_supported": True,
+                    "edit_supported": True,
+                    "config_mutation_supported": True,
+                    "safe_open_generate_supported": True,
+                    "acceptance_verified": True,
+                    "requires_curated_donor": False,
+                    "requires_manual_acceptance": False,
+                    "recommended_donors": [selected_sample.relative_path],
+                    "known_limitations": [],
                 }
             )
         else:

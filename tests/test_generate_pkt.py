@@ -1971,6 +1971,25 @@ def test_explain_plan_keeps_home_iot_public_family_even_with_small_office_style(
     assert payload["scenario_generate_decision"]["family"] == "home_iot"
 
 
+def test_preferred_donor_archetypes_keep_home_gateway_wireless_prompt_in_home_iot_family() -> None:
+    plan = parse_intent("associate Laptop0 to Home Gateway0 ssid HOME dhcp")
+
+    preferred = _preferred_donor_archetypes_for_plan(plan, [])
+
+    assert preferred[0] == "IoT/home gateway"
+    assert "wireless-heavy" in preferred
+    assert "service-heavy" not in preferred
+
+
+def test_explain_plan_keeps_home_gateway_wireless_association_in_home_iot_family() -> None:
+    payload = generate_pkt_module._explain_plan_payload("associate Laptop0 to Home Gateway0 ssid HOME dhcp")
+
+    assert payload["intent_plan"]["network_style"] == "small_office"
+    assert payload["coverage_gaps"]["scenario_family"] == "home_iot"
+    assert payload["coverage_gaps"]["scenario_generate_readiness"]["family"] == "home_iot"
+    assert payload["preferred_donor_archetypes"][0] == "IoT/home gateway"
+
+
 def test_fixture_corpus_uses_utf8_prompts_and_campus_alias() -> None:
     payload = json.loads((ROOT / "references" / "scenario-fixture-corpus.json").read_text(encoding="utf-8"))
     fixtures = {item["name"]: item for item in payload["fixtures"]}

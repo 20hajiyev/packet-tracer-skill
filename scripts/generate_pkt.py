@@ -328,6 +328,10 @@ def _preferred_donor_archetypes_for_plan(plan: IntentPlan, topology_tags: list[s
     capabilities = set(plan.capabilities)
     tags = set(topology_tags or [])
     prompt_lower = str(plan.prompt or "").lower()
+    explicit_home_gateway_prompt = any(
+        token in prompt_lower
+        for token in ["home gateway", "homegateway", "smart home", "iot "]
+    )
     family_hints: list[str] = []
     campus_signal = (
         plan.network_style == "campus"
@@ -342,6 +346,8 @@ def _preferred_donor_archetypes_for_plan(plan: IntentPlan, topology_tags: list[s
     )
     home_iot_signal = (
         plan.network_style in {"home_iot", "smart_home"}
+        or explicit_home_gateway_prompt
+        or plan.wireless_mode == "home_router_edge"
         or bool(capabilities & {"iot", "iot_registration", "iot_control"})
         or bool("iot devices" in device_families)
     )
@@ -480,6 +486,8 @@ def _candidate_acceptance_penalty(candidate: SampleCandidate, blueprint: dict[st
         "wireless_mutation": 18,
         "wireless_client_association": 22,
         "end_device_mutation": 12,
+        "iot_registration": 26,
+        "iot_control": 24,
     }.items():
         if capability in requested_capabilities and capability not in supported_capabilities:
             penalty += penalty_value
@@ -829,6 +837,10 @@ def _filter_candidates_for_blueprint(
             filter_reasons.append("sample lacks donor-backed support for requested wireless mutation")
         if "end_device_mutation" in required_capabilities and "end_device_mutation" not in supported_capabilities:
             filter_reasons.append("sample lacks donor-backed support for requested end-device mutation")
+        if "iot_registration" in required_capabilities and "iot_registration" not in supported_capabilities:
+            filter_reasons.append("sample lacks donor-backed support for requested IoT registration")
+        if "iot_control" in required_capabilities and "iot_control" not in supported_capabilities:
+            filter_reasons.append("sample lacks donor-backed support for requested IoT control")
         if adjusted_total_score <= 0:
             filter_reasons.append("acceptance penalty reduced the donor score below zero")
         if filter_reasons:
@@ -2602,6 +2614,7 @@ def _augment_coverage_gap_actions(
         actions.append("For service-heavy prompts, prefer a donor that already contains the required server service family and core server layout.")
     if scenario_family == "home_iot" and scenario_status in {"donor_limited", "acceptance_gated", "unsupported"}:
         actions.append("For home IoT prompts, prefer a donor with Home Gateway plus existing IoT registration/control structure.")
+        actions.append("For donor-backed Home IoT generate, explicitly name the thing, gateway/server target, and wireless client or SSID targets.")
     if scenario_family == "wan_security_edge" and scenario_status in {"donor_limited", "acceptance_gated", "unsupported"}:
         actions.append("For WAN/security prompts, prefer a donor with reusable serial/WAN or security-edge skeleton before generating.")
     updated["recommended_next_actions"] = list(dict.fromkeys(actions))
@@ -3392,8 +3405,22 @@ def _explain_plan_payload(
         try:
             if evaluation is None:
                 raise PlanningError("Prompt plan is incomplete; generation was skipped.", prepared)
-            adapted_plan, donor_archetype, donor_root, _ = evaluation
+            adapted_plan, donor_archetype, donor_root, selected_candidate = evaluation
             safe_plan, profiled_plan = _apply_safe_open_profile(donor_root, adapted_plan)
+            matrix_hits, coverage_gap, blueprint_plan = _build_support_reports(
+                profiled_plan,
+                blueprint=blueprint,
+                cisco_ranked=cisco_ranked,
+                curated_ranked=curated_ranked,
+                reference_catalog=reference_catalog,
+                selected_donor=selected_candidate.sample.relative_path,
+            )
+            coverage_gap = _augment_coverage_gap_actions(
+                coverage_gap,
+                donor_diagnostics=diagnostics,
+                donor_selection_summary=result["donor_selection_summary"],
+                donor_blocking_reason=donor_details.blocking_reason,
+            )
             profiled_plan.remote_search_results = remote_results
             profiled_plan.capability_matrix_hits = matrix_hits
             profiled_plan.coverage_gap_report = coverage_gap
@@ -3448,6 +3475,11 @@ def _explain_plan_payload(
                 result["scenario_acceptance_summary"],
                 selected_donor_summary=result["selected_donor_summary"],
             )
+            result["capability_matrix_hits"] = matrix_hits
+            result["unsupported_capabilities"] = coverage_gap.get("unsupported_capabilities", [])
+            result["coverage_gaps"] = coverage_gap
+            result["capability_parity"] = list(coverage_gap.get("capability_parity", []))
+            result["blueprint_plan"] = blueprint_plan
         except PlanningError as exc:
             if result["donor_rejection_reasons"]:
                 for item in result["donor_rejection_reasons"]:

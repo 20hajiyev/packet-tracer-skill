@@ -26,10 +26,10 @@ Canonical donor proof:
 |  |  | `decision=known_working_example | donor_origin=donor-backed` |  |  |
 |  |  | `runtime=donor-backed example artifact` |  |  |
 | Home IoT | `home_iot` | iot, iot_registration, wireless_ap | [screenshot](screenshots/home_iot_cli_edit_v1.png) | [manifest](home_iot_cli_edit_v1.inventory.json) |
-|  |  | Home gateway and IoT device onboarding with gateway-backed registration state. |  |  |
-|  |  | `known_working_example | donor=donor-backed | capabilities=iot, iot_registration, wireless_ap` |  |  |
+|  |  | Home gateway and IoT device onboarding with donor-backed registration state and constrained wireless readiness. |  |  |
+|  |  | `known_working_example | donor=donor-backed | capabilities=iot, iot_registration, wireless_ap | mode=donor-backed constrained-generate` |  |  |
 |  |  | `home_iot_complex | known_working_example | family=home_iot` |  |  |
-|  |  | `iot=generate-ready, iot_registration=generate-ready, wireless_ap=generate-ready` |  |  |
+|  |  | `iot=generate-ready, iot_registration=donor-backed constrained-generate, wireless_ap=generate-ready` |  |  |
 |  |  | `decision=known_working_example | donor_origin=donor-backed` |  |  |
 |  |  | `runtime=donor-backed example artifact` |  |  |
 | Service Heavy | `service_heavy` | server_dns, server_dhcp, server_ftp, server_email, server_syslog, server_aaa | [screenshot](screenshots/service_heavy_cli_edit_v1.png) | [manifest](service_heavy_cli_edit_v1.inventory.json) |

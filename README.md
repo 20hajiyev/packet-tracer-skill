@@ -125,6 +125,7 @@ Launch references:
 - [docs/release-checklist.md](docs/release-checklist.md)
 - [docs/github-launch-ops-0.2.1.md](docs/github-launch-ops-0.2.1.md)
 - [docs/campus-donor-proof.md](docs/campus-donor-proof.md)
+- [docs/home-iot-donor-proof.md](docs/home-iot-donor-proof.md)
 
 ## Runtime Doctor Contract
 
@@ -249,6 +250,7 @@ Current selector truth:
 - a registry-backed donor can be inventory-proof without being prompt-selected
 - selector output should explain the closest rejected donor class when generate is blocked
 - `best_rejected_donor_class` and `primary_rejection_code` are intended to keep donor-limited refusals specific
+- Home IoT readiness is only raised when the selected donor and prompt targets are both deterministic
 
 ## Known Working Scenario Set
 
@@ -292,8 +294,11 @@ The gallery is treated as a known working scenario set, not just a screenshot li
 Canonical public proof:
 
 - [docs/campus-donor-proof.md](docs/campus-donor-proof.md)
+- [docs/home-iot-donor-proof.md](docs/home-iot-donor-proof.md)
 
 The campus donor proof is intentionally more specific than the gallery cards. It shows that a real donor artifact inventories correctly, but it also shows that a generalized campus prompt can still be donor-limited. That is exactly the kind of nuance the public docs should preserve.
+
+The Home IoT donor proof is intentionally narrower than a generic smart-home claim. It shows that donor-backed registration, rule control, and wireless association are integrated only inside a constrained path with explicit targets and a selected donor.
 
 What the proof now tries to surface explicitly:
 

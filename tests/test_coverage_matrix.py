@@ -673,6 +673,83 @@ def test_build_coverage_gap_report_classifies_home_iot_as_acceptance_gated() -> 
     assert report.scenario_generate_readiness["reasons"]
 
 
+def test_build_coverage_gap_report_supports_donor_backed_iot_registration_when_selected_donor_is_deterministic() -> None:
+    plan = parse_intent("register door0 to Home Gateway0 mode lan_server server-address 192.168.25.1 username admin password admin")
+    sample = SampleDescriptor(
+        path="home_iot_ready.pkt",
+        relative_path="home_iot_ready.pkt",
+        version="9.0.0.0810",
+        device_count=3,
+        link_count=2,
+        devices=[
+            {"name": "Home Gateway0", "type": "HomeGateway", "model": "HomeGateway-PT"},
+            {"name": "door0", "type": "MCUComponent", "model": "Door"},
+            {"name": "Laptop0", "type": "Laptop", "model": "Laptop-PT"},
+        ],
+        links=[],
+        capability_tags=["iot", "wireless_ap"],
+        topology_tags=["small_office", "wireless_edge"],
+        preferred_roles=["preferred_iot", "preferred_wireless"],
+        trust_level="trusted",
+        origin="cisco-local",
+        role="primary",
+        prototype_eligible=True,
+        donor_eligible=True,
+        wireless_mode_tags=["home_router_edge"],
+        iot_roles=["gateway", "thing"],
+        device_families=["home/wireless routers", "iot devices", "end devices"],
+        archetype_tags=["IoT/home gateway", "wireless-heavy"],
+        runtime_features=["iot_runtime", "wireless_runtime"],
+        apply_safety_level="acceptance-verified",
+    )
+    report = build_coverage_gap_report(plan, [sample], selected_donor="home_iot_ready.pkt")
+    status_by_capability = {status["capability"]: status for status in report.capability_statuses}
+    parity_by_capability = {entry["capability"]: entry for entry in report.capability_parity}
+    assert report.scenario_family == "home_iot"
+    assert report.scenario_generate_readiness["status"] == "ready"
+    assert status_by_capability["iot"]["acceptance_verified"] is True
+    assert status_by_capability["iot_registration"]["acceptance_verified"] is True
+    assert parity_by_capability["iot_registration"]["generate_mismatch_reason"] is None
+
+
+def test_build_coverage_gap_report_supports_donor_backed_wireless_client_association_when_selected_donor_is_deterministic() -> None:
+    plan = parse_intent("associate Laptop0 to Home Gateway0 ssid HOME dhcp")
+    sample = SampleDescriptor(
+        path="home_iot_ready.pkt",
+        relative_path="home_iot_ready.pkt",
+        version="9.0.0.0810",
+        device_count=3,
+        link_count=2,
+        devices=[
+            {"name": "Home Gateway0", "type": "HomeGateway", "model": "HomeGateway-PT"},
+            {"name": "Laptop0", "type": "Laptop", "model": "Laptop-PT"},
+            {"name": "door0", "type": "MCUComponent", "model": "Door"},
+        ],
+        links=[],
+        capability_tags=["iot", "wireless_ap"],
+        topology_tags=["small_office", "wireless_edge"],
+        preferred_roles=["preferred_iot", "preferred_wireless"],
+        trust_level="trusted",
+        origin="cisco-local",
+        role="primary",
+        prototype_eligible=True,
+        donor_eligible=True,
+        wireless_mode_tags=["home_router_edge"],
+        iot_roles=["gateway", "thing"],
+        device_families=["home/wireless routers", "iot devices", "end devices"],
+        archetype_tags=["IoT/home gateway", "wireless-heavy"],
+        runtime_features=["iot_runtime", "wireless_runtime"],
+        apply_safety_level="acceptance-verified",
+    )
+    report = build_coverage_gap_report(plan, [sample], selected_donor="home_iot_ready.pkt")
+    status_by_capability = {status["capability"]: status for status in report.capability_statuses}
+    parity_by_capability = {entry["capability"]: entry for entry in report.capability_parity}
+    assert report.scenario_family == "home_iot"
+    assert "wireless_client_association" in report.supported_capabilities
+    assert status_by_capability["wireless_client_association"]["acceptance_verified"] is True
+    assert parity_by_capability["wireless_client_association"]["generate_mismatch_reason"] is None
+
+
 def test_build_coverage_gap_report_supports_phase_a_switching_capabilities() -> None:
     plan = parse_intent("router-on-a-stick trunk access management telnet")
     plan.capabilities = ["router_on_a_stick", "trunk", "access_port", "management_vlan", "telnet"]

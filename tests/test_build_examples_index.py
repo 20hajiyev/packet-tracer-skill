@@ -46,6 +46,8 @@ def test_build_examples_index_detects_existing_screenshot() -> None:
     assert home_iot["acceptance_rank"] == 3
     assert home_iot["fixture_name"] == "home_iot_complex"
     assert "capabilities=iot, iot_registration" in home_iot["acceptance_excerpt"]
+    assert "mode=donor-backed constrained-generate" in home_iot["acceptance_excerpt"]
+    assert "iot_registration=donor-backed constrained-generate" in home_iot["parity_excerpt"]
 
     service_heavy = next(entry for entry in payload["curated_examples"] if entry["name"] == "service_heavy_cli_edit_v1")
     assert service_heavy["screenshot"] == "examples/screenshots/service_heavy_cli_edit_v1.png"
@@ -83,6 +85,7 @@ def test_examples_gallery_markdown_contains_curated_entries() -> None:
     assert "known_working_example | donor=donor-backed" in gallery
     assert "campus_core_complex | known_working_example | family=campus" in gallery
     assert "management_vlan=generate-ready" in gallery
+    assert "iot_registration=donor-backed constrained-generate" in gallery
     assert "decision=known_working_example | donor_origin=donor-backed" in gallery
     assert "runtime=donor-backed example artifact" in gallery
     assert "extra visuals: [detail 1](screenshots/service_heavy_cli_edit_v1_dhcp.png); [detail 2](screenshots/service_heavy_cli_edit_v1_dns.png)" in gallery

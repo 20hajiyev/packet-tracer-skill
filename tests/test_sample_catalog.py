@@ -89,6 +89,24 @@ def test_infer_device_families_covers_home_gateway_wlc_and_iot_components() -> N
     assert "iot devices" in families
 
 
+def test_infer_home_iot_shape_roles_runtime_and_edit_capabilities() -> None:
+    item = {
+        "devices": [
+            {"type": "HomeGateway"},
+            {"type": "MCUComponent"},
+            {"type": "Server"},
+        ],
+        "device_families": ["home/wireless routers", "iot devices", "servers"],
+        "capability_tags": ["host_server", "iot"],
+        "wireless_mode_tags": ["home_router_edge"],
+        "apply_safety_level": "acceptance-verified",
+    }
+    assert {"gateway", "thing", "server"} <= set(sample_catalog_module.infer_iot_roles(item))
+    assert "iot_runtime" in sample_catalog_module.infer_runtime_features(item)
+    validated = set(sample_catalog_module.infer_validated_edit_capabilities(item))
+    assert {"iot", "iot_registration", "iot_control", "wireless_mutation"} <= validated
+
+
 def test_reference_ranking_prefers_matching_external_patterns() -> None:
     external_vlan = SampleDescriptor(
         path="ext1.pkt",
