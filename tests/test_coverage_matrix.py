@@ -799,6 +799,44 @@ def test_build_coverage_gap_report_supports_donor_backed_wan_security_when_selec
         assert parity_by_capability[capability]["generate_mismatch_reason"] is None
 
 
+def test_build_coverage_gap_report_keeps_feature_atlas_capabilities_report_only() -> None:
+    plan = parse_intent("snmp netflow span qos policy dhcp snooping dai dot1x")
+    sample = SampleDescriptor(
+        path="monitoring_security.pkt",
+        relative_path="monitoring_security.pkt",
+        version="9.0.0.0810",
+        device_count=3,
+        link_count=2,
+        devices=[
+            {"name": "R1", "type": "Router", "model": "ISR4331"},
+            {"name": "SW1", "type": "Switch", "model": "2960-24TT"},
+            {"name": "PC1", "type": "PC", "model": "PC-PT"},
+        ],
+        links=[],
+        capability_tags=["snmp", "netflow", "span", "qos", "dhcp_snooping", "dai", "dot1x"],
+        topology_tags=["monitoring"],
+        preferred_roles=["preferred_security"],
+        trust_level="trusted",
+        origin="cisco-local",
+        role="primary",
+        prototype_eligible=True,
+        donor_eligible=True,
+        device_families=["routers", "switches", "end devices"],
+        archetype_tags=["L2 security/monitoring"],
+        runtime_features=["workspace_validated"],
+        apply_safety_level="acceptance-verified",
+    )
+
+    report = build_coverage_gap_report(plan, [sample])
+    parity_by_capability = {entry["capability"]: entry for entry in report.capability_parity}
+
+    assert report.scenario_family == "l2_security_monitoring"
+    assert report.scenario_generate_readiness["status"] == "acceptance_gated"
+    for capability in ["snmp", "netflow", "span", "qos", "dhcp_snooping", "dai", "dot1x"]:
+        assert parity_by_capability[capability]["generate_supported"] is False
+        assert parity_by_capability[capability]["generate_mismatch_reason"] == "report_only"
+
+
 def test_build_coverage_gap_report_supports_phase_a_switching_capabilities() -> None:
     plan = parse_intent("router-on-a-stick trunk access management telnet")
     plan.capabilities = ["router_on_a_stick", "trunk", "access_port", "management_vlan", "telnet"]

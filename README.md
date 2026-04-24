@@ -127,6 +127,7 @@ Launch references:
 - [docs/campus-donor-proof.md](docs/campus-donor-proof.md)
 - [docs/home-iot-donor-proof.md](docs/home-iot-donor-proof.md)
 - [docs/wan-security-donor-proof.md](docs/wan-security-donor-proof.md)
+- [docs/packet-tracer-feature-gap-atlas.md](docs/packet-tracer-feature-gap-atlas.md)
 
 ## Runtime Doctor Contract
 
@@ -224,12 +225,19 @@ Use `--parity-report` for prompt-scoped capability readiness:
 python .\scripts\generate_pkt.py --parity-report "service-heavy lab with DNS DHCP FTP email syslog AAA"
 ```
 
+Use `--feature-gap-report` for the Packet Tracer 9.0 feature atlas:
+
+```powershell
+python .\scripts\generate_pkt.py --feature-gap-report
+```
+
 Stable CLI surfaces:
 
 - `--explain-plan`
 - `--compare-scenarios`
 - `--matrix-out`
 - `--coverage-report`
+- `--feature-gap-report`
 - `--inventory-capabilities`
 - `--doctor`
 - `--parity-report`
@@ -241,6 +249,7 @@ This repository keeps explicit truth sources for donor evidence and scenario reg
 
 - `references/curated-donor-registry.json`
 - `references/scenario-fixture-corpus.json`
+- `references/packettracer-feature-atlas.json`
 
 Curated donor registry reference:
 
@@ -253,6 +262,7 @@ Current selector truth:
 - `best_rejected_donor_class` and `primary_rejection_code` are intended to keep donor-limited refusals specific
 - Home IoT readiness is only raised when the selected donor and prompt targets are both deterministic
 - WAN/security readiness is only raised for explicit WAN/security intent when the selected donor carries matching WAN, security, tunnel, or multilayer runtime evidence
+- Feature atlas entries are report-first; a feature can be visible in the atlas while still blocked for edit/generate.
 
 ## Known Working Scenario Set
 

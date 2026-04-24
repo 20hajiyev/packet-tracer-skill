@@ -23,6 +23,7 @@ def test_release_docs_and_trust_files_exist() -> None:
         ROOT / "docs" / "campus-donor-proof.md",
         ROOT / "docs" / "home-iot-donor-proof.md",
         ROOT / "docs" / "wan-security-donor-proof.md",
+        ROOT / "docs" / "packet-tracer-feature-gap-atlas.md",
         ROOT / "docs" / "discovery-keywords.md",
         ROOT / "docs" / "github-launch-ops-0.2.1.md",
         ROOT / "docs" / "publish-preview-roadmap.md",
@@ -61,6 +62,9 @@ def test_readme_highlights_release_and_runtime_contracts() -> None:
     assert "docs/campus-donor-proof.md" in readme
     assert "docs/home-iot-donor-proof.md" in readme
     assert "docs/wan-security-donor-proof.md" in readme
+    assert "docs/packet-tracer-feature-gap-atlas.md" in readme
+    assert "references/packettracer-feature-atlas.json" in readme
+    assert "--feature-gap-report" in readme
     assert "docs/post-launch-follow-up.md" in readme
     assert "docs/release-checklist.md" in readme
     assert "docs/runtime-truth.md" in readme
@@ -92,6 +96,7 @@ def test_package_metadata_is_publish_ready() -> None:
         "docs/campus-donor-proof.md",
         "docs/home-iot-donor-proof.md",
         "docs/wan-security-donor-proof.md",
+        "docs/packet-tracer-feature-gap-atlas.md",
         "docs/github-launch-ops-0.2.1.md",
         "docs/post-launch-follow-up.md",
         "docs/release-notes-0.2.1.md",
@@ -124,6 +129,7 @@ def test_launch_prep_docs_are_decision_complete() -> None:
     donor_proof = (ROOT / "docs" / "campus-donor-proof.md").read_text(encoding="utf-8")
     home_iot_proof = (ROOT / "docs" / "home-iot-donor-proof.md").read_text(encoding="utf-8")
     wan_security_proof = (ROOT / "docs" / "wan-security-donor-proof.md").read_text(encoding="utf-8")
+    feature_gap_atlas = (ROOT / "docs" / "packet-tracer-feature-gap-atlas.md").read_text(encoding="utf-8")
     follow_up = (ROOT / "docs" / "post-launch-follow-up.md").read_text(encoding="utf-8")
     gallery = (ROOT / "examples" / "gallery.md").read_text(encoding="utf-8")
     examples_readme = (ROOT / "examples" / "README.md").read_text(encoding="utf-8")
@@ -156,6 +162,8 @@ def test_launch_prep_docs_are_decision_complete() -> None:
     assert "What This Proves" in wan_security_proof
     assert "What This Does Not Prove" in wan_security_proof
     assert "broad synthetic WAN/security" in wan_security_proof
+    assert "Feature atlas support is not the same as generation support" in feature_gap_atlas
+    assert "--feature-gap-report" in feature_gap_atlas
     assert "Trigger Conditions for `0.2.2` or the Next Minor" in follow_up
     assert "closest rejected donor class" in follow_up
     assert "close shorthand campus family fidelity before broadening scenario scope" in follow_up

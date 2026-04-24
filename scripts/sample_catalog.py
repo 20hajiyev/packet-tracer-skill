@@ -24,22 +24,82 @@ CAPABILITY_KEYWORDS = {
     "dhcp_pool": ["dhcp", "reservation", "apipa"],
     "router_dhcp": ["dhcp", "reservation", "apipa"],
     "server_dhcp": ["dhcp", "reservation", "apipa"],
+    "dhcpv6_stateful": ["dhcpv6", "stateful_dhcpv6"],
+    "dhcpv6_stateless": ["stateless_dhcpv6"],
+    "ipv6_slaac": ["slaac"],
+    "ipv6_prefix_delegation": ["prefix_delegation"],
+    "ipv6_dns_aaaa": ["aaaa"],
+    "ipv6_tunneling": ["ipv6ip", "ipv6 tunneling"],
+    "isatap": ["isatap"],
     "dhcp_snooping": ["dhcp snooping", "option_82", "trusted_untrusted"],
     "ospf": ["ospf"],
+    "ospfv3": ["ospfv3", "ipv6_ospf"],
     "eigrp": ["eigrp"],
+    "eigrp_ipv6": ["ipv6_eigrp"],
     "rip": ["rip"],
+    "ripng": ["ripng", "ipv6 rip"],
+    "hsrp": ["hsrp"],
     "nat": ["nat"],
     "acl": ["acl", "access-list"],
+    "dai": ["dai", "dynamic arp inspection"],
+    "dot1x": ["dot1x", "802.1x", "port-based nac"],
+    "lldp": ["lldp"],
+    "rep": ["rep_"],
+    "snmp": ["snmp"],
+    "netflow": ["netflow"],
+    "span": ["span", "rspan"],
+    "qos": ["qos"],
+    "port_security": ["port security", "port-security"],
     "vpn": ["vpn", "ipsec", "gre"],
     "ipsec": ["ipsec", "ike"],
     "gre": ["gre"],
     "ppp": ["ppp", "chap", "pap"],
     "wan": ["wan", "cloud", "serial", "pppoe", "ppp"],
     "security_edge": ["asa", "firewall", "security appliance"],
+    "asa_acl_nat": ["asa_acl_nat"],
+    "asa_service_policy": ["asa_service_policy", "service policy"],
+    "clientless_vpn": ["clientless_vpn"],
+    "cbac": ["cbac"],
+    "zfw": ["zfw", "zone based firewall"],
+    "sniffer": ["sniffer"],
     "multilayer_switching": ["multilayer", "layer 3", "3560", "svi"],
     "wireless": ["wireless", "wlan", "wlc", "wifi", "ssid", "wpa", "wep", "5g", "bluetooth", "cellular"],
     "wireless_ap": ["wireless", "wlan", "wlc", "wifi", "ssid", "wpa", "wep"],
     "wireless_client": ["wireless", "wifi", "tablet", "smartphone", "laptop"],
+    "wlc": ["wlc", "wireless lan controller"],
+    "wpa_enterprise": ["wpa_radius", "wpa2_enterprise"],
+    "wep": ["wep"],
+    "guest_wifi": ["guest"],
+    "beamforming": ["beamforming"],
+    "meraki": ["meraki"],
+    "cellular_5g": ["5g", "cellular", "cell tower"],
+    "bluetooth": ["bluetooth"],
+    "network_controller": ["network controller", "netcon"],
+    "python_programming": ["python"],
+    "javascript_programming": ["javascript"],
+    "blockly_programming": ["blockly"],
+    "tcp_udp_app": ["tcp_test_app", "udp_test_app"],
+    "vm_iox": ["iox", "uploading_and_running_vm"],
+    "voip": ["voip"],
+    "ip_phone": ["ip phone", "phone"],
+    "call_manager": ["call manager", "telephony", "voip"],
+    "linksys_voice": ["voip linksys"],
+    "mqtt": ["mqtt"],
+    "real_http": ["real-http", "real http"],
+    "real_websocket": ["real-websocket", "real websocket"],
+    "visual_scripting": ["visual-scripting", "visual scripting"],
+    "ptp": ["ptp"],
+    "profinet": ["profinet"],
+    "l2nat": ["l2nat"],
+    "cyberobserver": ["cyberobserver"],
+    "industrial_firewall": ["isa3000", "industrial cybersecurity"],
+    "coaxial": ["coaxial"],
+    "cable_dsl": ["cable modem", "dsl modem"],
+    "central_office": ["centraloffice", "central office"],
+    "cell_tower": ["cell tower"],
+    "power_distribution": ["power distribution"],
+    "hot_swappable": ["hotswappable", "hot swappable"],
+    "ios_license": ["ios_15", "license"],
     "ntp": ["ntp"],
     "dns": ["dns"],
     "server_dns": ["dns"],
@@ -54,6 +114,70 @@ CAPABILITY_KEYWORDS = {
     "telnet": ["telnet", "terminal server"],
     "tablet": ["tablet", "pda"],
     "printer": ["printer"],
+}
+
+REPORT_ONLY_CAPABILITIES = {
+    "ipv6_slaac",
+    "dhcpv6_stateful",
+    "dhcpv6_stateless",
+    "ipv6_prefix_delegation",
+    "ipv6_dns_aaaa",
+    "ipv6_tunneling",
+    "isatap",
+    "ospfv3",
+    "eigrp_ipv6",
+    "ripng",
+    "hsrp",
+    "dhcp_snooping",
+    "dai",
+    "dot1x",
+    "lldp",
+    "rep",
+    "snmp",
+    "netflow",
+    "span",
+    "qos",
+    "port_security",
+    "asa_acl_nat",
+    "asa_service_policy",
+    "clientless_vpn",
+    "cbac",
+    "zfw",
+    "sniffer",
+    "wlc",
+    "wpa_enterprise",
+    "wep",
+    "guest_wifi",
+    "beamforming",
+    "meraki",
+    "cellular_5g",
+    "bluetooth",
+    "network_controller",
+    "python_programming",
+    "javascript_programming",
+    "blockly_programming",
+    "tcp_udp_app",
+    "vm_iox",
+    "voip",
+    "ip_phone",
+    "call_manager",
+    "linksys_voice",
+    "mqtt",
+    "real_http",
+    "real_websocket",
+    "visual_scripting",
+    "ptp",
+    "profinet",
+    "l2nat",
+    "cyberobserver",
+    "industrial_firewall",
+    "coaxial",
+    "cable_dsl",
+    "central_office",
+    "cell_tower",
+    "power_distribution",
+    "hot_swappable",
+    "ios_license",
 }
 
 TYPE_NORMALIZATION = {
@@ -78,6 +202,9 @@ TYPE_NORMALIZATION = {
     "printer": "Printer",
     "smartphone": "Smartphone",
     "mcucomponent": "IoT",
+    "networkcontroller": "NetworkController",
+    "centralofficeserver": "CentralOfficeServer",
+    "celltower": "CellTower",
 }
 
 LICENSE_FILENAMES = [
@@ -365,6 +492,9 @@ def infer_device_families(item: dict[str, Any]) -> list[str]:
         "Dsl Modem": "wan/cloud/dsl/cable devices",
         "Security Appliance": "security devices",
         "ASA": "security devices",
+        "NetworkController": "network controllers",
+        "CentralOfficeServer": "wan/cloud/dsl/cable devices",
+        "CellTower": "wan/cloud/dsl/cable devices",
         "IoT": "iot devices",
         "Sensor": "iot devices",
         "Actuator": "iot devices",
@@ -480,6 +610,19 @@ def infer_archetype_tags(item: dict[str, Any]) -> list[str]:
         "acl",
     }:
         tags.add("WAN/security edge")
+    capability_tags = set(item.get("capability_tags", []))
+    if capability_tags & {"ipv6_slaac", "dhcpv6_stateful", "dhcpv6_stateless", "ipv6_prefix_delegation", "ipv6_dns_aaaa", "ipv6_tunneling", "isatap", "ospfv3", "eigrp_ipv6", "ripng", "hsrp"}:
+        tags.add("IPv6/routing")
+    if capability_tags & {"dhcp_snooping", "dai", "dot1x", "lldp", "rep", "snmp", "netflow", "span", "qos", "port_security"}:
+        tags.add("L2 security/monitoring")
+    if capability_tags & {"wlc", "wpa_enterprise", "wep", "guest_wifi", "beamforming", "meraki", "cellular_5g", "bluetooth"}:
+        tags.add("advanced wireless")
+    if capability_tags & {"network_controller", "python_programming", "javascript_programming", "blockly_programming", "tcp_udp_app", "vm_iox"} or "network controllers" in families:
+        tags.add("automation/controller")
+    if capability_tags & {"voip", "ip_phone", "call_manager", "linksys_voice"}:
+        tags.add("voice/collaboration")
+    if capability_tags & {"mqtt", "real_http", "real_websocket", "visual_scripting", "ptp", "profinet", "l2nat", "cyberobserver", "industrial_firewall"}:
+        tags.add("industrial IoT")
     return sorted(tags)
 
 
@@ -551,6 +694,7 @@ def infer_validated_edit_capabilities(item: dict[str, Any]) -> list[str]:
         capabilities.add("multilayer_switching")
     if item.get("apply_safety_level") == "inventory-supported":
         return []
+    capabilities -= REPORT_ONLY_CAPABILITIES
     return sorted(capabilities)
 
 

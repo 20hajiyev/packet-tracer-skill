@@ -37,6 +37,9 @@ DEVICE_FAMILY_MAP = {
     "Dsl Modem": "wan/cloud/dsl/cable devices",
     "Security Appliance": "security devices",
     "ASA": "security devices",
+    "NetworkController": "network controllers",
+    "CentralOfficeServer": "wan/cloud/dsl/cable devices",
+    "CellTower": "wan/cloud/dsl/cable devices",
     "IoT": "iot devices",
     "Board": "iot devices",
     "Sensor": "iot devices",
@@ -50,6 +53,70 @@ DEFAULT_FAMILY_LIMITATIONS = {
     "iot devices": ["iot registration/control is not acceptance-verified yet"],
     "wan/cloud/dsl/cable devices": ["advanced wan/cloud patterns depend on donor availability"],
     "security devices": ["advanced security devices remain donor-limited"],
+}
+
+REPORT_ONLY_CAPABILITIES = {
+    "ipv6_slaac",
+    "dhcpv6_stateful",
+    "dhcpv6_stateless",
+    "ipv6_prefix_delegation",
+    "ipv6_dns_aaaa",
+    "ipv6_tunneling",
+    "isatap",
+    "ospfv3",
+    "eigrp_ipv6",
+    "ripng",
+    "hsrp",
+    "dhcp_snooping",
+    "dai",
+    "dot1x",
+    "lldp",
+    "rep",
+    "snmp",
+    "netflow",
+    "span",
+    "qos",
+    "port_security",
+    "asa_acl_nat",
+    "asa_service_policy",
+    "clientless_vpn",
+    "cbac",
+    "zfw",
+    "sniffer",
+    "wlc",
+    "wpa_enterprise",
+    "wep",
+    "guest_wifi",
+    "beamforming",
+    "meraki",
+    "cellular_5g",
+    "bluetooth",
+    "network_controller",
+    "python_programming",
+    "javascript_programming",
+    "blockly_programming",
+    "tcp_udp_app",
+    "vm_iox",
+    "voip",
+    "ip_phone",
+    "call_manager",
+    "linksys_voice",
+    "mqtt",
+    "real_http",
+    "real_websocket",
+    "visual_scripting",
+    "ptp",
+    "profinet",
+    "l2nat",
+    "cyberobserver",
+    "industrial_firewall",
+    "coaxial",
+    "cable_dsl",
+    "central_office",
+    "cell_tower",
+    "power_distribution",
+    "hot_swappable",
+    "ios_license",
 }
 
 CAPABILITY_PROVIDER_FAMILIES = {
@@ -99,6 +166,67 @@ CAPABILITY_PROVIDER_FAMILIES = {
     "tablet": {"end devices"},
     "printer": {"end devices"},
     "verification": {"routers", "switches", "multilayer switches", "servers", "end devices", "access points"},
+    "ipv6_slaac": {"routers", "switches", "end devices", "pt-specific edge/utility devices"},
+    "dhcpv6_stateful": {"routers", "servers", "end devices"},
+    "dhcpv6_stateless": {"routers", "servers", "end devices"},
+    "ipv6_prefix_delegation": {"routers", "wan/cloud/dsl/cable devices"},
+    "ipv6_dns_aaaa": {"servers", "routers"},
+    "ipv6_tunneling": {"routers"},
+    "isatap": {"routers", "end devices"},
+    "ospfv3": {"routers"},
+    "eigrp_ipv6": {"routers"},
+    "ripng": {"routers"},
+    "hsrp": {"routers", "switches", "multilayer switches"},
+    "dhcp_snooping": {"switches", "multilayer switches"},
+    "dai": {"switches", "multilayer switches"},
+    "dot1x": {"switches", "servers", "end devices"},
+    "lldp": {"routers", "switches", "multilayer switches"},
+    "rep": {"switches", "multilayer switches"},
+    "snmp": {"routers", "switches", "multilayer switches", "access points", "servers"},
+    "netflow": {"routers"},
+    "span": {"switches", "multilayer switches"},
+    "qos": {"routers", "switches", "multilayer switches"},
+    "port_security": {"switches", "multilayer switches"},
+    "asa_acl_nat": {"security devices"},
+    "asa_service_policy": {"security devices"},
+    "clientless_vpn": {"security devices"},
+    "cbac": {"routers", "security devices"},
+    "zfw": {"routers", "security devices"},
+    "sniffer": {"end devices", "pt-specific edge/utility devices"},
+    "wlc": {"access points"},
+    "wpa_enterprise": {"access points", "home/wireless routers", "servers"},
+    "wep": {"access points", "home/wireless routers"},
+    "guest_wifi": {"home/wireless routers", "access points"},
+    "beamforming": {"home/wireless routers"},
+    "meraki": {"security devices", "home/wireless routers", "access points"},
+    "cellular_5g": {"wan/cloud/dsl/cable devices", "end devices"},
+    "bluetooth": {"iot devices", "end devices"},
+    "network_controller": {"pt-specific edge/utility devices", "routers", "switches"},
+    "python_programming": {"end devices", "pt-specific edge/utility devices"},
+    "javascript_programming": {"end devices", "pt-specific edge/utility devices"},
+    "blockly_programming": {"end devices", "pt-specific edge/utility devices"},
+    "tcp_udp_app": {"end devices", "servers"},
+    "vm_iox": {"routers", "pt-specific edge/utility devices"},
+    "voip": {"end devices", "switches", "routers"},
+    "ip_phone": {"end devices"},
+    "call_manager": {"routers", "servers", "end devices", "switches"},
+    "linksys_voice": {"home/wireless routers", "end devices"},
+    "mqtt": {"iot devices", "servers", "home/wireless routers", "pt-specific edge/utility devices"},
+    "real_http": {"iot devices", "servers", "pt-specific edge/utility devices"},
+    "real_websocket": {"iot devices", "servers", "pt-specific edge/utility devices"},
+    "visual_scripting": {"iot devices"},
+    "ptp": {"switches", "multilayer switches", "routers"},
+    "profinet": {"iot devices", "routers", "switches"},
+    "l2nat": {"switches", "multilayer switches"},
+    "cyberobserver": {"servers", "switches", "routers"},
+    "industrial_firewall": {"security devices", "routers"},
+    "coaxial": {"pt-specific edge/utility devices"},
+    "cable_dsl": {"wan/cloud/dsl/cable devices"},
+    "central_office": {"pt-specific edge/utility devices"},
+    "cell_tower": {"pt-specific edge/utility devices", "wan/cloud/dsl/cable devices"},
+    "power_distribution": {"pt-specific edge/utility devices"},
+    "hot_swappable": {"multilayer switches", "pt-specific edge/utility devices"},
+    "ios_license": {"routers", "switches", "multilayer switches"},
 }
 
 
@@ -308,12 +436,33 @@ def _scenario_family_for_plan(plan: IntentPlan, requested_families: list[str]) -
         or capabilities & {"vpn", "ipsec", "gre", "ppp", "multilayer_switching", "security_edge"}
         or {"wan/cloud/dsl/cable devices", "security devices"} & requested_family_set
     )
+    ipv6_routing_signal = plan.network_style == "ipv6_routing" or capabilities & {"ipv6_slaac", "dhcpv6_stateful", "dhcpv6_stateless", "ipv6_prefix_delegation", "ipv6_dns_aaaa", "ipv6_tunneling", "isatap", "ospfv3", "eigrp_ipv6", "ripng", "hsrp"}
+    l2_security_monitoring_signal = plan.network_style == "l2_security_monitoring" or capabilities & {"dhcp_snooping", "dai", "dot1x", "lldp", "rep", "snmp", "netflow", "span", "qos", "port_security"}
+    wireless_advanced_signal = plan.network_style == "wireless_advanced" or capabilities & {"wlc", "wpa_enterprise", "wep", "guest_wifi", "beamforming", "meraki", "cellular_5g", "bluetooth"}
+    automation_controller_signal = plan.network_style == "automation_controller" or capabilities & {"network_controller", "python_programming", "javascript_programming", "blockly_programming", "tcp_udp_app", "vm_iox"}
+    voice_collaboration_signal = plan.network_style == "voice_collaboration" or capabilities & {"voip", "ip_phone", "call_manager", "linksys_voice"}
+    industrial_iot_signal = plan.network_style == "industrial_iot" or capabilities & {"mqtt", "real_http", "real_websocket", "visual_scripting", "ptp", "profinet", "l2nat", "cyberobserver", "industrial_firewall"}
+    physical_media_device_signal = plan.network_style == "physical_media_device" or capabilities & {"coaxial", "cable_dsl", "central_office", "cell_tower", "power_distribution", "hot_swappable", "ios_license"}
     service_signal = (
         explicit_service_style
         or requested_services & {"dns", "dhcp", "http", "https", "ftp", "tftp", "email", "syslog", "aaa", "ntp"}
         or capabilities & service_capabilities
         or "servers" in requested_family_set
     )
+    if industrial_iot_signal:
+        return "industrial_iot"
+    if automation_controller_signal:
+        return "automation_controller"
+    if voice_collaboration_signal:
+        return "voice_collaboration"
+    if wireless_advanced_signal:
+        return "wireless_advanced"
+    if l2_security_monitoring_signal:
+        return "l2_security_monitoring"
+    if ipv6_routing_signal:
+        return "ipv6_routing"
+    if physical_media_device_signal:
+        return "physical_media_device"
     if home_iot_signal:
         return "home_iot"
     if wan_signal:
@@ -330,6 +479,13 @@ SCENARIO_CAPABILITY_SETS = {
     "service_heavy": {"server_dns", "server_dhcp", "server_http", "server_https", "server_ftp", "server_tftp", "server_email", "server_syslog", "server_aaa", "ntp"},
     "home_iot": {"iot", "iot_registration", "iot_control", "wireless_ap", "wireless_mutation"},
     "wan_security_edge": {"vpn", "ipsec", "gre", "ppp", "acl", "nat"},
+    "ipv6_routing": {"ipv6_slaac", "dhcpv6_stateful", "dhcpv6_stateless", "ipv6_prefix_delegation", "ipv6_dns_aaaa", "ipv6_tunneling", "isatap", "ospfv3", "eigrp_ipv6", "ripng", "hsrp"},
+    "l2_security_monitoring": {"dhcp_snooping", "dai", "dot1x", "lldp", "rep", "snmp", "netflow", "span", "qos", "port_security"},
+    "wireless_advanced": {"wlc", "wpa_enterprise", "wep", "guest_wifi", "beamforming", "meraki", "cellular_5g", "bluetooth"},
+    "automation_controller": {"network_controller", "python_programming", "javascript_programming", "blockly_programming", "tcp_udp_app", "vm_iox"},
+    "voice_collaboration": {"voip", "ip_phone", "call_manager", "linksys_voice"},
+    "industrial_iot": {"mqtt", "real_http", "real_websocket", "visual_scripting", "ptp", "profinet", "l2nat", "cyberobserver", "industrial_firewall"},
+    "physical_media_device": {"coaxial", "cable_dsl", "central_office", "cell_tower", "power_distribution", "hot_swappable", "ios_license"},
 }
 
 CAPABILITY_REQUIRED_ARCHETYPES = {
@@ -355,6 +511,53 @@ CAPABILITY_REQUIRED_ARCHETYPES = {
     "ppp": ["WAN/security edge"],
     "multilayer_switching": ["WAN/security edge", "campus/core"],
     "security_edge": ["WAN/security edge"],
+    "ipv6_slaac": ["IPv6/routing"],
+    "dhcpv6_stateful": ["IPv6/routing"],
+    "dhcpv6_stateless": ["IPv6/routing"],
+    "ipv6_prefix_delegation": ["IPv6/routing"],
+    "ipv6_dns_aaaa": ["IPv6/routing"],
+    "ipv6_tunneling": ["IPv6/routing"],
+    "isatap": ["IPv6/routing"],
+    "ospfv3": ["IPv6/routing"],
+    "eigrp_ipv6": ["IPv6/routing"],
+    "ripng": ["IPv6/routing"],
+    "hsrp": ["IPv6/routing"],
+    "dhcp_snooping": ["L2 security/monitoring"],
+    "dai": ["L2 security/monitoring"],
+    "dot1x": ["L2 security/monitoring"],
+    "lldp": ["L2 security/monitoring"],
+    "rep": ["L2 security/monitoring"],
+    "snmp": ["L2 security/monitoring"],
+    "netflow": ["L2 security/monitoring"],
+    "span": ["L2 security/monitoring"],
+    "qos": ["L2 security/monitoring"],
+    "wlc": ["advanced wireless"],
+    "wpa_enterprise": ["advanced wireless"],
+    "wep": ["advanced wireless"],
+    "guest_wifi": ["advanced wireless"],
+    "beamforming": ["advanced wireless"],
+    "meraki": ["advanced wireless"],
+    "cellular_5g": ["advanced wireless"],
+    "bluetooth": ["advanced wireless"],
+    "network_controller": ["automation/controller"],
+    "python_programming": ["automation/controller"],
+    "javascript_programming": ["automation/controller"],
+    "blockly_programming": ["automation/controller"],
+    "tcp_udp_app": ["automation/controller"],
+    "vm_iox": ["automation/controller"],
+    "voip": ["voice/collaboration"],
+    "ip_phone": ["voice/collaboration"],
+    "call_manager": ["voice/collaboration"],
+    "linksys_voice": ["voice/collaboration"],
+    "mqtt": ["industrial IoT"],
+    "real_http": ["industrial IoT"],
+    "real_websocket": ["industrial IoT"],
+    "visual_scripting": ["industrial IoT"],
+    "ptp": ["industrial IoT"],
+    "profinet": ["industrial IoT"],
+    "l2nat": ["industrial IoT"],
+    "cyberobserver": ["industrial IoT"],
+    "industrial_firewall": ["industrial IoT"],
 }
 
 CAPABILITY_REQUIRED_RUNTIME_FEATURES = {
@@ -381,6 +584,8 @@ CAPABILITY_REQUIRED_RUNTIME_FEATURES = {
 
 
 def _generate_mismatch_reason(status: dict[str, object]) -> str | None:
+    if bool(status.get("report_only")):
+        return "report_only"
     if not bool(status.get("inventory_supported")):
         return "unsupported"
     if bool(status.get("edit_supported")) and not bool(status.get("safe_open_generate_supported")):
@@ -528,6 +733,8 @@ def _best_maturity_level(status: dict[str, object]) -> str:
 
 
 def _recommended_next_action_for_capability(capability: str, mismatch_reason: str | None) -> str:
+    if mismatch_reason == "report_only":
+        return f"Keep {capability} in atlas/report mode until donor-backed edit or generate evidence exists."
     if capability in {"vpn", "ipsec", "gre", "ppp", "security_edge", "multilayer_switching"}:
         if mismatch_reason == "supported_but_donor_limited":
             return f"Provide a WAN/security edge donor with reusable ASA/cloud/serial or tunnel skeleton for {capability}."
@@ -709,6 +916,7 @@ def build_coverage_gap_report(
     requires_manual_acceptance: list[str] = []
     capability_statuses: list[dict[str, object]] = []
     for capability in requested_capabilities:
+        report_only = capability in REPORT_ONLY_CAPABILITIES
         provider_families = _provider_families_for_capability(capability, requested_families)
         selected_donor_backed = _selected_donor_capability_override(plan, capability, selected_sample)
         matching_entries = [
@@ -723,6 +931,8 @@ def build_coverage_gap_report(
                 (any(entry.maturity_level == "acceptance-verified" for entry in matching_entries) and capability not in iot_acceptance_gated)
                 or selected_donor_backed
             )
+            if report_only:
+                acceptance_verified = False
             requires_curated = best_entry.maturity_level == "safe-open-generate-supported" and not selected_donor_backed
             if requires_curated:
                 requires_curated_donor.append(capability)
@@ -733,14 +943,15 @@ def build_coverage_gap_report(
                     "capability": capability,
                     "provider_families": sorted(provider_families),
                     "matching_device_families": sorted({entry.device_family for entry in matching_entries}),
-                    "best_maturity_level": best_entry.maturity_level,
+                    "best_maturity_level": "inventory-supported" if report_only else best_entry.maturity_level,
                     "inventory_supported": any(MATURITY_RANK[entry.maturity_level] >= MATURITY_RANK["inventory-supported"] for entry in matching_entries),
-                    "edit_supported": any(MATURITY_RANK[entry.maturity_level] >= MATURITY_RANK["config-mutation-supported"] for entry in matching_entries),
-                    "config_mutation_supported": any(MATURITY_RANK[entry.maturity_level] >= MATURITY_RANK["config-mutation-supported"] for entry in matching_entries),
-                    "safe_open_generate_supported": any(MATURITY_RANK[entry.maturity_level] >= MATURITY_RANK["safe-open-generate-supported"] for entry in matching_entries),
+                    "edit_supported": False if report_only else any(MATURITY_RANK[entry.maturity_level] >= MATURITY_RANK["config-mutation-supported"] for entry in matching_entries),
+                    "config_mutation_supported": False if report_only else any(MATURITY_RANK[entry.maturity_level] >= MATURITY_RANK["config-mutation-supported"] for entry in matching_entries),
+                    "safe_open_generate_supported": False if report_only else any(MATURITY_RANK[entry.maturity_level] >= MATURITY_RANK["safe-open-generate-supported"] for entry in matching_entries),
                     "acceptance_verified": acceptance_verified,
                     "requires_curated_donor": requires_curated,
                     "requires_manual_acceptance": not acceptance_verified,
+                    "report_only": report_only,
                     "recommended_donors": list(dict.fromkeys(donor for entry in matching_entries for donor in entry.accepted_donors))[:10],
                     "known_limitations": list(dict.fromkeys(item for entry in matching_entries for item in entry.known_limitations)),
                 }

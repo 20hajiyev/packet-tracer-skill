@@ -199,6 +199,22 @@ def test_parse_wan_security_prompt_recognizes_phase_d_intent() -> None:
     assert plan.device_requirements["Cloud"] == 1
 
 
+def test_parse_feature_atlas_prompts_without_service_heavy_drift() -> None:
+    cases = [
+        ("ipv6 ospf dhcpv6 slaac hsrp", "ipv6_routing", {"ipv6_slaac", "dhcpv6_stateful", "hsrp"}),
+        ("snmp netflow span qos policy dhcp snooping dai dot1x", "l2_security_monitoring", {"snmp", "netflow", "span", "qos", "dhcp_snooping", "dai", "dot1x"}),
+        ("voip phones with call manager", "voice_collaboration", {"voip", "call_manager"}),
+        ("mqtt iot with websocket", "industrial_iot", {"mqtt", "real_websocket"}),
+        ("wlc bluetooth meraki 5g cellular wpa enterprise", "wireless_advanced", {"wlc", "bluetooth", "meraki", "cellular_5g", "wpa_enterprise"}),
+        ("network controller python programming blockly iox", "automation_controller", {"network_controller", "python_programming", "blockly_programming", "vm_iox"}),
+    ]
+    for prompt, family, capabilities in cases:
+        plan = parse_intent(prompt)
+        assert plan.network_style == family
+        assert capabilities <= set(plan.capabilities)
+        assert plan.network_style != "service_heavy"
+
+
 def test_parse_management_ops_with_spaced_device_name() -> None:
     plan = parse_intent(
         "set Switch Management management vlan 99 ip 192.168.99.2/24 gateway 192.168.99.1 "

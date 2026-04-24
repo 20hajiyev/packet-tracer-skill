@@ -25,6 +25,7 @@ from coverage_matrix import (
     build_inventory_capability_report,
     select_capability_matrix_hits,
 )
+from feature_atlas import build_feature_gap_report
 from intent_parser import IntentPlan, parse_intent
 from packet_tracer_env import (
     get_packet_tracer_compatibility_donor,
@@ -356,6 +357,12 @@ def _preferred_donor_archetypes_for_plan(plan: IntentPlan, topology_tags: list[s
         or bool(device_families & {"wan/cloud/dsl/cable devices", "security devices"})
         or bool(capabilities & {"vpn", "ipsec", "gre", "ppp", "multilayer_switching", "security_edge"})
     )
+    ipv6_routing_signal = plan.network_style == "ipv6_routing" or bool(capabilities & {"ipv6_slaac", "dhcpv6_stateful", "dhcpv6_stateless", "ipv6_prefix_delegation", "ipv6_dns_aaaa", "ipv6_tunneling", "isatap", "ospfv3", "eigrp_ipv6", "ripng", "hsrp"})
+    l2_security_monitoring_signal = plan.network_style == "l2_security_monitoring" or bool(capabilities & {"dhcp_snooping", "dai", "dot1x", "lldp", "rep", "snmp", "netflow", "span", "qos", "port_security"})
+    wireless_advanced_signal = plan.network_style == "wireless_advanced" or bool(capabilities & {"wlc", "wpa_enterprise", "wep", "guest_wifi", "beamforming", "meraki", "cellular_5g", "bluetooth"})
+    automation_controller_signal = plan.network_style == "automation_controller" or bool(capabilities & {"network_controller", "python_programming", "javascript_programming", "blockly_programming", "tcp_udp_app", "vm_iox"})
+    voice_collaboration_signal = plan.network_style == "voice_collaboration" or bool(capabilities & {"voip", "ip_phone", "call_manager", "linksys_voice"})
+    industrial_iot_signal = plan.network_style == "industrial_iot" or bool(capabilities & {"mqtt", "real_http", "real_websocket", "visual_scripting", "ptp", "profinet", "l2nat", "cyberobserver", "industrial_firewall"})
     wireless_signal = plan.wireless_mode or capabilities & {
         "wireless_ap",
         "wireless_client",
@@ -368,7 +375,19 @@ def _preferred_donor_archetypes_for_plan(plan: IntentPlan, topology_tags: list[s
         or "servers" in device_families
     )
 
-    if wan_signal:
+    if industrial_iot_signal:
+        family_hints.append("industrial IoT")
+    elif automation_controller_signal:
+        family_hints.append("automation/controller")
+    elif voice_collaboration_signal:
+        family_hints.append("voice/collaboration")
+    elif wireless_advanced_signal:
+        family_hints.append("advanced wireless")
+    elif l2_security_monitoring_signal:
+        family_hints.append("L2 security/monitoring")
+    elif ipv6_routing_signal:
+        family_hints.append("IPv6/routing")
+    elif wan_signal:
         family_hints.append("WAN/security edge")
         if campus_signal and not bool(capabilities & {"vpn", "ipsec", "gre", "ppp", "security_edge"}):
             family_hints.append("campus/core")
@@ -2641,6 +2660,8 @@ def _augment_coverage_gap_actions(
         actions.append("For donor-backed Home IoT generate, explicitly name the thing, gateway/server target, and wireless client or SSID targets.")
     if scenario_family == "wan_security_edge" and scenario_status in {"donor_limited", "acceptance_gated", "unsupported"}:
         actions.append("For WAN/security prompts, prefer a donor with reusable serial/WAN or security-edge skeleton before generating.")
+    if scenario_family in {"ipv6_routing", "l2_security_monitoring", "wireless_advanced", "automation_controller", "voice_collaboration", "industrial_iot", "physical_media_device"} and scenario_status in {"donor_limited", "acceptance_gated", "unsupported"}:
+        actions.append("This feature family is atlas/report-first; keep it out of strict generate until donor-backed proof and acceptance fixtures exist.")
     updated["recommended_next_actions"] = list(dict.fromkeys(actions))
     return updated
 
@@ -2691,12 +2712,26 @@ def _scenario_generate_decision(
         "service_heavy": "service-heavy",
         "home_iot": "home IoT",
         "wan_security_edge": "WAN/security edge",
+        "ipv6_routing": "IPv6/routing",
+        "l2_security_monitoring": "L2 security/monitoring",
+        "wireless_advanced": "advanced wireless",
+        "automation_controller": "automation/controller",
+        "voice_collaboration": "voice/collaboration",
+        "industrial_iot": "industrial IoT",
+        "physical_media_device": "physical/media device",
     }
     expected_archetype_map = {
         "campus": "campus/core",
         "service_heavy": "service-heavy",
         "home_iot": "IoT/home gateway",
         "wan_security_edge": "WAN/security edge",
+        "ipv6_routing": "IPv6/routing",
+        "l2_security_monitoring": "L2 security/monitoring",
+        "wireless_advanced": "advanced wireless",
+        "automation_controller": "automation/controller",
+        "voice_collaboration": "voice/collaboration",
+        "industrial_iot": "industrial IoT",
+        "physical_media_device": "physical/media device",
     }
     family_label = family_label_map.get(family, family)
     blocking_reasons: list[str] = []
@@ -2892,6 +2927,13 @@ def _scenario_acceptance_summary(
             "service_heavy": "service-heavy",
             "home_iot": "IoT/home gateway",
             "wan_security_edge": "WAN/security edge",
+            "ipv6_routing": "IPv6/routing",
+            "l2_security_monitoring": "L2 security/monitoring",
+            "wireless_advanced": "advanced wireless",
+            "automation_controller": "automation/controller",
+            "voice_collaboration": "voice/collaboration",
+            "industrial_iot": "industrial IoT",
+            "physical_media_device": "physical/media device",
         }
         best_available_donor_class = family_donor_class_map.get(str(readiness.get("family") or "").strip())
     if selected_donor_summary:
@@ -3870,6 +3912,10 @@ def compare_scenarios(
     print(rendered)
 
 
+def feature_gap_report() -> None:
+    print(json.dumps(build_feature_gap_report(), indent=2, ensure_ascii=False))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate or inspect Cisco Packet Tracer 9.0 .pkt files")
     parser.add_argument("--blueprint", help="Path to the topology blueprint JSON")
@@ -3893,6 +3939,7 @@ def main() -> None:
     parser.add_argument("--max-remote-results", type=int, default=10, help="Maximum number of remote search results to fetch/import")
     parser.add_argument("--blueprint-out", help="Optional JSON output path for the generated blueprint plan or refusal blueprint")
     parser.add_argument("--coverage-report", action="store_true", help="Print the aggregated capability coverage matrix")
+    parser.add_argument("--feature-gap-report", action="store_true", help="Print the Packet Tracer feature gap atlas report")
     parser.add_argument("--inventory-capabilities", action="store_true", help="Include inferred capability inventory when using --inventory")
     parser.add_argument("--inventory-out", help="Optional JSON output path when using --inventory")
     parser.add_argument("--matrix-out", help="Optional JSON output path when using --compare-scenarios")
@@ -3959,6 +4006,9 @@ def main() -> None:
         return
     if args.coverage_report:
         coverage_report(reference_roots, donor_roots, device_family=args.device_family)
+        return
+    if args.feature_gap_report:
+        feature_gap_report()
         return
     if args.decode:
         if not args.xml_out:
