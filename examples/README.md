@@ -72,3 +72,4 @@ Launch references:
 - `..\docs\release-notes-0.2.1.md`
 - `..\docs\campus-donor-proof.md`
 - `..\docs\home-iot-donor-proof.md`
+- `..\docs\wan-security-donor-proof.md`

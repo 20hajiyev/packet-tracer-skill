@@ -126,6 +126,7 @@ Launch references:
 - [docs/github-launch-ops-0.2.1.md](docs/github-launch-ops-0.2.1.md)
 - [docs/campus-donor-proof.md](docs/campus-donor-proof.md)
 - [docs/home-iot-donor-proof.md](docs/home-iot-donor-proof.md)
+- [docs/wan-security-donor-proof.md](docs/wan-security-donor-proof.md)
 
 ## Runtime Doctor Contract
 
@@ -251,6 +252,7 @@ Current selector truth:
 - selector output should explain the closest rejected donor class when generate is blocked
 - `best_rejected_donor_class` and `primary_rejection_code` are intended to keep donor-limited refusals specific
 - Home IoT readiness is only raised when the selected donor and prompt targets are both deterministic
+- WAN/security readiness is only raised for explicit WAN/security intent when the selected donor carries matching WAN, security, tunnel, or multilayer runtime evidence
 
 ## Known Working Scenario Set
 
@@ -295,10 +297,13 @@ Canonical public proof:
 
 - [docs/campus-donor-proof.md](docs/campus-donor-proof.md)
 - [docs/home-iot-donor-proof.md](docs/home-iot-donor-proof.md)
+- [docs/wan-security-donor-proof.md](docs/wan-security-donor-proof.md)
 
 The campus donor proof is intentionally more specific than the gallery cards. It shows that a real donor artifact inventories correctly, but it also shows that a generalized campus prompt can still be donor-limited. That is exactly the kind of nuance the public docs should preserve.
 
 The Home IoT donor proof is intentionally narrower than a generic smart-home claim. It shows that donor-backed registration, rule control, and wireless association are integrated only inside a constrained path with explicit targets and a selected donor.
+
+The WAN/security donor proof is also conservative. It shows family-correct report/selection behavior and donor-backed readiness semantics for VPN, IPSec, GRE, PPP, security-edge, and multilayer evidence, but it does not claim broad synthetic WAN/security configuration generation.
 
 What the proof now tries to surface explicitly:
 

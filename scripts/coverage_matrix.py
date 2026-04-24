@@ -371,6 +371,12 @@ CAPABILITY_REQUIRED_RUNTIME_FEATURES = {
     "wireless_client_association": ["workspace_validated", "wireless_runtime"],
     "iot_registration": ["workspace_validated", "iot_runtime"],
     "iot_control": ["workspace_validated", "iot_runtime"],
+    "vpn": ["workspace_validated", "tunnel_runtime"],
+    "ipsec": ["workspace_validated", "tunnel_runtime"],
+    "gre": ["workspace_validated", "tunnel_runtime"],
+    "ppp": ["workspace_validated", "wan_runtime"],
+    "security_edge": ["workspace_validated", "security_runtime"],
+    "multilayer_switching": ["workspace_validated", "multilayer_runtime"],
 }
 
 
@@ -435,6 +441,16 @@ def _has_explicit_wireless_association(plan: IntentPlan) -> bool:
     )
 
 
+def _has_explicit_wan_security_intent(plan: IntentPlan) -> bool:
+    capabilities = set(plan.capabilities)
+    prompt_lower = str(plan.prompt or "").lower()
+    return (
+        plan.network_style == "wan_security"
+        or bool(capabilities & {"vpn", "ipsec", "gre", "ppp", "security_edge", "multilayer_switching"})
+        or any(token in prompt_lower for token in ["site-to-site", "firewall", "asa", "cloud", "multilayer"])
+    )
+
+
 def _selected_donor_capability_override(
     plan: IntentPlan,
     capability: str,
@@ -476,6 +492,21 @@ def _selected_donor_capability_override(
             and "wireless_runtime" in runtime_features
             and _has_explicit_wireless_association(plan)
         )
+    wan_runtime_by_capability = {
+        "vpn": {"tunnel_runtime", "security_runtime", "wan_runtime"},
+        "ipsec": {"tunnel_runtime", "security_runtime"},
+        "gre": {"tunnel_runtime", "wan_runtime"},
+        "ppp": {"wan_runtime"},
+        "security_edge": {"security_runtime"},
+        "multilayer_switching": {"multilayer_runtime"},
+    }
+    if capability in wan_runtime_by_capability:
+        return (
+            "WAN/security edge" in archetypes
+            and capability in sample_capabilities
+            and bool(runtime_features & wan_runtime_by_capability[capability])
+            and _has_explicit_wan_security_intent(plan)
+        )
     return False
 
 
@@ -497,6 +528,12 @@ def _best_maturity_level(status: dict[str, object]) -> str:
 
 
 def _recommended_next_action_for_capability(capability: str, mismatch_reason: str | None) -> str:
+    if capability in {"vpn", "ipsec", "gre", "ppp", "security_edge", "multilayer_switching"}:
+        if mismatch_reason == "supported_but_donor_limited":
+            return f"Provide a WAN/security edge donor with reusable ASA/cloud/serial or tunnel skeleton for {capability}."
+        if mismatch_reason == "supported_but_acceptance_gated":
+            return f"Keep {capability} in report/selection flow until a WAN/security edge donor is acceptance-backed."
+        return f"Prefer a WAN/security edge donor with explicit {capability} evidence before strict generate."
     if capability == "iot_registration":
         if mismatch_reason == "supported_but_acceptance_gated":
             return "Use an IoT/home gateway donor and explicitly name the thing plus gateway/server target before strict generate."

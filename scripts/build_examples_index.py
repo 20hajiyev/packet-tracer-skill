@@ -268,6 +268,8 @@ def build_examples_gallery_markdown(payload: dict[str, object]) -> str:
         "Canonical donor proof:",
         "",
         "- [campus donor proof](../docs/campus-donor-proof.md)",
+        "- [home IoT donor proof](../docs/home-iot-donor-proof.md)",
+        "- [WAN/security donor proof](../docs/wan-security-donor-proof.md)",
         "",
         "| Title | Family | Capabilities | Image | Inventory |",
         "| --- | --- | --- | --- | --- |",

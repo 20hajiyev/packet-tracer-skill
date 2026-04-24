@@ -5,6 +5,7 @@
 - complete GitHub launch ops from `docs/github-launch-ops-0.2.1.md`
 - publish one canonical donor proof artifact: `docs/campus-donor-proof.md`
 - publish one Home IoT donor proof artifact: `docs/home-iot-donor-proof.md`
+- publish one WAN/security donor proof artifact: `docs/wan-security-donor-proof.md`
 - keep README, release notes, launch announcement, and GitHub metadata in sync
 
 ## Next Technical Proof Batch
@@ -33,6 +34,6 @@
 
 ## Next Integration Wave
 
-- after the Home IoT and wireless internal gate closes, move the next wave to `wan_security_edge`
-- keep that wave scoped to donor-backed `vpn`, `ipsec`, `gre`, `ppp`, `security_edge`, and `multilayer_switching`
+- after the Home IoT and wireless internal gate closes, keep `wan_security_edge` scoped to report/selection plus donor-backed readiness
+- next constrained edit candidates remain `vpn`, `ipsec`, `gre`, `ppp`, `security_edge`, and `multilayer_switching`
 - do not open that wave until the Home IoT proof and readiness wording are stable

@@ -19,6 +19,7 @@ from generate_pkt import (  # noqa: E402
     _apply_safe_open_profile,
     _build_donor_prune_plan,
     _build_donor_prune_plan_for_donor,
+    _best_rejected_donor_summary,
     _candidate_acceptance_penalty,
     _candidate_to_dict,
     _donor_graph_fit_summary,
@@ -1979,6 +1980,29 @@ def test_preferred_donor_archetypes_keep_home_gateway_wireless_prompt_in_home_io
     assert preferred[0] == "IoT/home gateway"
     assert "wireless-heavy" in preferred
     assert "service-heavy" not in preferred
+
+
+def test_preferred_donor_archetypes_keep_wan_security_primary_for_tunnel_prompt() -> None:
+    plan = parse_intent("wan security edge qur gre tunnel ve ipsec vpn ppp olsun 1 multilayer switch 1 asa 1 cloud")
+
+    preferred = _preferred_donor_archetypes_for_plan(plan, [])
+
+    assert preferred[0] == "WAN/security edge"
+    assert "service-heavy" not in preferred[:1]
+    assert "campus/core" not in preferred[:1]
+
+
+def test_best_rejected_donor_summary_uses_wan_security_remediation() -> None:
+    summary = _best_rejected_donor_summary(
+        "WAN/security edge",
+        "layout_reuse_too_weak",
+        ["missing_link_pairs:ASA1 <-> Cloud0"],
+    )
+
+    assert summary is not None
+    assert "Best rejected donor class WAN/security edge was closest" in summary
+    assert "ASA/cloud/serial or tunnel skeleton" in summary
+    assert "missing_link_pairs:ASA1 <-> Cloud0" in summary
 
 
 def test_explain_plan_keeps_home_gateway_wireless_association_in_home_iot_family() -> None:

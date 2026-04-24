@@ -29,6 +29,6 @@
 
 - at least one populated curated donor path is publicly proven in practice
 - runtime messaging remains conservative and stable
-- one richer example family or improved `wan_security_edge` reporting is added
+- one richer example family or improved `wan_security_edge` reporting/proof is added
 - publish-preview feedback is folded back into docs and trust surface
 - post-launch follow-up is tracked in `docs/post-launch-follow-up.md`

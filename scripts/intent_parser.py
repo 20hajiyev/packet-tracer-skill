@@ -44,6 +44,7 @@ CAPABILITY_PATTERNS = {
     "ipsec": [r"\bipsec\b", r"\bike\b", r"\bphase 1\b", r"\bphase 2\b"],
     "gre": [r"\bgre\b", r"\bgre tunnel\b"],
     "ppp": [r"\bppp\b", r"\bchap\b", r"\bpap\b"],
+    "security_edge": [r"\bsecurity edge\b", r"\bsecurity appliance\b", r"\bfirewall\b", r"\basa\b"],
     "multilayer_switching": [r"\bmultilayer switch\b", r"\blayer 3 switch\b", r"\b3560\b", r"\bsvi\b"],
 }
 
@@ -389,7 +390,7 @@ def _extract_service_requirements(capabilities: list[str], prompt: str) -> dict[
     for service in ["dhcp", "dns", "http", "https", "ftp", "tftp", "ntp", "email", "syslog", "aaa"]:
         if service in lowered:
             requirements["services"].append(service)
-    for security in ["acl", "telnet", "wpa2", "wpa", "wep", "nat", "vpn", "ipsec", "gre", "ppp", "ssh"]:
+    for security in ["acl", "telnet", "wpa2", "wpa", "wep", "nat", "vpn", "ipsec", "gre", "ppp", "security_edge", "ssh"]:
         if security in lowered:
             requirements["security"].append(security)
     return requirements

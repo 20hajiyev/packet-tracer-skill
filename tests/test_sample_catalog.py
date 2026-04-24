@@ -107,6 +107,38 @@ def test_infer_home_iot_shape_roles_runtime_and_edit_capabilities() -> None:
     assert {"iot", "iot_registration", "iot_control", "wireless_mutation"} <= validated
 
 
+def test_wan_security_catalog_inference_marks_security_tunnel_wan_and_multilayer_runtime() -> None:
+    item = {
+        "relative_path": "WAN Security/IPSec GRE PPP ASA Cloud multilayer.pkt",
+        "version": "9.0.0.0810",
+        "devices": [
+            {"name": "ASA1", "type": "ASA", "model": "ASA5505"},
+            {"name": "Cloud0", "type": "Cloud", "model": "Cloud-PT"},
+            {"name": "MLS1", "type": "MultiLayerSwitch", "model": "3560-24PS"},
+            {"name": "R1", "type": "Router", "model": "ISR4331"},
+        ],
+        "links": [{"from": "ASA1", "to": "Cloud0", "media": "Serial"}],
+        "workspace_validation": "inventory_roundtrip_verified",
+        "apply_safety_level": "acceptance-verified",
+    }
+
+    capability_tags = sample_catalog_module.infer_capability_tags(item)
+    enriched = {
+        **item,
+        "capability_tags": capability_tags,
+        "device_families": sample_catalog_module.infer_device_families(item),
+    }
+
+    assert {"vpn", "ipsec", "gre", "ppp", "wan", "security_edge", "acl", "multilayer_switching"} <= set(capability_tags)
+    assert "WAN/security edge" in sample_catalog_module.infer_archetype_tags(enriched)
+    assert {"wan_runtime", "security_runtime", "tunnel_runtime", "multilayer_runtime", "workspace_validated"} <= set(
+        sample_catalog_module.infer_runtime_features(enriched)
+    )
+    assert {"vpn", "ipsec", "gre", "ppp", "wan", "security_edge", "multilayer_switching"} <= set(
+        sample_catalog_module.infer_validated_edit_capabilities(enriched)
+    )
+
+
 def test_reference_ranking_prefers_matching_external_patterns() -> None:
     external_vlan = SampleDescriptor(
         path="ext1.pkt",

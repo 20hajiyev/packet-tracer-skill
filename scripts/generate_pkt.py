@@ -368,7 +368,11 @@ def _preferred_donor_archetypes_for_plan(plan: IntentPlan, topology_tags: list[s
         or "servers" in device_families
     )
 
-    if campus_signal:
+    if wan_signal:
+        family_hints.append("WAN/security edge")
+        if campus_signal and not bool(capabilities & {"vpn", "ipsec", "gre", "ppp", "security_edge"}):
+            family_hints.append("campus/core")
+    elif campus_signal:
         family_hints.append("campus/core")
         if wireless_signal:
             family_hints.append("wireless-heavy")
@@ -378,8 +382,6 @@ def _preferred_donor_archetypes_for_plan(plan: IntentPlan, topology_tags: list[s
         family_hints.append("IoT/home gateway")
         if wireless_signal:
             family_hints.append("wireless-heavy")
-    elif wan_signal:
-        family_hints.append("WAN/security edge")
     elif service_signal:
         family_hints.append("service-heavy")
     elif wireless_signal:
@@ -410,6 +412,14 @@ def _required_runtime_features_for_plan(plan: IntentPlan) -> list[str]:
         features.add("wireless_runtime")
     if capabilities & {"iot", "iot_registration", "iot_control"}:
         features.add("iot_runtime")
+    if capabilities & {"vpn", "ipsec", "gre"}:
+        features.add("tunnel_runtime")
+    if capabilities & {"ppp"}:
+        features.add("wan_runtime")
+    if capabilities & {"security_edge", "acl", "nat"}:
+        features.add("security_runtime")
+    if capabilities & {"multilayer_switching"}:
+        features.add("multilayer_runtime")
     return sorted(features)
 
 
@@ -488,6 +498,12 @@ def _candidate_acceptance_penalty(candidate: SampleCandidate, blueprint: dict[st
         "end_device_mutation": 12,
         "iot_registration": 26,
         "iot_control": 24,
+        "vpn": 22,
+        "ipsec": 22,
+        "gre": 20,
+        "ppp": 18,
+        "security_edge": 20,
+        "multilayer_switching": 16,
     }.items():
         if capability in requested_capabilities and capability not in supported_capabilities:
             penalty += penalty_value
@@ -648,6 +664,14 @@ def _best_rejected_donor_summary(
     donor_class = best_rejected_donor_class or "the closest donor class"
     reason = reason_sentence_map.get(primary_rejection_code or "", "it still did not satisfy strict donor selection")
     next_shape = next_shape_map.get(primary_rejection_code or "", "choose a closer donor before prompt generate")
+    if donor_class == "WAN/security edge":
+        wan_next_shape_map = {
+            "layout_reuse_too_weak": "choose a WAN/security donor with reusable ASA/cloud/serial or tunnel skeleton",
+            "acceptance_evidence_too_weak": "choose a WAN/security donor with explicit VPN/IPSec/GRE/PPP acceptance evidence",
+            "archetype_misaligned": "choose a donor already tagged as WAN/security edge",
+            "runtime_subtree_missing": "choose a donor that already contains the WAN/security runtime subtree",
+        }
+        next_shape = wan_next_shape_map.get(primary_rejection_code or "", "choose a closer WAN/security donor before prompt generate")
     summary = f"Best rejected donor class {donor_class} was closest, but {reason}; {next_shape}."
     if top_rejection_reasons:
         summary = f"{summary} Top rejection signal: {top_rejection_reasons[0]}."

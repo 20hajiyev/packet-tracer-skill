@@ -37,6 +37,7 @@ Current public proof reference:
 
 - `docs/campus-donor-proof.md`
 - `docs/home-iot-donor-proof.md`
+- `docs/wan-security-donor-proof.md`
 
 This is intentionally separate from the registry file. A registry-backed donor may still be refused for a generalized prompt if the reusable link skeleton is too weak.
 

@@ -34,6 +34,8 @@ CAPABILITY_KEYWORDS = {
     "ipsec": ["ipsec", "ike"],
     "gre": ["gre"],
     "ppp": ["ppp", "chap", "pap"],
+    "wan": ["wan", "cloud", "serial", "pppoe", "ppp"],
+    "security_edge": ["asa", "firewall", "security appliance"],
     "multilayer_switching": ["multilayer", "layer 3", "3560", "svi"],
     "wireless": ["wireless", "wlan", "wlc", "wifi", "ssid", "wpa", "wep", "5g", "bluetooth", "cellular"],
     "wireless_ap": ["wireless", "wlan", "wlc", "wifi", "ssid", "wpa", "wep"],
@@ -235,6 +237,13 @@ def infer_capability_tags(item: dict[str, Any]) -> list[str]:
         tags.add("wireless_ap")
     if "HomeGateway" in raw_types or any(dtype == "IoT" for dtype in normalized_types):
         tags.add("iot")
+    if any(dtype in {"ASA", "Security Appliance"} for dtype in normalized_types) or raw_types & {"ASA", "Security Appliance"}:
+        tags.add("security_edge")
+        tags.add("acl")
+    if any(dtype in {"Cloud", "Cable Modem", "Dsl Modem"} for dtype in normalized_types):
+        tags.add("wan")
+    if any(dtype == "MultiLayerSwitch" for dtype in normalized_types):
+        tags.add("multilayer_switching")
     if any(dtype in {"Tablet", "Laptop", "Smartphone"} for dtype in normalized_types):
         tags.add("wireless_client")
     if any(dtype == "Tablet" for dtype in normalized_types):
@@ -417,12 +426,22 @@ def infer_service_support(item: dict[str, Any]) -> list[str]:
 
 def infer_runtime_features(item: dict[str, Any]) -> list[str]:
     features: set[str] = set()
+    tags = set(item.get("capability_tags", []))
+    families = set(item.get("device_families", []) or infer_device_families(item))
     if item.get("wireless_mode_tags"):
         features.add("wireless_runtime")
     if item.get("service_support"):
         features.add("service_runtime")
     if infer_iot_roles(item):
         features.add("iot_runtime")
+    if families & {"wan/cloud/dsl/cable devices"} or tags & {"wan", "ppp"}:
+        features.add("wan_runtime")
+    if families & {"security devices"} or tags & {"security_edge", "acl", "nat"}:
+        features.add("security_runtime")
+    if tags & {"vpn", "ipsec", "gre"}:
+        features.add("tunnel_runtime")
+    if families & {"multilayer switches"} or tags & {"multilayer_switching"}:
+        features.add("multilayer_runtime")
     if item.get("workspace_validation"):
         features.add("workspace_validated")
     if any(str(link.get("from", "")) and str(link.get("to", "")) for link in item.get("links", [])):
@@ -451,6 +470,12 @@ def infer_archetype_tags(item: dict[str, Any]) -> list[str]:
         tags.add("IoT/home gateway")
     if families & {"wan/cloud/dsl/cable devices", "security devices"} or set(item.get("capability_tags", [])) & {
         "vpn",
+        "ipsec",
+        "gre",
+        "ppp",
+        "wan",
+        "security_edge",
+        "multilayer_switching",
         "nat",
         "acl",
     }:
@@ -488,6 +513,7 @@ def infer_apply_safety_level(item: dict[str, Any]) -> str:
 def infer_validated_edit_capabilities(item: dict[str, Any]) -> list[str]:
     capabilities: set[str] = {str(tag) for tag in item.get("capability_tags", []) if str(tag).strip()}
     inferred_iot_roles = set(infer_iot_roles(item))
+    families = set(item.get("device_families", []) or infer_device_families(item))
     service_capability_map = {
         "dhcp": "server_dhcp",
         "dns": "server_dns",
@@ -513,6 +539,16 @@ def infer_validated_edit_capabilities(item: dict[str, Any]) -> list[str]:
         capabilities.add("iot_registration")
         if {"server", "gateway"} & inferred_iot_roles:
             capabilities.add("iot_control")
+    if capabilities & {"vpn", "ipsec", "gre"}:
+        capabilities.update({"vpn", "ipsec", "gre"})
+    if capabilities & {"ppp", "wan"} or families & {"wan/cloud/dsl/cable devices"}:
+        capabilities.add("wan")
+        if "ppp" in capabilities:
+            capabilities.add("ppp")
+    if capabilities & {"acl", "nat", "security_edge"} or families & {"security devices"}:
+        capabilities.add("security_edge")
+    if "multilayer switches" in families or "multilayer_switching" in capabilities:
+        capabilities.add("multilayer_switching")
     if item.get("apply_safety_level") == "inventory-supported":
         return []
     return sorted(capabilities)

@@ -750,6 +750,55 @@ def test_build_coverage_gap_report_supports_donor_backed_wireless_client_associa
     assert parity_by_capability["wireless_client_association"]["generate_mismatch_reason"] is None
 
 
+def test_build_coverage_gap_report_supports_donor_backed_wan_security_when_selected_donor_has_runtime_evidence() -> None:
+    plan = parse_intent("wan security edge qur gre tunnel ve ipsec vpn ppp olsun 1 multilayer switch 1 asa 1 cloud")
+    plan.capabilities = sorted(
+        set(plan.capabilities)
+        | {"vpn", "ipsec", "gre", "ppp", "security_edge", "multilayer_switching"}
+    )
+    sample = SampleDescriptor(
+        path="wan_edge_ready.pkt",
+        relative_path="wan_edge_ready.pkt",
+        version="9.0.0.0810",
+        device_count=5,
+        link_count=4,
+        devices=[
+            {"name": "R1", "type": "Router", "model": "ISR4331"},
+            {"name": "R2", "type": "Router", "model": "ISR4331"},
+            {"name": "ASA1", "type": "ASA", "model": "ASA5505"},
+            {"name": "Cloud0", "type": "Cloud", "model": "Cloud-PT"},
+            {"name": "MLS1", "type": "MultiLayerSwitch", "model": "3560-24PS"},
+        ],
+        links=[
+            {"from": "R1", "to": "Cloud0", "media": "Serial"},
+            {"from": "Cloud0", "to": "R2", "media": "Serial"},
+            {"from": "R1", "to": "ASA1", "media": "eStraightThrough"},
+        ],
+        capability_tags=["vpn", "ipsec", "gre", "ppp", "wan", "security_edge", "acl", "nat", "multilayer_switching"],
+        topology_tags=["wan_security_edge"],
+        preferred_roles=["preferred_security", "preferred_wan"],
+        trust_level="curated",
+        origin="external-curated",
+        role="secondary",
+        prototype_eligible=True,
+        donor_eligible=True,
+        device_families=["routers", "security devices", "wan/cloud/dsl/cable devices", "multilayer switches"],
+        archetype_tags=["WAN/security edge"],
+        runtime_features=["workspace_validated", "tunnel_runtime", "wan_runtime", "security_runtime", "multilayer_runtime"],
+        apply_safety_level="safe-open-generate-supported",
+    )
+
+    report = build_coverage_gap_report(plan, [sample], selected_donor="wan_edge_ready.pkt")
+    status_by_capability = {status["capability"]: status for status in report.capability_statuses}
+    parity_by_capability = {entry["capability"]: entry for entry in report.capability_parity}
+
+    assert report.scenario_family == "wan_security_edge"
+    assert report.scenario_generate_readiness["status"] == "ready"
+    for capability in ["vpn", "ipsec", "gre", "ppp", "security_edge", "multilayer_switching"]:
+        assert status_by_capability[capability]["acceptance_verified"] is True
+        assert parity_by_capability[capability]["generate_mismatch_reason"] is None
+
+
 def test_build_coverage_gap_report_supports_phase_a_switching_capabilities() -> None:
     plan = parse_intent("router-on-a-stick trunk access management telnet")
     plan.capabilities = ["router_on_a_stick", "trunk", "access_port", "management_vlan", "telnet"]
