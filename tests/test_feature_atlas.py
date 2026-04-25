@@ -55,6 +55,10 @@ def test_feature_gap_report_compares_parser_catalog_coverage_and_samples() -> No
     assert status_by_capability["qos"]["evidence"]["sample_path_count"] >= 1
     assert status_by_capability["qos"]["evidence"]["decode_verified_sample_count"] == 0
     assert status_by_capability["dot1x"]["status"] == "report_supported"
+    assert status_by_capability["wep"]["status"] == "edit_proven"
+    assert status_by_capability["wpa_enterprise"]["status"] == "edit_proven"
+    assert status_by_capability["wlc"]["status"] == "report_supported"
+    assert status_by_capability["bluetooth"]["status"] == "report_supported"
 
 
 def test_feature_gap_report_keeps_atlas_features_below_generate_ready() -> None:

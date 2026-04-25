@@ -27,13 +27,13 @@ Pinned screenshot:
 
 Pinned caption:
 
-- `donor-backed complex campus proof artifact for the 0.2.1 public preview`
+- `donor-backed complex campus proof artifact for the 0.2.2 public preview`
 
 ## Release Source
 
-- release title: `v0.2.1`
-- release body source: `docs/release-notes-0.2.1.md`
-- launch wording source: `docs/launch-announcement-0.2.1.md`
+- release title: `v0.2.2`
+- release body source: `docs/release-notes-0.2.2.md`
+- launch wording source: `docs/launch-announcement-0.2.2.md`
 
 ## Discussions Categories
 

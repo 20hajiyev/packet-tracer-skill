@@ -8,12 +8,12 @@ Cisco Packet Tracer 9.x `.pkt` generator and editor for skill-based coding hosts
 
 This repository is built for one job: take a natural-language network request, build an explicit scenario-aware plan, adapt a compatible donor lab, and produce a Packet Tracer 9.x workflow that stays open-first and compatibility-first.
 
-`0.2.1` public preview baseline is focused on:
+`0.2.2` public preview baseline is focused on:
 
 - donor-backed and scenario-aware public messaging
 - conservative Windows-first runtime truth
 - known working scenario set examples with acceptance-backed artifacts
-- npm-published surface and GitHub-launch-ops-ready metadata
+- README runtime cleanup, advanced wireless feature atlas coverage, and GitHub-launch-ops-ready metadata
 
 ## Why It Is Different
 
@@ -119,14 +119,15 @@ powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1 -Dev
 
 Launch references:
 
-- [docs/release-notes-0.2.1.md](docs/release-notes-0.2.1.md)
+- [docs/release-notes-0.2.2.md](docs/release-notes-0.2.2.md)
 - [docs/hero-demo-plan.md](docs/hero-demo-plan.md)
 - [docs/github-metadata.md](docs/github-metadata.md)
 - [docs/release-checklist.md](docs/release-checklist.md)
-- [docs/github-launch-ops-0.2.1.md](docs/github-launch-ops-0.2.1.md)
+- [docs/github-launch-ops-0.2.2.md](docs/github-launch-ops-0.2.2.md)
 - [docs/campus-donor-proof.md](docs/campus-donor-proof.md)
 - [docs/home-iot-donor-proof.md](docs/home-iot-donor-proof.md)
 - [docs/wan-security-donor-proof.md](docs/wan-security-donor-proof.md)
+- [docs/wireless-advanced-proof.md](docs/wireless-advanced-proof.md)
 - [docs/packet-tracer-feature-gap-atlas.md](docs/packet-tracer-feature-gap-atlas.md)
 
 ## Runtime Doctor Contract
@@ -186,7 +187,6 @@ Set the local Packet Tracer environment before real `.pkt` generation:
 ```powershell
 $env:PACKET_TRACER_ROOT='C:\Program Files\Cisco Packet Tracer 9.0.0'
 $env:PACKET_TRACER_COMPAT_DONOR='C:\path\to\your-working-9.0-donor.pkt'
-$env:PKT_TWOFISH_LIBRARY="$env:USERPROFILE\.codex\skills\pkt\scripts\vendor\_twofish.cp314-win_amd64.pyd"
 ```
 
 Important variables:
@@ -199,11 +199,45 @@ Important variables:
 - `PKT_TWOFISH_LIBRARY`
 - `PKT_TWOFISH_SEARCH_ROOTS`
 
+Twofish bridge setup is intentionally local-machine specific. Do not copy another
+user's `.codex` path as if it were universal.
+
+Generic explicit bridge path:
+
+```powershell
+$env:PKT_TWOFISH_LIBRARY="C:\path\to\_twofish.cp314-win_amd64.pyd"
+```
+
+Repo-local bridge path, if you have placed a compatible bridge inside this
+checkout:
+
+```powershell
+$env:PKT_TWOFISH_LIBRARY="$PWD\scripts\vendor\_twofish.cp314-win_amd64.pyd"
+```
+
+Search-root fallback, if you want the runtime to look inside a local bridge
+folder:
+
+```powershell
+$env:PKT_TWOFISH_SEARCH_ROOTS="C:\path\to\bridge-folder"
+```
+
+Developer-local paths such as `$env:USERPROFILE\.codex\skills\...` are valid only
+for the person and host where that bridge exists. They are not the public setup
+contract.
+
 Required policy:
 
 - keep `PACKET_TRACER_TARGET_VERSION` on `9.0.0.0810`
 - do not downgrade the workflow to `5.3`
 - if donor or bridge is missing, fix the runtime instead of weakening the compatibility profile
+
+Troubleshooting guide:
+
+- `bridge_resolution=repo_local` means the checkout contains the bridge path the doctor resolved.
+- `bridge_resolution=external_env` means an environment variable points to a bridge outside the repo. This can be valid for testing, but it is not repo self-contained readiness.
+- `bridge_resolution=missing` means strict decode/edit/generate is blocked until `PKT_TWOFISH_LIBRARY` or `PKT_TWOFISH_SEARCH_ROOTS` resolves a compatible bridge.
+- `validate_open` readiness only proves Packet Tracer can launch a file. Strict `.pkt` generation still depends on donor and bridge readiness.
 
 ## Core Product Surfaces
 
@@ -231,7 +265,19 @@ Use `--feature-gap-report` for the Packet Tracer 9.0 feature atlas:
 python .\scripts\generate_pkt.py --feature-gap-report
 ```
 
-The atlas now distinguishes report-only features from edit-proven features. IPv6/routing and a constrained L2 security/monitoring subset can be edited with explicit commands, but neither is claimed as broad generate-ready without donor-backed acceptance evidence.
+The atlas now distinguishes report-only features from edit-proven features. IPv6/routing, a constrained L2 security/monitoring subset, and a narrow advanced-wireless edit subset can be edited with explicit commands, but none of these are claimed as broad generate-ready without donor-backed acceptance evidence.
+
+Current feature-support truth:
+
+| Area | Current status | Safe action |
+| --- | --- | --- |
+| Campus / service-heavy / Home IoT / WAN-security scenario families | Donor-aware planning and parity/report surfaces | Use `--explain-plan`, `--compare-scenarios`, and donor proof docs before strict generate claims |
+| IPv6/routing | Edit-proven subset | Use explicit router/interface commands; strict generate still needs selected-donor acceptance |
+| L2 security/monitoring | Edit-proven subset | Use explicit DHCP snooping, DAI, LLDP, REP, SNMP, NetFlow, SPAN/RSPAN, and port-security commands |
+| Advanced wireless | WEP and WPA Enterprise/RADIUS are explicit-edit capable; WLC, Meraki, cellular, Bluetooth, beamforming, and guest Wi-Fi remain report-only | Keep controller/cellular/Bluetooth claims in atlas/report mode until donor-backed proof exists |
+| Voice, automation/controller, industrial IoT, physical/media gaps | Report-supported atlas entries | Do not claim edit/generate support until a proof wave promotes them |
+
+The important number is still `generate_ready=0` for the atlas gap families. That is deliberate: visibility comes first, then edit proof, then donor-backed readiness, and only then generate readiness.
 
 Stable CLI surfaces:
 
@@ -299,7 +345,7 @@ Primary screenshot:
 
 ![Packet Tracer topology](examples/screenshots/complex_campus_master_edit_v4.png)
 
-Hero visual for the `0.2.1` public preview surface:
+Hero visual for the `0.2.2` public preview surface:
 
 - `examples/screenshots/complex_campus_master_edit_v4.png`
 
@@ -316,6 +362,8 @@ The campus donor proof is intentionally more specific than the gallery cards. It
 The Home IoT donor proof is intentionally narrower than a generic smart-home claim. It shows that donor-backed registration, rule control, and wireless association are integrated only inside a constrained path with explicit targets and a selected donor.
 
 The WAN/security donor proof is also conservative. It shows family-correct report/selection behavior and donor-backed readiness semantics for VPN, IPSec, GRE, PPP, security-edge, and multilayer evidence, but it does not claim broad synthetic WAN/security configuration generation.
+
+The advanced wireless proof is narrower again. It promotes only explicit WEP and WPA Enterprise/RADIUS edit semantics while keeping WLC, Meraki, cellular, Bluetooth, beamforming, and guest Wi-Fi in report-only atlas mode.
 
 What the proof now tries to surface explicitly:
 
@@ -355,9 +403,9 @@ See also:
 
 ## Release and Launch State
 
-The npm package is already published as `packet-tracer-skill@0.2.1`. Remaining launch ops are GitHub release application, About/Topics updates, Discussions setup, and public donor proof follow-up.
+The npm package release target for this batch is `packet-tracer-skill@0.2.2`. Remaining launch ops are GitHub release application, About/Topics updates, Discussions setup, and public proof follow-up.
 
-So the current state is no longer “preparing to publish.” The package is out. The remaining work is about making the public surface honest and complete:
+So the current state is no longer “preparing to publish.” The package line is public. The remaining work is about making the public surface honest and complete:
 
 - GitHub release object should match the published npm state
 - About/Topics should match the README and launch wording
@@ -382,7 +430,7 @@ Launch ops references:
 - [docs/publish-preview-roadmap.md](docs/publish-preview-roadmap.md)
 - [docs/discovery-keywords.md](docs/discovery-keywords.md)
 - [docs/github-metadata.md](docs/github-metadata.md)
-- [docs/github-launch-ops-0.2.1.md](docs/github-launch-ops-0.2.1.md)
+- [docs/github-launch-ops-0.2.2.md](docs/github-launch-ops-0.2.2.md)
 - [docs/post-launch-follow-up.md](docs/post-launch-follow-up.md)
 
 ## Azerbaijani Summary
@@ -399,7 +447,7 @@ Bu repo təbii dil ilə Packet Tracer `.pkt` generate və edit etmək üçündü
 
 Hazırkı prioritet:
 
-- `0.2.1` public preview hardening
+- `0.2.2` public preview hardening
 - release-ready və publish-ready surface
 - README / npm / GitHub discoverability hizalanması
 - scenario truth source, donor registry və runtime doctor contract consistency

@@ -23,15 +23,16 @@ def test_release_docs_and_trust_files_exist() -> None:
         ROOT / "docs" / "campus-donor-proof.md",
         ROOT / "docs" / "home-iot-donor-proof.md",
         ROOT / "docs" / "wan-security-donor-proof.md",
+        ROOT / "docs" / "wireless-advanced-proof.md",
         ROOT / "docs" / "packet-tracer-feature-gap-atlas.md",
         ROOT / "docs" / "discovery-keywords.md",
-        ROOT / "docs" / "github-launch-ops-0.2.1.md",
+        ROOT / "docs" / "github-launch-ops-0.2.2.md",
         ROOT / "docs" / "publish-preview-roadmap.md",
         ROOT / "docs" / "github-metadata.md",
         ROOT / "docs" / "hero-demo-plan.md",
-        ROOT / "docs" / "launch-announcement-0.2.1.md",
+        ROOT / "docs" / "launch-announcement-0.2.2.md",
         ROOT / "docs" / "post-launch-follow-up.md",
-        ROOT / "docs" / "release-notes-0.2.1.md",
+        ROOT / "docs" / "release-notes-0.2.2.md",
         ROOT / ".github" / "workflows" / "ci.yml",
         ROOT / ".github" / "ISSUE_TEMPLATE" / "bug_report.yml",
         ROOT / ".github" / "ISSUE_TEMPLATE" / "feature_request.yml",
@@ -52,16 +53,17 @@ def test_readme_highlights_release_and_runtime_contracts() -> None:
 
     assert "Known Working Scenario Set" in readme
     assert "Runtime Doctor Contract" in readme
-    assert "`0.2.1` public preview baseline" in readme
+    assert "`0.2.2` public preview baseline" in readme
     assert "bridge_resolution" in readme
     assert "references/curated-donor-registry.json" in readme
     assert "references/scenario-fixture-corpus.json" in readme
-    assert "docs/release-notes-0.2.1.md" in readme
+    assert "docs/release-notes-0.2.2.md" in readme
     assert "docs/hero-demo-plan.md" in readme
-    assert "docs/github-launch-ops-0.2.1.md" in readme
+    assert "docs/github-launch-ops-0.2.2.md" in readme
     assert "docs/campus-donor-proof.md" in readme
     assert "docs/home-iot-donor-proof.md" in readme
     assert "docs/wan-security-donor-proof.md" in readme
+    assert "docs/wireless-advanced-proof.md" in readme
     assert "docs/packet-tracer-feature-gap-atlas.md" in readme
     assert "references/packettracer-feature-atlas.json" in readme
     assert "--feature-gap-report" in readme
@@ -74,6 +76,10 @@ def test_readme_highlights_release_and_runtime_contracts() -> None:
     assert "what_currently_works" in readme
     assert "best_next_fix" in readme
     assert "shorthand campus prompts should still resolve to the `campus` family" in readme
+    assert r'PKT_TWOFISH_LIBRARY="C:\path\to\_twofish.cp314-win_amd64.pyd"' in readme
+    assert r'PKT_TWOFISH_SEARCH_ROOTS="C:\path\to\bridge-folder"' in readme
+    assert r"$env:USERPROFILE\.codex\skills\pkt\scripts\vendor\_twofish" not in readme
+    assert "Advanced wireless" in readme
 
 
 def test_package_metadata_is_publish_ready() -> None:
@@ -82,7 +88,7 @@ def test_package_metadata_is_publish_ready() -> None:
     files = set(payload["files"])
     scripts = payload["scripts"]
 
-    assert payload["version"] == "0.2.1"
+    assert payload["version"] == "0.2.2"
     assert {"packet-tracer", "network-lab", "natural-language", "codex", "cursor", "claude"} <= keywords
     assert {
         "CONTRIBUTING.md",
@@ -96,10 +102,11 @@ def test_package_metadata_is_publish_ready() -> None:
         "docs/campus-donor-proof.md",
         "docs/home-iot-donor-proof.md",
         "docs/wan-security-donor-proof.md",
+        "docs/wireless-advanced-proof.md",
         "docs/packet-tracer-feature-gap-atlas.md",
-        "docs/github-launch-ops-0.2.1.md",
+        "docs/github-launch-ops-0.2.2.md",
         "docs/post-launch-follow-up.md",
-        "docs/release-notes-0.2.1.md",
+        "docs/release-notes-0.2.2.md",
         "docs/runtime-truth.md",
     } <= files
     assert scripts["test"] == "python -m pytest tests -q"
@@ -121,20 +128,21 @@ def test_ci_workflow_runs_examples_build_and_tests() -> None:
 
 
 def test_launch_prep_docs_are_decision_complete() -> None:
-    release_notes = (ROOT / "docs" / "release-notes-0.2.1.md").read_text(encoding="utf-8")
+    release_notes = (ROOT / "docs" / "release-notes-0.2.2.md").read_text(encoding="utf-8")
     hero_demo = (ROOT / "docs" / "hero-demo-plan.md").read_text(encoding="utf-8")
-    launch_announcement = (ROOT / "docs" / "launch-announcement-0.2.1.md").read_text(encoding="utf-8")
+    launch_announcement = (ROOT / "docs" / "launch-announcement-0.2.2.md").read_text(encoding="utf-8")
     metadata = (ROOT / "docs" / "github-metadata.md").read_text(encoding="utf-8")
-    launch_ops = (ROOT / "docs" / "github-launch-ops-0.2.1.md").read_text(encoding="utf-8")
+    launch_ops = (ROOT / "docs" / "github-launch-ops-0.2.2.md").read_text(encoding="utf-8")
     donor_proof = (ROOT / "docs" / "campus-donor-proof.md").read_text(encoding="utf-8")
     home_iot_proof = (ROOT / "docs" / "home-iot-donor-proof.md").read_text(encoding="utf-8")
     wan_security_proof = (ROOT / "docs" / "wan-security-donor-proof.md").read_text(encoding="utf-8")
+    wireless_advanced_proof = (ROOT / "docs" / "wireless-advanced-proof.md").read_text(encoding="utf-8")
     feature_gap_atlas = (ROOT / "docs" / "packet-tracer-feature-gap-atlas.md").read_text(encoding="utf-8")
     follow_up = (ROOT / "docs" / "post-launch-follow-up.md").read_text(encoding="utf-8")
     gallery = (ROOT / "examples" / "gallery.md").read_text(encoding="utf-8")
     examples_readme = (ROOT / "examples" / "README.md").read_text(encoding="utf-8")
 
-    assert "0.2.1" in release_notes
+    assert "0.2.2" in release_notes
     assert "Windows-first runtime" in release_notes
     assert "external bridge override" in release_notes
     assert "complex_campus_master_edit_v4.png" in hero_demo
@@ -145,8 +153,8 @@ def test_launch_prep_docs_are_decision_complete() -> None:
     assert "Final About Text" in metadata
     assert "Final Topics" in metadata
     assert "complex_campus_master_edit_v4.png" in metadata
-    assert "v0.2.1" in launch_ops
-    assert "docs/release-notes-0.2.1.md" in launch_ops
+    assert "v0.2.2" in launch_ops
+    assert "docs/release-notes-0.2.2.md" in launch_ops
     assert "selection_failure_type=viable_donor_found_but_acceptance_weak" in donor_proof
     assert "best_rejected_donor_class=campus/core" in donor_proof
     assert "primary_rejection_code=layout_reuse_too_weak" in donor_proof
@@ -162,7 +170,13 @@ def test_launch_prep_docs_are_decision_complete() -> None:
     assert "What This Proves" in wan_security_proof
     assert "What This Does Not Prove" in wan_security_proof
     assert "broad synthetic WAN/security" in wan_security_proof
+    assert "Advanced Wireless Proof" in wireless_advanced_proof
+    assert "WEP and WPA Enterprise/RADIUS" in wireless_advanced_proof
+    assert "What This Proves" in wireless_advanced_proof
+    assert "What This Does Not Prove" in wireless_advanced_proof
+    assert "does not make any advanced wireless feature `generate_ready`" in wireless_advanced_proof
     assert "Feature atlas support is not the same as generation support" in feature_gap_atlas
+    assert "Third Edit-Proven Wave" in feature_gap_atlas
     assert "--feature-gap-report" in feature_gap_atlas
     assert "Trigger Conditions for `0.2.2` or the Next Minor" in follow_up
     assert "closest rejected donor class" in follow_up

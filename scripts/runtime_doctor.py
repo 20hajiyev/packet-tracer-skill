@@ -43,19 +43,20 @@ def runtime_env_examples(host_os: str) -> list[str]:
         return [
             r"$env:PACKET_TRACER_ROOT='C:\Program Files\Cisco Packet Tracer 9.0.0'",
             r"$env:PACKET_TRACER_COMPAT_DONOR='C:\path\to\your-working-9.0-donor.pkt'",
-            r'$env:PKT_TWOFISH_LIBRARY="$env:USERPROFILE\.codex\skills\pkt\scripts\vendor\_twofish.cp314-win_amd64.pyd"',
+            r'$env:PKT_TWOFISH_LIBRARY="C:\path\to\_twofish.cp314-win_amd64.pyd"',
+            r'$env:PKT_TWOFISH_SEARCH_ROOTS="C:\path\to\bridge-folder"',
         ]
     if host_os == "macOS":
         return [
             "export PACKET_TRACER_ROOT='/Applications/Cisco Packet Tracer.app/Contents/Resources'",
             "export PACKET_TRACER_COMPAT_DONOR=\"$HOME/path/to/your-working-9.0-donor.pkt\"",
-            "export PKT_TWOFISH_SEARCH_ROOTS=\"$HOME/.codex/skills/pkt/scripts/vendor:$HOME/pkt-bridges\"",
+            "export PKT_TWOFISH_SEARCH_ROOTS=\"$HOME/path/to/bridge-folder:$HOME/pkt-bridges\"",
         ]
     if host_os == "Linux":
         return [
             "export PACKET_TRACER_ROOT='/opt/pt/bin'",
             "export PACKET_TRACER_COMPAT_DONOR=\"$HOME/path/to/your-working-9.0-donor.pkt\"",
-            "export PKT_TWOFISH_SEARCH_ROOTS=\"$HOME/.codex/skills/pkt/scripts/vendor:$HOME/pkt-bridges\"",
+            "export PKT_TWOFISH_SEARCH_ROOTS=\"$HOME/path/to/bridge-folder:$HOME/pkt-bridges\"",
         ]
     return []
 

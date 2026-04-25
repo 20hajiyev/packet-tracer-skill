@@ -28,6 +28,8 @@ EDITOR_TEST_ALIASES = {
     "netflow": ["set_netflow", "netflow destination"],
     "span": ["set_span", "monitor session"],
     "port_security": ["set_port_security", "port-security"],
+    "wep": ["security wep", "WEP_KEY"],
+    "wpa_enterprise": ["wpa-enterprise", "wpa2-enterprise", "802.1x", "radius_server"],
 }
 
 STATUS_ORDER = [

@@ -842,6 +842,84 @@ def test_build_coverage_gap_report_keeps_l2_security_monitoring_generate_gated()
         assert parity_by_capability[capability]["generate_mismatch_reason"] == "report_only"
 
 
+def test_build_coverage_gap_report_keeps_advanced_wireless_broad_prompt_report_only() -> None:
+    plan = parse_intent("wlc radius wpa enterprise guest wifi bluetooth cellular")
+    sample = SampleDescriptor(
+        path="wireless_advanced.pkt",
+        relative_path="wireless_advanced.pkt",
+        version="9.0.0.0810",
+        device_count=3,
+        link_count=2,
+        devices=[
+            {"name": "WLC1", "type": "LightWeightAccessPoint", "model": "WLC-2504"},
+            {"name": "AP1", "type": "LightWeightAccessPoint", "model": "LAP-PT"},
+            {"name": "Server1", "type": "Server", "model": "Server-PT"},
+        ],
+        links=[],
+        capability_tags=["wlc", "wpa_enterprise", "guest_wifi", "bluetooth", "cellular_5g"],
+        topology_tags=["wireless_edge"],
+        preferred_roles=["preferred_wireless"],
+        trust_level="trusted",
+        origin="cisco-local",
+        role="primary",
+        prototype_eligible=True,
+        donor_eligible=True,
+        device_families=["access points", "servers", "end devices"],
+        archetype_tags=["advanced wireless"],
+        runtime_features=["workspace_validated", "wireless_runtime"],
+    )
+
+    report = build_coverage_gap_report(plan, [sample])
+    parity_by_capability = {entry["capability"]: entry for entry in report.capability_parity}
+
+    assert report.scenario_family == "wireless_advanced"
+    assert report.scenario_generate_readiness["status"] == "acceptance_gated"
+    for capability in ["wlc", "wpa_enterprise", "guest_wifi", "bluetooth", "cellular_5g"]:
+        assert parity_by_capability[capability]["edit_supported"] is False
+        assert parity_by_capability[capability]["generate_supported"] is False
+        assert parity_by_capability[capability]["generate_mismatch_reason"] == "report_only"
+
+
+def test_build_coverage_gap_report_promotes_explicit_wireless_wep_and_enterprise_to_edit_only() -> None:
+    plan = parse_intent(
+        "set AP1 ssid LEGACY security wep passphrase abc12345 channel 6 "
+        "set WLC1 ssid CORP security wpa-enterprise radius 192.168.1.10 secret radius123"
+    )
+    sample = SampleDescriptor(
+        path="wireless_edit.pkt",
+        relative_path="wireless_edit.pkt",
+        version="9.0.0.0810",
+        device_count=2,
+        link_count=1,
+        devices=[
+            {"name": "AP1", "type": "LightWeightAccessPoint", "model": "LAP-PT"},
+            {"name": "WLC1", "type": "LightWeightAccessPoint", "model": "WLC-2504"},
+        ],
+        links=[],
+        capability_tags=["wireless_ap", "wep", "wpa_enterprise"],
+        topology_tags=["wireless_edge"],
+        preferred_roles=["preferred_wireless"],
+        trust_level="trusted",
+        origin="cisco-local",
+        role="primary",
+        prototype_eligible=True,
+        donor_eligible=True,
+        device_families=["access points"],
+        archetype_tags=["advanced wireless"],
+        runtime_features=["workspace_validated", "wireless_runtime"],
+    )
+
+    report = build_coverage_gap_report(plan, [sample])
+    parity_by_capability = {entry["capability"]: entry for entry in report.capability_parity}
+
+    assert report.scenario_family == "wireless_advanced"
+    for capability in ["wep", "wpa_enterprise"]:
+        assert parity_by_capability[capability]["edit_supported"] is True
+        assert parity_by_capability[capability]["generate_supported"] is False
+        assert parity_by_capability[capability]["acceptance_verified"] is False
+        assert parity_by_capability[capability]["generate_mismatch_reason"] == "supported_in_edit_only"
+
+
 def test_build_coverage_gap_report_promotes_explicit_ipv6_selected_donor() -> None:
     plan = parse_intent(
         "set Router0 ipv6 unicast-routing "

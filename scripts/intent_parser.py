@@ -28,7 +28,7 @@ CAPABILITY_PATTERNS = {
     "management_vlan": [r"\bmanagement vlan\b", r"\bvlan 99\b", r"\bdefault-gateway\b"],
     "telnet": [r"\btelnet\b", r"\bvty\b", r"\btransport input telnet\b"],
     "wireless_ap": [r"\bssid\b", r"\bwifi\b", r"\bwpa\b", r"\bwpa2\b", r"\bwireless\b", r"\baccess point\b", r"\bap\b"],
-    "wireless_mutation": [r"\bset\s+[A-Za-z0-9_ -]+?\s+ssid\b", r"\bsecurity\s+(?:wpa|wpa2|wep|open|802\.1x)\b", r"\bpassphrase\b", r"\bchannel\s+\d+\b"],
+    "wireless_mutation": [r"\bset\s+[A-Za-z0-9_ -]+?\s+ssid\b", r"\bsecurity\s+(?:wpa|wpa2|wpa-enterprise|wpa2-enterprise|wep|open|802\.1x)\b", r"\bpassphrase\b", r"\bchannel\s+\d+\b"],
     "wireless_client": [r"\btablet\b", r"\blaptop\b", r"\bsmartphone\b", r"\bassociate\b", r"\bjoin\b"],
     "wireless_client_association": [r"\bassociate\b", r"\bjoin\b"],
     "tablet": [r"\btablet\b"],
@@ -74,7 +74,7 @@ CAPABILITY_PATTERNS = {
     "sniffer": [r"\bsniffer\b"],
     "multilayer_switching": [r"\bmultilayer switch\b", r"\blayer 3 switch\b", r"\b3560\b", r"\bsvi\b"],
     "wlc": [r"\bwlc\b", r"\bwireless lan controller\b"],
-    "wpa_enterprise": [r"\bwpa enterprise\b", r"\bwpa2 enterprise\b", r"\bradius\b"],
+    "wpa_enterprise": [r"\bwpa enterprise\b", r"\bwpa2 enterprise\b", r"\bwpa-enterprise\b", r"\bwpa2-enterprise\b", r"\b802\.1x wireless\b"],
     "wep": [r"\bwep\b"],
     "guest_wifi": [r"\bguest wifi\b", r"\bguest wlan\b"],
     "beamforming": [r"\bbeamforming\b"],
@@ -161,7 +161,7 @@ NETWORK_STYLE_PATTERNS = {
     "branch": [r"\bbranch\b", r"\bfilial\b"],
     "ipv6_routing": [r"\bipv6\b", r"\bslaac\b", r"\bdhcpv6\b", r"\bospfv3\b", r"\bhsrp\b"],
     "l2_security_monitoring": [r"\bdhcp snooping\b", r"\bdai\b", r"\bdot1x\b", r"\b802\.1x\b", r"\bsnmp\b", r"\bnetflow\b", r"\bspan\b", r"\brspan\b", r"\bquality of service\b", r"\blldp\b", r"\brep\b", r"\bport security\b", r"\bport-security\b"],
-    "wireless_advanced": [r"\bwlc\b", r"\bwireless lan controller\b", r"\bmeraki\b", r"\bbluetooth\b", r"\b5g\b", r"\bcellular\b", r"\bwpa enterprise\b"],
+    "wireless_advanced": [r"\bwlc\b", r"\bwireless lan controller\b", r"\bmeraki\b", r"\bbluetooth\b", r"\b5g\b", r"\bcellular\b", r"\bwpa enterprise\b", r"\bwpa2 enterprise\b", r"\bwep\b", r"\bguest wifi\b", r"\bguest wlan\b", r"\bbeamforming\b"],
     "automation_controller": [r"\bnetwork controller\b", r"\bnetcon\b", r"\bblockly\b", r"\bjavascript\b", r"\bpython programming\b", r"\biox\b"],
     "voice_collaboration": [r"\bvoip\b", r"\bip phone\b", r"\bcall manager\b", r"\btelephony\b"],
     "industrial_iot": [r"\bmqtt\b", r"\bwebsocket\b", r"\bprofinet\b", r"\bl2nat\b", r"\bptp\b", r"\bcyberobserver\b", r"\bindustrial\b"],
@@ -205,6 +205,8 @@ SECURITY_TO_AUTH = {
     "wpa": ("2", "2"),
     "wpa2": ("4", "4"),
     "802.1x": ("5", "5"),
+    "wpa-enterprise": ("5", "5"),
+    "wpa2-enterprise": ("5", "5"),
 }
 
 TRANSLITERATION_TABLE = str.maketrans(
@@ -817,14 +819,31 @@ def _extract_management_ops(prompt: str) -> list[dict[str, object]]:
 def _extract_wireless_ops(prompt: str) -> list[dict[str, object]]:
     ops: list[dict[str, object]] = []
     ssid_pattern = re.compile(
-        r"set\s+([A-Za-z0-9_ -]+?)\s+ssid\s+([A-Za-z0-9._-]+)(?:\s+security\s+([A-Za-z0-9.-]+))?(?:\s+passphrase\s+([A-Za-z0-9._-]+))?(?:\s+channel\s+(\d+))?",
+        r"set\s+([A-Za-z0-9_ -]+?)\s+ssid\s+([A-Za-z0-9._-]+)"
+        r"(?:\s+security\s+(wpa2?\s+enterprise|wpa2?-enterprise|wpa2?-psk|802\.1x|wep|open|wpa2?|wpa))?"
+        r"(?:\s+passphrase\s+([A-Za-z0-9._-]+))?"
+        r"(?:\s+radius\s+(\d+\.\d+\.\d+\.\d+)\s+secret\s+([A-Za-z0-9._-]+))?"
+        r"(?:\s+channel\s+(\d+))?",
         flags=re.IGNORECASE,
     )
     for segment in _command_segments(prompt):
-        for device, ssid, security, passphrase, channel in ssid_pattern.findall(segment):
-            security_key = (security or "open").lower()
+        for device, ssid, security, passphrase, radius_server, radius_secret, channel in ssid_pattern.findall(segment):
+            security_key = (security or "open").lower().replace(" ", "-")
             auth_type, encrypt_type = SECURITY_TO_AUTH.get(security_key, ("0", "0"))
-            ops.append({"op": "set_wireless_ssid", "device": device.strip(), "ssid": ssid, "security": security_key, "auth_type": auth_type, "encrypt_type": encrypt_type, "passphrase": passphrase or "", "channel": int(channel) if channel else 1})
+            operation = {
+                "op": "set_wireless_ssid",
+                "device": device.strip(),
+                "ssid": ssid,
+                "security": security_key,
+                "auth_type": auth_type,
+                "encrypt_type": encrypt_type,
+                "passphrase": passphrase or "",
+                "channel": int(channel) if channel else 1,
+            }
+            if radius_server:
+                operation["radius_server"] = radius_server
+                operation["radius_secret"] = radius_secret or ""
+            ops.append(operation)
     assoc_pattern = re.compile(r"associate\s+([A-Za-z0-9_ -]+?)\s+to\s+([A-Za-z0-9_ -]+?)\s+ssid\s+([A-Za-z0-9._-]+)(?:\s+(dhcp|static))?", flags=re.IGNORECASE)
     for segment in _command_segments(prompt):
         for client, ap, ssid, ip_mode in assoc_pattern.findall(segment):
@@ -926,6 +945,13 @@ def parse_intent(prompt: str) -> IntentPlan:
     host_link_intent = _extract_host_link_intent(normalized_prompt)
     host_vlan_assignment = _extract_host_vlan_assignment(normalized_prompt)
     network_style = _extract_network_style(normalized_prompt)
+    if (
+        network_style == "wireless_advanced"
+        and "server_aaa" in capability_set
+        and re.search(r"\bradius\b", lowered)
+        and not re.search(r"\b(?:aaa|acs|server aaa|aaa server)\b", lowered)
+    ):
+        capability_set.discard("server_aaa")
     if re.search(r"\bqos\b", lowered) and (
         re.search(r"\b(?:snmp|netflow|span|rspan|lldp|rep|dai|dot1x|802\.1x|dhcp snooping|port-security|port security)\b", lowered)
         or network_style == "l2_security_monitoring"
@@ -989,6 +1015,17 @@ def parse_intent(prompt: str) -> IntentPlan:
         capability_set.update({"wireless_client", "wireless_client_association"})
     if any(op["op"] == "set_wireless_ssid" for op in wireless_ops):
         capability_set.update({"wireless_ap", "wireless_mutation"})
+        for op in wireless_ops:
+            if op.get("op") != "set_wireless_ssid":
+                continue
+            security = str(op.get("security") or "")
+            if security == "wep":
+                capability_set.add("wep")
+            if security in {"wpa-enterprise", "wpa2-enterprise", "802.1x"} or op.get("radius_server"):
+                capability_set.add("wpa_enterprise")
+    elif network_style == "wireless_advanced":
+        capability_set.discard("wireless_ap")
+        capability_set.discard("wireless_mutation")
     if end_device_ops:
         capability_set.add("end_device_mutation")
     if iot_ops:
@@ -1029,6 +1066,8 @@ def parse_intent(prompt: str) -> IntentPlan:
         network_style = network_style or "ipv6_routing"
     if capability_set & {"dhcp_snooping", "dai", "dot1x", "lldp", "rep", "snmp", "netflow", "span", "qos", "port_security"}:
         network_style = network_style or "l2_security_monitoring"
+    if capability_set & {"wlc", "wpa_enterprise", "wep", "guest_wifi", "beamforming", "meraki", "cellular_5g", "bluetooth"}:
+        network_style = "wireless_advanced"
     if capability_set & {"mqtt", "real_http", "real_websocket", "visual_scripting", "ptp", "profinet", "l2nat", "cyberobserver", "industrial_firewall"}:
         network_style = "industrial_iot"
 

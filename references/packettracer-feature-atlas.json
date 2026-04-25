@@ -62,8 +62,8 @@
       "wave": 4,
       "features": [
         {"id": "wlc", "capability": "wlc", "label": "Wireless LAN Controller", "sample_path_keywords": ["wlc"], "support_ceiling": "report_supported"},
-        {"id": "wpa_enterprise", "capability": "wpa_enterprise", "label": "WPA Enterprise / RADIUS", "sample_path_keywords": ["wpa_radius", "wpa2_enterprise"], "support_ceiling": "report_supported"},
-        {"id": "wep", "capability": "wep", "label": "WEP wireless mode", "sample_path_keywords": ["wep"], "support_ceiling": "report_supported"},
+        {"id": "wpa_enterprise", "capability": "wpa_enterprise", "label": "WPA Enterprise / RADIUS", "sample_path_keywords": ["wpa_radius", "wpa2_enterprise"], "support_ceiling": "edit_proven"},
+        {"id": "wep", "capability": "wep", "label": "WEP wireless mode", "sample_path_keywords": ["wep"], "support_ceiling": "edit_proven"},
         {"id": "guest_wifi", "capability": "guest_wifi", "label": "Guest Wi-Fi", "sample_path_keywords": ["guest"], "support_ceiling": "report_supported"},
         {"id": "beamforming", "capability": "beamforming", "label": "Beamforming", "sample_path_keywords": ["beamforming"], "support_ceiling": "report_supported"},
         {"id": "meraki", "capability": "meraki", "label": "Meraki security appliance/wireless", "sample_path_keywords": ["meraki"], "support_ceiling": "report_supported"},

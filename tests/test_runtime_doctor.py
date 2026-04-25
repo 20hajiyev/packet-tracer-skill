@@ -18,6 +18,7 @@ def test_runtime_env_examples_are_platform_specific() -> None:
     assert any("PKT_TWOFISH_LIBRARY" in line for line in windows)
     assert any("PKT_TWOFISH_SEARCH_ROOTS" in line for line in macos)
     assert any("PKT_TWOFISH_SEARCH_ROOTS" in line for line in linux)
+    assert not any(".codex" in line for line in windows + macos + linux)
 
 
 def test_collect_runtime_doctor_windows_ready(monkeypatch) -> None:

@@ -10,6 +10,9 @@ output/
 !templates/**/*.xml
 .pytest_cache/
 .vendor_pytest/
+.pytest_run/
+.pytest-basetemp/
+manual-mode-dir/
 scripts/vendor/_twofish*.pyd
 scripts/vendor/_twofish*.so
 scripts/vendor/_twofish*.dll

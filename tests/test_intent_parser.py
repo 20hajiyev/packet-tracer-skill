@@ -207,6 +207,7 @@ def test_parse_feature_atlas_prompts_without_service_heavy_drift() -> None:
         ("voip phones with call manager", "voice_collaboration", {"voip", "call_manager"}),
         ("mqtt iot with websocket", "industrial_iot", {"mqtt", "real_websocket"}),
         ("wlc bluetooth meraki 5g cellular wpa enterprise", "wireless_advanced", {"wlc", "bluetooth", "meraki", "cellular_5g", "wpa_enterprise"}),
+        ("wep guest wifi beamforming", "wireless_advanced", {"wep", "guest_wifi", "beamforming"}),
         ("network controller python programming blockly iox", "automation_controller", {"network_controller", "python_programming", "blockly_programming", "vm_iox"}),
     ]
     for prompt, family, capabilities in cases:
@@ -262,6 +263,21 @@ def test_parse_explicit_l2_security_monitoring_operations() -> None:
     assert any(op["op"] == "set_span" and op["source"] == "FastEthernet0/10" for op in plan.switch_ops)
     assert any(op["op"] == "set_snmp_community" and op["community"] == "public" for op in plan.router_ops)
     assert any(op["op"] == "set_netflow" and op["destination"] == "13.1.1.2" for op in plan.router_ops)
+
+
+def test_parse_explicit_advanced_wireless_edit_operations() -> None:
+    plan = parse_intent(
+        "set AP1 ssid LEGACY security wep passphrase abc12345 channel 6 "
+        "set WLC1 ssid CORP security wpa-enterprise radius 192.168.1.10 secret radius123 channel 11"
+    )
+
+    assert plan.network_style == "wireless_advanced"
+    assert {"wireless_ap", "wireless_mutation", "wep", "wpa_enterprise"} <= set(plan.capabilities)
+    wep_op = next(op for op in plan.wireless_ops if op["ssid"] == "LEGACY")
+    enterprise_op = next(op for op in plan.wireless_ops if op["ssid"] == "CORP")
+    assert wep_op["security"] == "wep"
+    assert enterprise_op["security"] == "wpa-enterprise"
+    assert enterprise_op["radius_server"] == "192.168.1.10"
 
 
 def test_parse_management_ops_with_spaced_device_name() -> None:

@@ -11,13 +11,13 @@
 
 ## Step B: Public `0.2.x` Publish-Preview
 
-- `package.json` is versioned at `0.2.1`
-- npm publish is complete for `packet-tracer-skill@0.2.1`
-- release notes source is ready: `docs/release-notes-0.2.1.md`
+- `package.json` is versioned at `0.2.2`
+- npm publish target is `packet-tracer-skill@0.2.2`
+- release notes source is ready: `docs/release-notes-0.2.2.md`
 - hero visual is locked to `examples/screenshots/complex_campus_master_edit_v4.png`
 - hero demo execution plan is ready: `docs/hero-demo-plan.md`
 - GitHub About/Topics text is finalized in `docs/github-metadata.md`
-- launch ops runbook is ready: `docs/github-launch-ops-0.2.1.md`
+- launch ops runbook is ready: `docs/github-launch-ops-0.2.2.md`
 - npm publish checklist is complete and conservative runtime wording is preserved
 - remaining public launch ops are:
   - GitHub release creation

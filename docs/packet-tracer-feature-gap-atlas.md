@@ -40,6 +40,22 @@ The second promotion wave is `l2_security_monitoring`. The following subset is e
 
 802.1X/NAC and QoS remain report-first in this wave. Decode-fail Packet Tracer samples can prove that a feature exists by path/catalog evidence, but they do not create edit or generate readiness by themselves.
 
+## Third Edit-Proven Wave
+
+The third promotion wave is `wireless_advanced`. This wave deliberately promotes
+only the safest explicit wireless edit subset:
+
+- WEP SSID/security mutation
+- WPA Enterprise/RADIUS SSID/security intent
+
+These capabilities can report `edit_supported=true` only when the prompt is an
+explicit wireless edit command with a deterministic AP/router/WLC target and
+SSID. They still report `generate_supported=false` and
+`generate_mismatch_reason=supported_in_edit_only`.
+
+WLC/controller workflows, Meraki, cellular/5G, Bluetooth, beamforming, and
+guest Wi-Fi remain report-only until separate donor-backed editor proof exists.
+
 ## Current Feature Families
 
 - `ipv6_routing`: SLAAC, DHCPv6, prefix delegation, AAAA DNS, IPv6 tunneling, ISATAP, OSPFv3, EIGRP IPv6, RIPng, HSRP.

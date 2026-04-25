@@ -2,7 +2,7 @@
 
 ## Immediate Follow-Up Items
 
-- complete GitHub launch ops from `docs/github-launch-ops-0.2.1.md`
+- complete GitHub launch ops from `docs/github-launch-ops-0.2.2.md`
 - publish one canonical donor proof artifact: `docs/campus-donor-proof.md`
 - publish one Home IoT donor proof artifact: `docs/home-iot-donor-proof.md`
 - publish one WAN/security donor proof artifact: `docs/wan-security-donor-proof.md`

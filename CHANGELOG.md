@@ -4,6 +4,26 @@ All notable changes to this project should be recorded in this file.
 
 The format is intentionally simple and release-oriented.
 
+## [0.2.2]
+
+### Added
+
+- advanced wireless proof surface for WEP and WPA Enterprise/RADIUS edit-proven behavior
+- wireless advanced feature atlas coverage for WLC, Meraki, cellular, Bluetooth, beamforming, guest Wi-Fi, WEP, and WPA Enterprise
+- runtime README guidance for generic Twofish bridge paths and search-root fallback
+
+### Changed
+
+- package version advanced to `0.2.2` for the README/runtime cleanup and advanced wireless feature wave
+- README runtime setup no longer presents a user-specific `.codex` path as the default bridge location
+- advanced wireless prompts now classify into the `wireless_advanced` family without drifting into `service_heavy`
+- WEP and WPA Enterprise/RADIUS are represented as edit-proven where explicit deterministic edit targets exist, while broader WLC/cellular/Bluetooth/Meraki scope remains report-only
+
+### Notes
+
+- `0.2.2` remains conservative: no broad synthetic advanced wireless generation is claimed
+- runtime messaging remains Windows-first and explicit about external bridge-assisted validation
+
 ## [0.2.1]
 
 ### Added

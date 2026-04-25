@@ -112,6 +112,34 @@ def test_edit_pkt_file_roundtrip_preserves_wlc_wireless_mutation(tmp_path: Path)
     assert inventory["wireless"]["Wireless LAN Controller1"]["ssid"] == "CAMPUS_WLAN"
 
 
+def test_edit_pkt_file_roundtrip_preserves_advanced_wireless_wep_and_enterprise_mutation(tmp_path: Path) -> None:
+    source = _require_saves_root() / r"01 Networking\Wireless\Wireless LAN\WLC\wlc_2504_simple_wlan_dhcp.pkt"
+    output = tmp_path / "wlc_advanced_wireless_edit_roundtrip.pkt"
+    xml_out = tmp_path / "wlc_advanced_wireless_edit_roundtrip.xml"
+    plan = parse_intent("set Wireless LAN Controller1 ssid CORP security wpa-enterprise radius 192.168.1.10 secret radius123 channel 11")
+    edit_pkt_file(source, plan, output, xml_out)
+
+    assert output.exists()
+    assert xml_out.exists()
+
+    updated = decode_pkt_to_root(output)
+    inventory = inventory_root(updated)
+    assert inventory["wireless"]["Wireless LAN Controller1"]["ssid"] == "CORP"
+
+    home_source = _require_saves_root() / r"01 Networking\DHCP\dhcp_reservation.pkt"
+    home_output = tmp_path / "wireless_wep_edit_roundtrip.pkt"
+    home_xml_out = tmp_path / "wireless_wep_edit_roundtrip.xml"
+    home_plan = parse_intent("set Wireless Router0 ssid LEGACY security wep passphrase abc12345 channel 6")
+    edit_pkt_file(home_source, home_plan, home_output, home_xml_out)
+
+    assert home_output.exists()
+    assert home_xml_out.exists()
+
+    home_updated = decode_pkt_to_root(home_output)
+    home_inventory = inventory_root(home_updated)
+    assert home_inventory["wireless"]["Wireless Router0"]["ssid"] == "LEGACY"
+
+
 def test_edit_pkt_file_roundtrip_preserves_iot_registration_server_mutation(tmp_path: Path) -> None:
     source = _require_saves_root() / r"04 IoT\Solution Examples\iot_registration_server.pkt"
     output = tmp_path / "iot_registration_roundtrip.pkt"

@@ -137,6 +137,10 @@ L2_SECURITY_MONITORING_EDIT_PROVEN_CAPABILITIES = {
     "span",
     "port_security",
 }
+WIRELESS_ADVANCED_EDIT_PROVEN_CAPABILITIES = {
+    "wep",
+    "wpa_enterprise",
+}
 EDIT_PROVEN_REPORT_CAPABILITIES = IPV6_DONOR_BACKED_CAPABILITIES | L2_SECURITY_MONITORING_EDIT_PROVEN_CAPABILITIES
 
 CAPABILITY_PROVIDER_FAMILIES = {
@@ -607,6 +611,8 @@ CAPABILITY_REQUIRED_RUNTIME_FEATURES = {
     "eigrp_ipv6": ["workspace_validated", "ipv6_runtime"],
     "ripng": ["workspace_validated", "ipv6_runtime"],
     "hsrp": ["workspace_validated", "ipv6_runtime"],
+    "wep": ["workspace_validated", "wireless_runtime"],
+    "wpa_enterprise": ["workspace_validated", "wireless_runtime"],
 }
 
 
@@ -671,6 +677,18 @@ def _has_explicit_wireless_association(plan: IntentPlan) -> bool:
         and str(op.get("ssid", "")).strip()
         for op in plan.wireless_ops
     )
+
+
+def _has_explicit_advanced_wireless_edit(plan: IntentPlan, capability: str) -> bool:
+    for op in plan.wireless_ops:
+        if op.get("op") != "set_wireless_ssid":
+            continue
+        security = str(op.get("security") or "").strip().lower()
+        if capability == "wep" and security == "wep" and str(op.get("device") or "").strip() and str(op.get("ssid") or "").strip():
+            return True
+        if capability == "wpa_enterprise" and security in {"wpa-enterprise", "wpa2-enterprise", "802.1x"} and str(op.get("device") or "").strip() and str(op.get("ssid") or "").strip():
+            return True
+    return False
 
 
 def _has_explicit_wan_security_intent(plan: IntentPlan) -> bool:
@@ -802,6 +820,12 @@ def _recommended_next_action_for_capability(capability: str, mismatch_reason: st
         if mismatch_reason == "supported_but_donor_limited":
             return f"Provide an L2 security/monitoring donor with reusable switch/router monitoring skeleton for {capability}."
         return f"Keep {capability} constrained to edit/inventory proof until an L2 security/monitoring donor is acceptance-backed."
+    if capability in WIRELESS_ADVANCED_EDIT_PROVEN_CAPABILITIES:
+        if mismatch_reason == "supported_in_edit_only":
+            return f"Use explicit wireless edit commands for {capability}; strict prompt generate still needs an acceptance-backed advanced wireless donor."
+        if mismatch_reason == "supported_but_donor_limited":
+            return f"Provide an advanced wireless donor with reusable AP/router/WLC skeleton for {capability}."
+        return f"Keep {capability} constrained to explicit wireless edit proof until an advanced wireless donor is acceptance-backed."
     if capability == "iot_registration":
         if mismatch_reason == "supported_but_acceptance_gated":
             return "Use an IoT/home gateway donor and explicitly name the thing plus gateway/server target before strict generate."
@@ -979,7 +1003,12 @@ def build_coverage_gap_report(
     for capability in requested_capabilities:
         provider_families = _provider_families_for_capability(capability, requested_families)
         selected_donor_backed = _selected_donor_capability_override(plan, capability, selected_sample)
-        edit_proven_only = capability in EDIT_PROVEN_REPORT_CAPABILITIES and not selected_donor_backed
+        wireless_edit_proven_only = (
+            capability in WIRELESS_ADVANCED_EDIT_PROVEN_CAPABILITIES
+            and _has_explicit_advanced_wireless_edit(plan, capability)
+            and not selected_donor_backed
+        )
+        edit_proven_only = (capability in EDIT_PROVEN_REPORT_CAPABILITIES or wireless_edit_proven_only) and not selected_donor_backed
         report_only = capability in REPORT_ONLY_CAPABILITIES and not selected_donor_backed and not edit_proven_only
         matching_entries = [
             entry
