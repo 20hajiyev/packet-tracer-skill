@@ -15,7 +15,7 @@ The format is intentionally simple and release-oriented.
 ### Changed
 
 - package version advanced to `0.2.2` for the README/runtime cleanup and advanced wireless feature wave
-- README runtime setup no longer presents a user-specific `.codex` path as the default bridge location
+- README runtime setup no longer presents a user-specific local path as the default bridge location
 - advanced wireless prompts now classify into the `wireless_advanced` family without drifting into `service_heavy`
 - WEP and WPA Enterprise/RADIUS are represented as edit-proven where explicit deterministic edit targets exist, while broader WLC/cellular/Bluetooth/Meraki scope remains report-only
 

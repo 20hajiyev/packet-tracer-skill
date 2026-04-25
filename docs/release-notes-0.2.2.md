@@ -6,7 +6,7 @@
 
 ## Highlights
 
-- README runtime instructions now use generic Twofish bridge examples instead of a user-specific `.codex` path as the default
+- README runtime instructions now use generic Twofish bridge examples instead of a user-specific local path as the default
 - `PKT_TWOFISH_LIBRARY` and `PKT_TWOFISH_SEARCH_ROOTS` setup paths are documented separately
 - advanced wireless prompts classify into the `wireless_advanced` family
 - WEP and WPA Enterprise/RADIUS are represented as edit-proven only for explicit deterministic edit targets

@@ -8,12 +8,44 @@ Cisco Packet Tracer 9.x `.pkt` generator and editor for skill-based coding hosts
 
 This repository is built for one job: take a natural-language network request, build an explicit scenario-aware plan, adapt a compatible donor lab, and produce a Packet Tracer 9.x workflow that stays open-first and compatibility-first.
 
+It is intended for networking labs where correctness matters more than producing a pretty but unverifiable diagram. The skill can plan, inspect, edit, compare, and explain Packet Tracer scenarios, but it deliberately separates "recognized by the parser", "visible in inventory", "edit-proven", "donor-backed ready", and "generate-ready" support.
+
 `0.2.2` public preview baseline is focused on:
 
 - donor-backed and scenario-aware public messaging
 - conservative Windows-first runtime truth
 - known working scenario set examples with acceptance-backed artifacts
 - README runtime cleanup, advanced wireless feature atlas coverage, and GitHub-launch-ops-ready metadata
+
+## What It Does
+
+`packet-tracer-skill` turns network-lab requests into explicit Packet Tracer workflows. The core loop is:
+
+1. parse the prompt into a scenario family and requested capabilities
+2. compare those capabilities against the current support matrix
+3. look for a compatible donor lab when strict `.pkt` work is required
+4. refuse unsafe or unsupported changes instead of guessing
+5. return a decision payload that explains what passed, what failed, and what would make it pass
+
+The current public surface is strongest for these tasks:
+
+- scenario-aware planning for campus, service-heavy, Home IoT, WAN/security edge, IPv6/routing, L2 security/monitoring, and advanced wireless prompts
+- explicit `.pkt` edits for proven command shapes such as VLAN, DHCP, ACL, server services, IPv6/routing subsets, L2 security/monitoring subsets, Home IoT constrained edits, and narrow advanced wireless edits
+- capability parity reports that explain whether a prompt is inventory-known, edit-supported, donor-limited, acceptance-gated, or unsupported
+- runtime diagnostics for Packet Tracer installation, donor path, Twofish bridge resolution, and blocked versus ready operations
+- public proof artifacts through examples, inventory manifests, acceptance excerpts, and donor proof docs
+
+## What It Does Not Claim
+
+The project is intentionally conservative. It does not claim universal Packet Tracer automation.
+
+- It does not claim every Packet Tracer feature is generate-ready.
+- It does not synthesize arbitrary `.pkt` internals when donor or acceptance evidence is weak.
+- It does not treat a successful skill install as proof that real `.pkt` decode/edit/generate is ready.
+- It does not commit raw `.pkt` donor labs or local bridge binaries into the public package.
+- It does not claim repo-local self-contained runtime readiness when validation depends on an external bridge override.
+
+The feature atlas exists so unsupported and under-modelled Packet Tracer areas are visible instead of hidden. The intended path is: map the feature, prove inventory visibility, prove edit roundtrip, add donor-backed readiness, and only then consider generate readiness.
 
 ## Why It Is Different
 
@@ -43,6 +75,13 @@ Current product strengths:
 ## Runtime Reality
 
 Use the same repository, then install it into the skill path your host expects.
+
+There are two separate installation stories:
+
+- installing the skill package into Codex, Cursor, Claude, Gemini, Kiro, AdaL, OpenCode, or a custom skill directory
+- making the local machine capable of opening, decoding, editing, and regenerating real Packet Tracer `.pkt` files
+
+The first story is handled by the npm installer. The second story depends on Packet Tracer 9.0, a compatible donor lab, and a local Twofish bridge. This is why the README keeps repeating the runtime distinction: a host can install the skill successfully while strict `.pkt` operations are still blocked.
 
 | Tool | Install | First Use |
 | --- | --- | --- |
@@ -199,8 +238,7 @@ Important variables:
 - `PKT_TWOFISH_LIBRARY`
 - `PKT_TWOFISH_SEARCH_ROOTS`
 
-Twofish bridge setup is intentionally local-machine specific. Do not copy another
-user's `.codex` path as if it were universal.
+Twofish bridge setup is intentionally local-machine specific. Use a path that exists on your own machine.
 
 Generic explicit bridge path:
 
@@ -222,9 +260,7 @@ folder:
 $env:PKT_TWOFISH_SEARCH_ROOTS="C:\path\to\bridge-folder"
 ```
 
-Developer-local paths such as `$env:USERPROFILE\.codex\skills\...` are valid only
-for the person and host where that bridge exists. They are not the public setup
-contract.
+Developer-local bridge paths are valid only for the person and host where that bridge exists. They are not the public setup contract.
 
 Required policy:
 
@@ -240,6 +276,8 @@ Troubleshooting guide:
 - `validate_open` readiness only proves Packet Tracer can launch a file. Strict `.pkt` generation still depends on donor and bridge readiness.
 
 ## Core Product Surfaces
+
+The CLI is not only a generator entrypoint. It is also the inspection surface for deciding whether a request is safe. In normal development, start with the reporting commands before expecting a final `.pkt` output.
 
 Use `--explain-plan` when you need the full decision payload:
 
@@ -266,6 +304,15 @@ python .\scripts\generate_pkt.py --feature-gap-report
 ```
 
 The atlas now distinguishes report-only features from edit-proven features. IPv6/routing, a constrained L2 security/monitoring subset, and a narrow advanced-wireless edit subset can be edited with explicit commands, but none of these are claimed as broad generate-ready without donor-backed acceptance evidence.
+
+Support levels used by the atlas:
+
+- `not_mapped`: the feature is known as a Packet Tracer area, but this repo does not yet model it.
+- `inventory_known`: the feature can be discovered or inferred from sample/catalog evidence.
+- `report_supported`: prompts and reports can talk about the feature without claiming edits.
+- `edit_proven`: explicit command shapes have editor roundtrip evidence.
+- `donor_backed_ready`: a selected donor can safely carry the capability for a prompt-scoped workflow.
+- `generate_ready`: strict generate support is acceptance-backed for that scenario.
 
 Current feature-support truth:
 
@@ -302,6 +349,8 @@ This repository keeps explicit truth sources for donor evidence and scenario reg
 Curated donor registry reference:
 
 - [docs/curated-donor-registry.md](docs/curated-donor-registry.md)
+
+The registry is not a marketing list. It is a control surface for deciding which donor classes can be trusted for which scenario families. A donor can be useful for inventory and proof while still being rejected for a larger prompt if the skeleton does not safely match the requested topology.
 
 Current selector truth:
 
@@ -403,16 +452,16 @@ See also:
 
 ## Release and Launch State
 
-The npm package release target for this batch is `packet-tracer-skill@0.2.2`. Remaining launch ops are GitHub release application, About/Topics updates, Discussions setup, and public proof follow-up.
+The npm package is published as `packet-tracer-skill@0.2.2`. Remaining launch ops are GitHub release application, About/Topics updates, Discussions setup, and public proof follow-up.
 
-So the current state is no longer “preparing to publish.” The package line is public. The remaining work is about making the public surface honest and complete:
+So the current state is no longer "preparing to publish." The package line is public. The remaining work is about making the public surface honest and complete:
 
 - GitHub release object should match the published npm state
 - About/Topics should match the README and launch wording
 - Discussions should exist as the feedback intake surface
 - donor proof should exist as the first post-launch technical evidence layer
 
-That is the difference between “published” and “productized.” The current repo is published; these follow-up documents are what make it operationally coherent.
+That is the difference between "published" and "productized." The current repo is published; these follow-up documents are what make it operationally coherent.
 
 Recommended local validation before release:
 
@@ -435,22 +484,42 @@ Launch ops references:
 
 ## Azerbaijani Summary
 
-Bu repo təbii dil ilə Packet Tracer `.pkt` generate və edit etmək üçündür, amma əsas fərqi ondadır ki, bunu donor-backed və open-first qayda ilə edir. Yəni donor, parity, acceptance və runtime hazır deyilsə, sistem guess etmir, refusal və remediation qaytarır.
+Bu repo təbii dil ilə Cisco Packet Tracer `.pkt` faylları üçün planlama, analiz, edit və donor-backed generate workflow-u qurmaq üçündür. Məqsəd sadəcə "prompt yaz, topologiya çək" deyil. Məqsəd Packet Tracer-in real `.pkt` formatına uyğun, donor sübutu olan, runtime vəziyyəti yoxlanmış və səhv olanda açıq səbəb göstərən daha etibarlı workflow yaratmaqdır.
+
+Əsas fərq budur: skill təhlükəsiz olmayan halda özündən nəticə uydurmur. Əgər donor uyğun deyil, runtime bridge yoxdur, capability hələ acceptance-backed deyil, ya da prompt çox genişdirsə, sistem final `.pkt` yaratmaq əvəzinə refusal və remediation qaytarır. Bu davranış zəiflik deyil; Packet Tracer faylını korlamamaq üçün əsas product qaydasıdır.
 
 Əsas public səthlər:
 
-- `--explain-plan`
-- `--compare-scenarios`
-- `--parity-report`
-- `--doctor`
-- examples gallery və acceptance excerpt-lər
+- `--explain-plan`: prompt-un hansı scenario family və capability-lərə çevrildiyini, hansı donor/readiness qərarlarının verildiyini göstərir.
+- `--compare-scenarios`: bir neçə prompt-u eyni matrix üzərində müqayisə edir və hansı ailənin daha hazır, donor-limited və ya unsupported olduğunu göstərir.
+- `--parity-report`: tələb olunan capability-lərin inventory, edit, generate və acceptance səviyyəsində vəziyyətini izah edir.
+- `--feature-gap-report`: Packet Tracer 9.0-da mövcud olub skill-də hələ tam məhsullaşmamış sahələri atlas/backlog kimi göstərir.
+- `--doctor`: real `.pkt` runtime üçün Packet Tracer install, donor path, Twofish bridge və blocked/ready operations vəziyyətini yoxlayır.
+- examples gallery və proof docs: screenshot, inventory manifest, acceptance excerpt və donor proof ilə public iddiaları yoxlanıla bilən artefaktlara bağlayır.
+
+Hazırda ən güclü sahələr:
+
+- campus və service-heavy lab planning/parity/reporting
+- donor-backed Home IoT constrained edits
+- WAN/security edge report və donor-backed readiness semantics
+- IPv6/routing üçün explicit edit-proven subset
+- L2 security/monitoring üçün explicit edit-proven subset
+- advanced wireless üçün WEP və WPA Enterprise/RADIUS explicit edit semantics
+
+Hələ konservativ saxlanan sahələr:
+
+- broad synthetic generate bütün Packet Tracer feature-ləri üçün açıq deyil
+- WLC, Meraki, cellular, Bluetooth, beamforming və guest Wi-Fi report-only qalır
+- voice, automation/controller, industrial IoT və physical/media feature-lər atlasda görünür, amma donor-backed edit/generate iddiası almır
+- repo-local self-contained runtime readiness iddia edilmir; external bridge-assisted validation ayrıca göstərilir
 
 Hazırkı prioritet:
 
 - `0.2.2` public preview hardening
-- release-ready və publish-ready surface
 - README / npm / GitHub discoverability hizalanması
 - scenario truth source, donor registry və runtime doctor contract consistency
+- feature atlas üzərindən Packet Tracer-də qalan bütün boşluqları görünən backlog-a çevirmək
+- yeni capability-ləri yalnız inventory proof, edit roundtrip proof və donor-backed acceptance olduqda yüksəltmək
 
 ## License
 
