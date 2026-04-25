@@ -20,6 +20,14 @@ EDITOR_TEST_ALIASES = {
     "eigrp_ipv6": ["set_eigrp_ipv6_interface", "eigrp ipv6"],
     "ripng": ["set_ripng_interface", "ripng"],
     "hsrp": ["set_hsrp_ipv6", "hsrp"],
+    "dhcp_snooping": ["set_dhcp_snooping", "dhcp snooping"],
+    "dai": ["set_dai", "dynamic arp inspection"],
+    "lldp": ["set_lldp", "lldp enable"],
+    "rep": ["set_rep", "rep segment"],
+    "snmp": ["set_snmp_community", "snmp community"],
+    "netflow": ["set_netflow", "netflow destination"],
+    "span": ["set_span", "monitor session"],
+    "port_security": ["set_port_security", "port-security"],
 }
 
 STATUS_ORDER = [
@@ -74,6 +82,19 @@ def _sample_hits(feature: dict[str, Any], samples: list[dict[str, Any]]) -> list
             rel = str(sample.get("relative_path") or "")
             if rel:
                 hits.append(rel)
+    return sorted(dict.fromkeys(hits))
+
+
+def _decoded_sample_hits(feature: dict[str, Any], samples: list[dict[str, Any]]) -> list[str]:
+    hits: list[str] = []
+    for sample in samples:
+        if not _sample_matches(feature, sample):
+            continue
+        if not str(sample.get("version") or "").strip():
+            continue
+        rel = str(sample.get("relative_path") or "")
+        if rel:
+            hits.append(rel)
     return sorted(dict.fromkeys(hits))
 
 
@@ -135,6 +156,7 @@ def build_feature_gap_report(
             total_features += 1
             capability = str(feature.get("capability") or feature.get("id") or "")
             hits = _sample_hits(feature, samples)
+            decoded_hits = _decoded_sample_hits(feature, samples)
             evidence = {
                 "parser_pattern": capability in CAPABILITY_PATTERNS,
                 "catalog_keyword": capability in CAPABILITY_KEYWORDS,
@@ -142,6 +164,9 @@ def build_feature_gap_report(
                 "editor_roundtrip_test": _editor_test_mentions(capability),
                 "sample_count": len(hits),
                 "sample_examples": hits[:5],
+                "sample_path_count": len(hits),
+                "decode_verified_sample_count": len(decoded_hits),
+                "decode_verified_examples": decoded_hits[:5],
             }
             status = _feature_status(feature, evidence)
             if status != "not_mapped":

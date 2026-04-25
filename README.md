@@ -231,6 +231,8 @@ Use `--feature-gap-report` for the Packet Tracer 9.0 feature atlas:
 python .\scripts\generate_pkt.py --feature-gap-report
 ```
 
+The atlas now distinguishes report-only features from edit-proven features. IPv6/routing and a constrained L2 security/monitoring subset can be edited with explicit commands, but neither is claimed as broad generate-ready without donor-backed acceptance evidence.
+
 Stable CLI surfaces:
 
 - `--explain-plan`

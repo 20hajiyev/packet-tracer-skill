@@ -302,6 +302,39 @@ def inventory_routing(root: ET.Element) -> dict[str, dict[str, object]]:
     return result
 
 
+def inventory_l2_security_monitoring(root: ET.Element) -> dict[str, dict[str, object]]:
+    result: dict[str, dict[str, object]] = {}
+    for device in root.findall(".//DEVICES/DEVICE"):
+        name = device.findtext("./ENGINE/NAME", default="")
+        running = "\n".join(line.text or "" for line in device.findall("./ENGINE/RUNNINGCONFIG/LINE"))
+        if not running:
+            continue
+        capabilities: set[str] = set()
+        if re.search(r"(?mi)^\s*ip\s+dhcp\s+snooping\b", running):
+            capabilities.add("dhcp_snooping")
+        if re.search(r"(?mi)^\s*ip\s+arp\s+inspection\b", running):
+            capabilities.add("dai")
+        if re.search(r"(?mi)^\s*(?:aaa\s+new-model|radius-server\s+host|authentication\s+port-control|dot1x\b)", running):
+            capabilities.add("dot1x")
+        if re.search(r"(?mi)^\s*lldp\s+run\b", running):
+            capabilities.add("lldp")
+        if re.search(r"(?mi)^\s*rep\s+segment\b", running):
+            capabilities.add("rep")
+        if re.search(r"(?mi)^\s*snmp-server\b", running):
+            capabilities.add("snmp")
+        if re.search(r"(?mi)^\s*ip\s+flow-export\b", running) or re.search(r"(?mi)^\s*ip\s+flow\s+(?:ingress|egress)\b", running):
+            capabilities.add("netflow")
+        if re.search(r"(?mi)^\s*monitor\s+session\b", running):
+            capabilities.add("span")
+        if re.search(r"(?mi)^\s*(?:mls\s+qos|auto\s+qos|class-map|policy-map|service-policy)\b", running):
+            capabilities.add("qos")
+        if re.search(r"(?mi)^\s*switchport\s+port-security\b", running):
+            capabilities.add("port_security")
+        if capabilities:
+            result[name] = {"capabilities": sorted(capabilities)}
+    return result
+
+
 def inventory_topology_summary(root: ET.Element) -> dict[str, object]:
     devices = inventory_devices(root)
     counts: dict[str, int] = {}
@@ -329,6 +362,7 @@ def inventory_root(root: ET.Element) -> dict[str, object]:
         "acl_names": inventory_acl_names(root),
         "management": inventory_management(root),
         "routing": inventory_routing(root),
+        "l2_security_monitoring": inventory_l2_security_monitoring(root),
         "topology_summary": inventory_topology_summary(root),
     }
 
@@ -728,6 +762,45 @@ def _apply_switch_op(device: ET.Element, operation: dict[str, object]) -> None:
         for target in _config_targets(device):
             _append_config_block(target, f"interface {operation['port']}", body)
         return
+    elif operation["op"] == "set_dhcp_snooping":
+        for target in _config_targets(device):
+            _append_unique_config_lines(target, ["ip dhcp snooping", f"ip dhcp snooping vlan {operation['vlan']}"])
+            if operation.get("trust_port"):
+                _append_config_block(target, f"interface {operation['trust_port']}", [" ip dhcp snooping trust"])
+        return
+    elif operation["op"] == "set_dai":
+        for target in _config_targets(device):
+            _append_unique_config_lines(target, ["ip dhcp snooping", f"ip dhcp snooping vlan {operation['vlan']}", f"ip arp inspection vlan {operation['vlan']}"])
+            if operation.get("trust_port"):
+                _append_config_block(target, f"interface {operation['trust_port']}", [" ip arp inspection trust", " ip dhcp snooping trust"])
+        return
+    elif operation["op"] == "set_port_security":
+        body = [" switchport mode access", " switchport port-security"]
+        if operation.get("maximum"):
+            body.append(f" switchport port-security maximum {operation['maximum']}")
+        if operation.get("violation"):
+            body.append(f" switchport port-security violation {operation['violation']}")
+        for target in _config_targets(device):
+            _append_config_block(target, f"interface {operation['port']}", body)
+        return
+    elif operation["op"] == "set_lldp":
+        for target in _config_targets(device):
+            _append_unique_config_lines(target, ["lldp run"])
+        return
+    elif operation["op"] == "set_rep":
+        for target in _config_targets(device):
+            _append_config_block(target, f"interface {operation['interface']}", [f" rep segment {operation['segment']}"])
+        return
+    elif operation["op"] == "set_span":
+        for target in _config_targets(device):
+            _append_unique_config_lines(
+                target,
+                [
+                    f"monitor session {operation['session']} source interface {operation['source']}",
+                    f"monitor session {operation['session']} destination interface {operation['destination']}",
+                ],
+            )
+        return
     else:
         return
 
@@ -828,6 +901,20 @@ def _apply_router_op(device: ET.Element, operation: dict[str, object]) -> None:
         for target in _config_targets(device):
             _append_unique_config_lines(target, ["ipv6 unicast-routing"])
             _append_config_block(target, f"interface {operation['interface']}", body)
+        return
+    elif operation["op"] == "set_snmp_community":
+        for target in _config_targets(device):
+            _append_unique_config_lines(target, [f"snmp-server community {operation['community']} {operation['mode']}"])
+        return
+    elif operation["op"] == "set_netflow":
+        global_lines = [
+            f"ip flow-export destination {operation['destination']} {operation['port']}",
+            f"ip flow-export version {operation['version']}",
+        ]
+        for target in _config_targets(device):
+            _append_unique_config_lines(target, global_lines)
+            if operation.get("interface") and operation.get("direction"):
+                _append_config_block(target, f"interface {operation['interface']}", [f" ip flow {operation['direction']}"])
         return
     else:
         return

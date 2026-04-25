@@ -202,7 +202,8 @@ def test_parse_wan_security_prompt_recognizes_phase_d_intent() -> None:
 def test_parse_feature_atlas_prompts_without_service_heavy_drift() -> None:
     cases = [
         ("ipv6 ospf dhcpv6 slaac hsrp", "ipv6_routing", {"ipv6_slaac", "dhcpv6_stateful", "hsrp"}),
-        ("snmp netflow span qos policy dhcp snooping dai dot1x", "l2_security_monitoring", {"snmp", "netflow", "span", "qos", "dhcp_snooping", "dai", "dot1x"}),
+        ("snmp netflow span qos dhcp snooping dai dot1x port security", "l2_security_monitoring", {"snmp", "netflow", "span", "qos", "dhcp_snooping", "dai", "dot1x", "port_security"}),
+        ("lldp rep span rspan", "l2_security_monitoring", {"lldp", "rep", "span"}),
         ("voip phones with call manager", "voice_collaboration", {"voip", "call_manager"}),
         ("mqtt iot with websocket", "industrial_iot", {"mqtt", "real_websocket"}),
         ("wlc bluetooth meraki 5g cellular wpa enterprise", "wireless_advanced", {"wlc", "bluetooth", "meraki", "cellular_5g", "wpa_enterprise"}),
@@ -237,6 +238,30 @@ def test_parse_explicit_ipv6_routing_operations() -> None:
     assert any(op["op"] == "set_eigrp_ipv6_interface" and op["asn"] == 100 for op in plan.router_ops)
     assert any(op["op"] == "set_ripng_interface" and op["process_name"] == "RIPNG" for op in plan.router_ops)
     assert any(op["op"] == "set_hsrp_ipv6" and op["priority"] == 110 for op in plan.router_ops)
+
+
+def test_parse_explicit_l2_security_monitoring_operations() -> None:
+    plan = parse_intent(
+        "set SW1 dhcp snooping vlan 10 trust GigabitEthernet0/1 "
+        "set SW1 dai vlan 10 trust GigabitEthernet0/1 "
+        "set SW1 port-security FastEthernet0/2 max 2 violation restrict "
+        "set SW1 lldp enable "
+        "set SW1 rep segment 1 interface GigabitEthernet0/3 "
+        "set SW1 span 1 source FastEthernet0/10 destination FastEthernet0/5 "
+        "set R1 snmp community public ro "
+        "set R1 netflow destination 13.1.1.2 9996 version 9 interface FastEthernet0/0 ingress"
+    )
+
+    assert plan.network_style == "l2_security_monitoring"
+    assert {"dhcp_snooping", "dai", "port_security", "lldp", "rep", "span", "snmp", "netflow"} <= set(plan.capabilities)
+    assert any(op["op"] == "set_dhcp_snooping" and op["vlan"] == 10 for op in plan.switch_ops)
+    assert any(op["op"] == "set_dai" and op["trust_port"] == "GigabitEthernet0/1" for op in plan.switch_ops)
+    assert any(op["op"] == "set_port_security" and op["maximum"] == 2 for op in plan.switch_ops)
+    assert any(op["op"] == "set_lldp" for op in plan.switch_ops)
+    assert any(op["op"] == "set_rep" and op["segment"] == 1 for op in plan.switch_ops)
+    assert any(op["op"] == "set_span" and op["source"] == "FastEthernet0/10" for op in plan.switch_ops)
+    assert any(op["op"] == "set_snmp_community" and op["community"] == "public" for op in plan.router_ops)
+    assert any(op["op"] == "set_netflow" and op["destination"] == "13.1.1.2" for op in plan.router_ops)
 
 
 def test_parse_management_ops_with_spaced_device_name() -> None:

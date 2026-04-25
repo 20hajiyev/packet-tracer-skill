@@ -25,6 +25,21 @@ The first promotion wave is `ipv6_routing`. The following subset can move beyond
 
 IPv6 tunneling, ISATAP, prefix delegation, and AAAA DNS remain report-first until separate donor-backed editor proof exists.
 
+## Second Edit-Proven Wave
+
+The second promotion wave is `l2_security_monitoring`. The following subset is edit-proven for explicit commands, but still not broad generate-ready:
+
+- DHCP snooping
+- Dynamic ARP Inspection
+- LLDP
+- REP
+- SNMP community
+- NetFlow export
+- SPAN/RSPAN
+- Port security
+
+802.1X/NAC and QoS remain report-first in this wave. Decode-fail Packet Tracer samples can prove that a feature exists by path/catalog evidence, but they do not create edit or generate readiness by themselves.
+
 ## Current Feature Families
 
 - `ipv6_routing`: SLAAC, DHCPv6, prefix delegation, AAAA DNS, IPv6 tunneling, ISATAP, OSPFv3, EIGRP IPv6, RIPng, HSRP.

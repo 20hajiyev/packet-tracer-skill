@@ -799,8 +799,8 @@ def test_build_coverage_gap_report_supports_donor_backed_wan_security_when_selec
         assert parity_by_capability[capability]["generate_mismatch_reason"] is None
 
 
-def test_build_coverage_gap_report_keeps_feature_atlas_capabilities_report_only() -> None:
-    plan = parse_intent("snmp netflow span qos policy dhcp snooping dai dot1x")
+def test_build_coverage_gap_report_keeps_l2_security_monitoring_generate_gated() -> None:
+    plan = parse_intent("snmp netflow span qos dhcp snooping dai dot1x port security")
     sample = SampleDescriptor(
         path="monitoring_security.pkt",
         relative_path="monitoring_security.pkt",
@@ -813,7 +813,7 @@ def test_build_coverage_gap_report_keeps_feature_atlas_capabilities_report_only(
             {"name": "PC1", "type": "PC", "model": "PC-PT"},
         ],
         links=[],
-        capability_tags=["snmp", "netflow", "span", "qos", "dhcp_snooping", "dai", "dot1x"],
+        capability_tags=["snmp", "netflow", "span", "qos", "dhcp_snooping", "dai", "dot1x", "port_security"],
         topology_tags=["monitoring"],
         preferred_roles=["preferred_security"],
         trust_level="trusted",
@@ -832,7 +832,12 @@ def test_build_coverage_gap_report_keeps_feature_atlas_capabilities_report_only(
 
     assert report.scenario_family == "l2_security_monitoring"
     assert report.scenario_generate_readiness["status"] == "acceptance_gated"
-    for capability in ["snmp", "netflow", "span", "qos", "dhcp_snooping", "dai", "dot1x"]:
+    for capability in ["snmp", "netflow", "span", "dhcp_snooping", "dai", "port_security"]:
+        assert parity_by_capability[capability]["edit_supported"] is True
+        assert parity_by_capability[capability]["generate_supported"] is False
+        assert parity_by_capability[capability]["generate_mismatch_reason"] == "supported_in_edit_only"
+    for capability in ["qos", "dot1x"]:
+        assert parity_by_capability[capability]["edit_supported"] is False
         assert parity_by_capability[capability]["generate_supported"] is False
         assert parity_by_capability[capability]["generate_mismatch_reason"] == "report_only"
 
@@ -1119,3 +1124,16 @@ def test_build_inventory_capability_report_infers_ipv6_routing_features() -> Non
     report = build_inventory_capability_report(payload)
     assert "routers" in report["device_families"]
     assert {"ipv6_slaac", "dhcpv6_stateful", "ospfv3", "eigrp_ipv6", "ripng", "hsrp"} <= set(report["capabilities"])
+
+
+def test_build_inventory_capability_report_infers_l2_security_monitoring_features() -> None:
+    payload = {
+        "topology_summary": {"device_counts": {"Switch": 1, "Router": 1}},
+        "l2_security_monitoring": {
+            "SW1": {"capabilities": ["dhcp_snooping", "dai", "lldp", "rep", "span", "port_security"]},
+            "R1": {"capabilities": ["snmp", "netflow"]},
+        },
+    }
+    report = build_inventory_capability_report(payload)
+    assert {"routers", "switches"} <= set(report["device_families"])
+    assert {"dhcp_snooping", "dai", "lldp", "rep", "span", "port_security", "snmp", "netflow"} <= set(report["capabilities"])

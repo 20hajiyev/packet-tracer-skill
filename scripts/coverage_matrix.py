@@ -127,7 +127,17 @@ IPV6_DONOR_BACKED_CAPABILITIES = {
     "ripng",
     "hsrp",
 }
-EDIT_PROVEN_REPORT_CAPABILITIES = IPV6_DONOR_BACKED_CAPABILITIES
+L2_SECURITY_MONITORING_EDIT_PROVEN_CAPABILITIES = {
+    "dhcp_snooping",
+    "dai",
+    "lldp",
+    "rep",
+    "snmp",
+    "netflow",
+    "span",
+    "port_security",
+}
+EDIT_PROVEN_REPORT_CAPABILITIES = IPV6_DONOR_BACKED_CAPABILITIES | L2_SECURITY_MONITORING_EDIT_PROVEN_CAPABILITIES
 
 CAPABILITY_PROVIDER_FAMILIES = {
     "access_port": {"switches", "multilayer switches"},
@@ -541,6 +551,7 @@ CAPABILITY_REQUIRED_ARCHETYPES = {
     "netflow": ["L2 security/monitoring"],
     "span": ["L2 security/monitoring"],
     "qos": ["L2 security/monitoring"],
+    "port_security": ["L2 security/monitoring"],
     "wlc": ["advanced wireless"],
     "wpa_enterprise": ["advanced wireless"],
     "wep": ["advanced wireless"],
@@ -785,6 +796,12 @@ def _recommended_next_action_for_capability(capability: str, mismatch_reason: st
         if mismatch_reason == "supported_but_acceptance_gated":
             return f"Keep {capability} in report/edit flow until an IPv6/routing donor is acceptance-backed."
         return f"Prefer an IPv6/routing donor and explicit router/interface targets before strict generate for {capability}."
+    if capability in L2_SECURITY_MONITORING_EDIT_PROVEN_CAPABILITIES:
+        if mismatch_reason == "supported_in_edit_only":
+            return f"Use explicit edit commands for {capability}; strict prompt generate still needs an acceptance-backed L2 security/monitoring donor."
+        if mismatch_reason == "supported_but_donor_limited":
+            return f"Provide an L2 security/monitoring donor with reusable switch/router monitoring skeleton for {capability}."
+        return f"Keep {capability} constrained to edit/inventory proof until an L2 security/monitoring donor is acceptance-backed."
     if capability == "iot_registration":
         if mismatch_reason == "supported_but_acceptance_gated":
             return "Use an IoT/home gateway donor and explicitly name the thing plus gateway/server target before strict generate."
@@ -1001,6 +1018,46 @@ def build_coverage_gap_report(
                     "known_limitations": list(dict.fromkeys(item for entry in matching_entries for item in entry.known_limitations)),
                 }
             )
+        elif edit_proven_only:
+            supported_capabilities.append(capability)
+            capability_statuses.append(
+                {
+                    "capability": capability,
+                    "provider_families": sorted(provider_families),
+                    "matching_device_families": sorted(provider_families),
+                    "best_maturity_level": "config-mutation-supported",
+                    "inventory_supported": True,
+                    "edit_supported": True,
+                    "config_mutation_supported": True,
+                    "safe_open_generate_supported": False,
+                    "acceptance_verified": False,
+                    "requires_curated_donor": False,
+                    "requires_manual_acceptance": True,
+                    "report_only": False,
+                    "recommended_donors": [],
+                    "known_limitations": ["editor-proven without sample-backed donor selection"],
+                }
+            )
+        elif report_only:
+            supported_capabilities.append(capability)
+            capability_statuses.append(
+                {
+                    "capability": capability,
+                    "provider_families": sorted(provider_families),
+                    "matching_device_families": sorted(provider_families),
+                    "best_maturity_level": "inventory-supported",
+                    "inventory_supported": True,
+                    "edit_supported": False,
+                    "config_mutation_supported": False,
+                    "safe_open_generate_supported": False,
+                    "acceptance_verified": False,
+                    "requires_curated_donor": False,
+                    "requires_manual_acceptance": True,
+                    "report_only": True,
+                    "recommended_donors": [],
+                    "known_limitations": ["report-supported without decode-backed donor selection"],
+                }
+            )
         elif selected_donor_backed and selected_sample is not None:
             supported_capabilities.append(capability)
             capability_statuses.append(
@@ -1142,6 +1199,8 @@ def build_inventory_capability_report(payload: dict[str, Any]) -> dict[str, obje
         capabilities.update({"vpn", "ipsec", "gre", "ppp"})
     for routing_details in payload.get("routing", {}).values():
         capabilities.update(str(capability) for capability in routing_details.get("capabilities", []) if str(capability).strip())
+    for l2_details in payload.get("l2_security_monitoring", {}).values():
+        capabilities.update(str(capability) for capability in l2_details.get("capabilities", []) if str(capability).strip())
     return {
         "device_families": families,
         "capabilities": sorted(capabilities),

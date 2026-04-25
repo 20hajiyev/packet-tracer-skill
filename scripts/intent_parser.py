@@ -160,7 +160,7 @@ NETWORK_STYLE_PATTERNS = {
     "campus": [r"\bcampus\b", r"\bkampus\b", r"\bsobeli\b", r"\bdepart", r"\bdepartment\b"],
     "branch": [r"\bbranch\b", r"\bfilial\b"],
     "ipv6_routing": [r"\bipv6\b", r"\bslaac\b", r"\bdhcpv6\b", r"\bospfv3\b", r"\bhsrp\b"],
-    "l2_security_monitoring": [r"\bdhcp snooping\b", r"\bdai\b", r"\bdot1x\b", r"\b802\.1x\b", r"\bsnmp\b", r"\bnetflow\b", r"\bspan\b", r"\bqos policy\b", r"\bquality of service\b", r"\blldp\b", r"\brep\b"],
+    "l2_security_monitoring": [r"\bdhcp snooping\b", r"\bdai\b", r"\bdot1x\b", r"\b802\.1x\b", r"\bsnmp\b", r"\bnetflow\b", r"\bspan\b", r"\brspan\b", r"\bquality of service\b", r"\blldp\b", r"\brep\b", r"\bport security\b", r"\bport-security\b"],
     "wireless_advanced": [r"\bwlc\b", r"\bwireless lan controller\b", r"\bmeraki\b", r"\bbluetooth\b", r"\b5g\b", r"\bcellular\b", r"\bwpa enterprise\b"],
     "automation_controller": [r"\bnetwork controller\b", r"\bnetcon\b", r"\bblockly\b", r"\bjavascript\b", r"\bpython programming\b", r"\biox\b"],
     "voice_collaboration": [r"\bvoip\b", r"\bip phone\b", r"\bcall manager\b", r"\btelephony\b"],
@@ -572,6 +572,39 @@ def _extract_switch_ops(prompt: str) -> list[dict[str, object]]:
                     "native": int(native) if native else None,
                 }
             )
+    dhcp_snooping_pattern = re.compile(r"set\s+([A-Za-z0-9_-]+)\s+dhcp\s+snooping\s+vlan\s+(\d+)(?:\s+trust\s+([A-Za-z0-9/._-]+))?", flags=re.IGNORECASE)
+    dai_pattern = re.compile(r"set\s+([A-Za-z0-9_-]+)\s+dai\s+vlan\s+(\d+)(?:\s+trust\s+([A-Za-z0-9/._-]+))?", flags=re.IGNORECASE)
+    port_security_pattern = re.compile(
+        r"set\s+([A-Za-z0-9_-]+)\s+port-security\s+([A-Za-z0-9/._-]+)(?:\s+max\s+(\d+))?(?:\s+violation\s+(protect|restrict|shutdown))?",
+        flags=re.IGNORECASE,
+    )
+    lldp_pattern = re.compile(r"set\s+([A-Za-z0-9_-]+)\s+lldp(?:\s+(?:enable|run))?", flags=re.IGNORECASE)
+    rep_pattern = re.compile(r"set\s+([A-Za-z0-9_-]+)\s+rep\s+segment\s+(\d+)\s+interface\s+([A-Za-z0-9/._-]+)", flags=re.IGNORECASE)
+    span_pattern = re.compile(
+        r"set\s+([A-Za-z0-9_-]+)\s+(?:r?span)\s+(\d+)\s+source\s+([A-Za-z0-9/._-]+)\s+destination\s+([A-Za-z0-9/._-]+)",
+        flags=re.IGNORECASE,
+    )
+    for segment in _command_segments(prompt):
+        for device, vlan_id, trust_port in dhcp_snooping_pattern.findall(segment):
+            ops.append({"op": "set_dhcp_snooping", "device": device, "vlan": int(vlan_id), "trust_port": trust_port or None})
+        for device, vlan_id, trust_port in dai_pattern.findall(segment):
+            ops.append({"op": "set_dai", "device": device, "vlan": int(vlan_id), "trust_port": trust_port or None})
+        for device, port, maximum, violation in port_security_pattern.findall(segment):
+            ops.append(
+                {
+                    "op": "set_port_security",
+                    "device": device,
+                    "port": port,
+                    "maximum": int(maximum) if maximum else None,
+                    "violation": violation.lower() if violation else None,
+                }
+            )
+        for device in lldp_pattern.findall(segment):
+            ops.append({"op": "set_lldp", "device": device})
+        for device, segment_id, interface_name in rep_pattern.findall(segment):
+            ops.append({"op": "set_rep", "device": device, "segment": int(segment_id), "interface": interface_name})
+        for device, session, source, destination in span_pattern.findall(segment):
+            ops.append({"op": "set_span", "device": device, "session": int(session), "source": source, "destination": destination})
     return ops
 
 
@@ -660,6 +693,11 @@ def _extract_router_ops(prompt: str) -> list[dict[str, object]]:
         r"set\s+([A-Za-z0-9_-]+)\s+hsrp\s+(\d+)\s+ipv6\s+([0-9A-Fa-f:]+)\s+interface\s+([A-Za-z0-9/._-]+)(?:\s+priority\s+(\d+))?",
         flags=re.IGNORECASE,
     )
+    snmp_pattern = re.compile(r"set\s+([A-Za-z0-9_-]+)\s+snmp\s+community\s+([A-Za-z0-9_-]+)\s+(ro|rw)", flags=re.IGNORECASE)
+    netflow_pattern = re.compile(
+        r"set\s+([A-Za-z0-9_-]+)\s+netflow\s+destination\s+(\d+\.\d+\.\d+\.\d+)\s+(\d+)(?:\s+version\s+(\d+))?(?:\s+interface\s+([A-Za-z0-9/._-]+)\s+(ingress|egress))?",
+        flags=re.IGNORECASE,
+    )
     for segment in _command_segments(prompt):
         for device in ipv6_unicast_pattern.findall(segment):
             ops.append({"op": "enable_ipv6_unicast_routing", "device": device})
@@ -703,6 +741,20 @@ def _extract_router_ops(prompt: str) -> list[dict[str, object]]:
                     "virtual_ipv6": virtual_ipv6,
                     "interface": interface_name,
                     "priority": int(priority) if priority else None,
+                }
+            )
+        for device, community, mode in snmp_pattern.findall(segment):
+            ops.append({"op": "set_snmp_community", "device": device, "community": community, "mode": mode.lower()})
+        for device, destination, port, version, interface_name, direction in netflow_pattern.findall(segment):
+            ops.append(
+                {
+                    "op": "set_netflow",
+                    "device": device,
+                    "destination": destination,
+                    "port": int(port),
+                    "version": int(version) if version else 9,
+                    "interface": interface_name or None,
+                    "direction": direction.lower() if direction else None,
                 }
             )
     return ops
@@ -874,6 +926,15 @@ def parse_intent(prompt: str) -> IntentPlan:
     host_link_intent = _extract_host_link_intent(normalized_prompt)
     host_vlan_assignment = _extract_host_vlan_assignment(normalized_prompt)
     network_style = _extract_network_style(normalized_prompt)
+    if re.search(r"\bqos\b", lowered) and (
+        re.search(r"\b(?:snmp|netflow|span|rspan|lldp|rep|dai|dot1x|802\.1x|dhcp snooping|port-security|port security)\b", lowered)
+        or network_style == "l2_security_monitoring"
+    ):
+        capability_set.add("qos")
+    if "dhcp_snooping" in capability_set and not re.search(r"\b(?:dhcp\s+pool|server\s+dhcp|dhcp\s+server|default-router)\b", lowered):
+        capability_set.discard("dhcp_pool")
+        capability_set.discard("router_dhcp")
+        capability_set.discard("server_dhcp")
     department_count = _extract_department_count(normalized_prompt)
     per_department_devices = _extract_per_department_devices(normalized_prompt)
 
@@ -932,7 +993,24 @@ def parse_intent(prompt: str) -> IntentPlan:
         capability_set.add("end_device_mutation")
     if iot_ops:
         capability_set.update({"iot", "iot_registration"})
+    switch_op_names = {str(op.get("op")) for op in switch_ops}
+    if "set_dhcp_snooping" in switch_op_names:
+        capability_set.add("dhcp_snooping")
+    if "set_dai" in switch_op_names:
+        capability_set.add("dai")
+    if "set_lldp" in switch_op_names:
+        capability_set.add("lldp")
+    if "set_rep" in switch_op_names:
+        capability_set.add("rep")
+    if "set_span" in switch_op_names:
+        capability_set.add("span")
+    if "set_port_security" in switch_op_names:
+        capability_set.add("port_security")
     router_op_names = {str(op.get("op")) for op in router_ops}
+    if "set_snmp_community" in router_op_names:
+        capability_set.add("snmp")
+    if "set_netflow" in router_op_names:
+        capability_set.add("netflow")
     if router_op_names & {"enable_ipv6_unicast_routing", "set_ipv6_address", "set_ipv6_slaac"}:
         capability_set.add("ipv6_slaac")
     if "set_dhcpv6_pool" in router_op_names:
@@ -949,6 +1027,8 @@ def parse_intent(prompt: str) -> IntentPlan:
         network_style = network_style or "wan_security"
     if capability_set & {"ipv6_slaac", "dhcpv6_stateful", "dhcpv6_stateless", "ospfv3", "eigrp_ipv6", "ripng", "hsrp"}:
         network_style = network_style or "ipv6_routing"
+    if capability_set & {"dhcp_snooping", "dai", "dot1x", "lldp", "rep", "snmp", "netflow", "span", "qos", "port_security"}:
+        network_style = network_style or "l2_security_monitoring"
     if capability_set & {"mqtt", "real_http", "real_websocket", "visual_scripting", "ptp", "profinet", "l2nat", "cyberobserver", "industrial_firewall"}:
         network_style = "industrial_iot"
 

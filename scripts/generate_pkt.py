@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import copy
 from dataclasses import asdict, dataclass, field
+from functools import lru_cache
 import json
 import os
 from pathlib import Path
@@ -108,6 +109,11 @@ if hasattr(sys.stdout, "reconfigure"):
         pass
 
 
+@lru_cache(maxsize=1)
+def _inspect_packet_tracer_compatibility_donor_cached():
+    return inspect_packet_tracer_compatibility_donor()
+
+
 class PlanningError(RuntimeError):
     def __init__(self, message: str, plan: IntentPlan) -> None:
         super().__init__(message)
@@ -140,7 +146,7 @@ STRICT_COMPATIBILITY_GAP = (
 
 
 def _compat_donor_details() -> tuple[Path | None, str | None]:
-    details = inspect_packet_tracer_compatibility_donor()
+    details = _inspect_packet_tracer_compatibility_donor_cached()
     return details.resolved_path, details.donor_version
 
 
@@ -3250,7 +3256,7 @@ def generate_from_prompt(
     )
     coverage_gap = _augment_coverage_gap_actions(
         coverage_gap,
-        donor_blocking_reason=inspect_packet_tracer_compatibility_donor().blocking_reason,
+        donor_blocking_reason=_inspect_packet_tracer_compatibility_donor_cached().blocking_reason,
     )
     scenario_generate_decision = _scenario_generate_decision(coverage_gap)
     prepared_plan.remote_search_results = remote_results
@@ -3350,7 +3356,7 @@ def _explain_plan_payload(
     )
     plan = _apply_prompt_compatibility_requirements(raw_plan, resolved_donor_roots)
     plan.remote_search_results = remote_results
-    donor_details = inspect_packet_tracer_compatibility_donor()
+    donor_details = _inspect_packet_tracer_compatibility_donor_cached()
     compat_donor, compat_donor_version = donor_details.resolved_path, donor_details.donor_version
     topology_tags = _topology_tags_for_plan(plan, _choose_topology_archetype(plan))
     result: dict[str, object] = {
@@ -3662,7 +3668,7 @@ def inventory_pkt(
     root = ET.fromstring(decode_pkt_modern(pkt_path.read_bytes()))
     payload = inventory_root(root)
     workspace = inspect_workspace_integrity(root)
-    donor_details = inspect_packet_tracer_compatibility_donor()
+    donor_details = _inspect_packet_tracer_compatibility_donor_cached()
     compat_donor, compat_donor_version = donor_details.resolved_path, donor_details.donor_version
     payload["workspace_validation"] = {
         "workspace_mode": workspace.workspace_mode,

@@ -417,6 +417,64 @@ def test_edit_pkt_file_roundtrip_preserves_ipv6_routing_mutations(tmp_path: Path
     assert "standby 10 ipv6 2001:db8:10::fe" in router_text
 
 
+def test_edit_pkt_file_roundtrip_preserves_l2_security_monitoring_mutations(tmp_path: Path) -> None:
+    source = _require_saves_root() / r"01 Networking\FTP\FTP.pkt"
+    output = tmp_path / "l2_security_monitoring_roundtrip.pkt"
+    xml_out = tmp_path / "l2_security_monitoring_roundtrip.xml"
+    plan = parse_intent(
+        "set Switch0 dhcp snooping vlan 10 trust FastEthernet0/1 "
+        "set Switch0 dai vlan 10 trust FastEthernet0/1 "
+        "set Switch0 port-security FastEthernet0/2 max 2 violation restrict "
+        "set Switch0 lldp enable "
+        "set Switch0 rep segment 1 interface FastEthernet0/3 "
+        "set Switch0 span 1 source FastEthernet0/10 destination FastEthernet0/5 "
+        "set Router0 snmp community public ro "
+        "set Router0 netflow destination 13.1.1.2 9996 version 9 interface FastEthernet0/0 ingress"
+    )
+    edit_pkt_file(source, plan, output, xml_out)
+
+    assert output.exists()
+    assert xml_out.exists()
+
+    updated = decode_pkt_to_root(output)
+    inventory = inventory_root(updated)
+    assert inventory["l2_security_monitoring"]["Switch0"]["capabilities"] == [
+        "dai",
+        "dhcp_snooping",
+        "lldp",
+        "port_security",
+        "rep",
+        "span",
+    ]
+    assert inventory["l2_security_monitoring"]["Router0"]["capabilities"] == ["netflow", "snmp"]
+    switch = next(
+        device
+        for device in updated.findall(".//DEVICES/DEVICE")
+        if device.findtext("./ENGINE/NAME", default="") == "Switch0"
+    )
+    router = next(
+        device
+        for device in updated.findall(".//DEVICES/DEVICE")
+        if device.findtext("./ENGINE/NAME", default="") == "Router0"
+    )
+    switch_text = "\n".join(line.text or "" for line in switch.findall("./ENGINE/RUNNINGCONFIG/LINE"))
+    router_text = "\n".join(line.text or "" for line in router.findall("./ENGINE/RUNNINGCONFIG/LINE"))
+    assert "ip dhcp snooping" in switch_text
+    assert "ip dhcp snooping vlan 10" in switch_text
+    assert "ip arp inspection vlan 10" in switch_text
+    assert "ip arp inspection trust" in switch_text
+    assert "switchport port-security maximum 2" in switch_text
+    assert "switchport port-security violation restrict" in switch_text
+    assert "lldp run" in switch_text
+    assert "rep segment 1" in switch_text
+    assert "monitor session 1 source interface FastEthernet0/10" in switch_text
+    assert "monitor session 1 destination interface FastEthernet0/5" in switch_text
+    assert "snmp-server community public ro" in router_text
+    assert "ip flow-export destination 13.1.1.2 9996" in router_text
+    assert "ip flow-export version 9" in router_text
+    assert "ip flow ingress" in router_text
+
+
 def test_apply_plan_operations_updates_acl_and_dns() -> None:
     root = decode_pkt_to_root(_require_saves_root() / r"01 Networking\FTP\FTP.pkt")
     plan = parse_intent(

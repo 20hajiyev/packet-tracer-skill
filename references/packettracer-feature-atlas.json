@@ -29,16 +29,16 @@
       "scenario_family": "l2_security_monitoring",
       "wave": 3,
       "features": [
-        {"id": "dhcp_snooping", "capability": "dhcp_snooping", "label": "DHCP snooping", "sample_path_keywords": ["dhcp_snooping"], "support_ceiling": "report_supported"},
-        {"id": "dai", "capability": "dai", "label": "Dynamic ARP Inspection", "sample_path_keywords": ["dai"], "support_ceiling": "report_supported"},
+        {"id": "dhcp_snooping", "capability": "dhcp_snooping", "label": "DHCP snooping", "sample_path_keywords": ["dhcp_snooping"], "support_ceiling": "edit_proven"},
+        {"id": "dai", "capability": "dai", "label": "Dynamic ARP Inspection", "sample_path_keywords": ["dai"], "support_ceiling": "edit_proven"},
         {"id": "dot1x", "capability": "dot1x", "label": "802.1X / NAC", "sample_path_keywords": ["dot1x", "port-based nac"], "support_ceiling": "report_supported"},
-        {"id": "lldp", "capability": "lldp", "label": "LLDP", "sample_path_keywords": ["lldp"], "support_ceiling": "report_supported"},
-        {"id": "rep", "capability": "rep", "label": "REP", "sample_path_keywords": ["rep_"], "support_ceiling": "report_supported"},
-        {"id": "snmp", "capability": "snmp", "label": "SNMP", "sample_path_keywords": ["snmp"], "support_ceiling": "report_supported"},
-        {"id": "netflow", "capability": "netflow", "label": "NetFlow", "sample_path_keywords": ["netflow"], "support_ceiling": "report_supported"},
-        {"id": "span", "capability": "span", "label": "SPAN/RSPAN", "sample_path_keywords": ["span"], "support_ceiling": "report_supported"},
+        {"id": "lldp", "capability": "lldp", "label": "LLDP", "sample_path_keywords": ["lldp"], "support_ceiling": "edit_proven"},
+        {"id": "rep", "capability": "rep", "label": "REP", "sample_path_keywords": ["rep_"], "support_ceiling": "edit_proven"},
+        {"id": "snmp", "capability": "snmp", "label": "SNMP", "sample_path_keywords": ["snmp"], "support_ceiling": "edit_proven"},
+        {"id": "netflow", "capability": "netflow", "label": "NetFlow", "sample_path_keywords": ["netflow"], "support_ceiling": "edit_proven"},
+        {"id": "span", "capability": "span", "label": "SPAN/RSPAN", "sample_path_keywords": ["span"], "support_ceiling": "edit_proven"},
         {"id": "qos", "capability": "qos", "label": "QoS", "sample_path_keywords": ["qos"], "support_ceiling": "report_supported"},
-        {"id": "port_security", "capability": "port_security", "label": "Port security", "sample_path_keywords": ["port security", "port-security"], "support_ceiling": "inventory_known"}
+        {"id": "port_security", "capability": "port_security", "label": "Port security", "sample_path_keywords": ["port security", "port-security"], "support_ceiling": "edit_proven"}
       ]
     },
     {
