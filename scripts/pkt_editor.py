@@ -277,6 +277,31 @@ def inventory_management(root: ET.Element) -> dict[str, dict[str, object]]:
     return result
 
 
+def inventory_routing(root: ET.Element) -> dict[str, dict[str, object]]:
+    result: dict[str, dict[str, object]] = {}
+    for device in root.findall(".//DEVICES/DEVICE"):
+        name = device.findtext("./ENGINE/NAME", default="")
+        running = "\n".join(line.text or "" for line in device.findall("./ENGINE/RUNNINGCONFIG/LINE"))
+        if not running:
+            continue
+        capabilities: set[str] = set()
+        if re.search(r"(?mi)^\s*ipv6\s+unicast-routing\s*$", running) or re.search(r"(?mi)^\s*ipv6\s+(?:enable|address)\b", running):
+            capabilities.add("ipv6_slaac")
+        if re.search(r"(?mi)^\s*ipv6\s+dhcp\s+pool\b", running) or re.search(r"(?mi)^\s*ipv6\s+dhcp\s+server\b", running):
+            capabilities.add("dhcpv6_stateful")
+        if re.search(r"(?mi)^\s*ipv6\s+ospf\b", running) or re.search(r"(?mi)^\s*ipv6\s+router\s+ospf\b", running):
+            capabilities.add("ospfv3")
+        if re.search(r"(?mi)^\s*ipv6\s+eigrp\b", running) or re.search(r"(?mi)^\s*ipv6\s+router\s+eigrp\b", running):
+            capabilities.add("eigrp_ipv6")
+        if re.search(r"(?mi)^\s*ipv6\s+rip\b", running):
+            capabilities.add("ripng")
+        if re.search(r"(?mi)^\s*standby\s+\d+\s+ipv6\b", running):
+            capabilities.add("hsrp")
+        if capabilities:
+            result[name] = {"capabilities": sorted(capabilities)}
+    return result
+
+
 def inventory_topology_summary(root: ET.Element) -> dict[str, object]:
     devices = inventory_devices(root)
     counts: dict[str, int] = {}
@@ -303,6 +328,7 @@ def inventory_root(root: ET.Element) -> dict[str, object]:
         "dhcp_pools": inventory_dhcp_pools(root),
         "acl_names": inventory_acl_names(root),
         "management": inventory_management(root),
+        "routing": inventory_routing(root),
         "topology_summary": inventory_topology_summary(root),
     }
 
@@ -741,6 +767,67 @@ def _apply_router_op(device: ET.Element, operation: dict[str, object]) -> None:
     elif operation["op"] == "apply_acl":
         for target in _config_targets(device):
             _append_config_block(target, f"interface {operation['interface']}", [f" ip access-group {operation['acl_name']} {operation['direction']}"])
+        return
+    elif operation["op"] == "enable_ipv6_unicast_routing":
+        for target in _config_targets(device):
+            _append_unique_config_lines(target, ["ipv6 unicast-routing"])
+        return
+    elif operation["op"] == "set_ipv6_address":
+        for target in _config_targets(device):
+            _append_unique_config_lines(target, ["ipv6 unicast-routing"])
+            _append_config_block(
+                target,
+                f"interface {operation['interface']}",
+                [f" ipv6 address {operation['address']}/{operation['prefix']}", " no shutdown"],
+            )
+        return
+    elif operation["op"] == "set_ipv6_slaac":
+        body = [" ipv6 enable", " no shutdown"]
+        if operation.get("prefix") and operation.get("prefix_len"):
+            body.insert(1, f" ipv6 nd prefix {operation['prefix']}/{operation['prefix_len']}")
+        for target in _config_targets(device):
+            _append_unique_config_lines(target, ["ipv6 unicast-routing"])
+            _append_config_block(target, f"interface {operation['interface']}", body)
+        return
+    elif operation["op"] == "set_dhcpv6_pool":
+        pool_body = [f" address prefix {operation['prefix']}/{operation['prefix_len']}"]
+        if operation.get("dns"):
+            pool_body.append(f" dns-server {operation['dns']}")
+        if operation.get("domain"):
+            pool_body.append(f" domain-name {operation['domain']}")
+        interface_body = [f" ipv6 dhcp server {operation['name']}", " ipv6 nd managed-config-flag", " no shutdown"]
+        for target in _config_targets(device):
+            _append_unique_config_lines(target, ["ipv6 unicast-routing"])
+            _append_config_block(target, f"ipv6 dhcp pool {operation['name']}", pool_body)
+            _append_config_block(target, f"interface {operation['interface']}", interface_body)
+        return
+    elif operation["op"] == "set_ospfv3_interface":
+        process_id = operation["process_id"]
+        for target in _config_targets(device):
+            _append_unique_config_lines(target, ["ipv6 unicast-routing"])
+            _append_config_block(target, f"interface {operation['interface']}", [f" ipv6 ospf {process_id} area {operation['area']}", " no shutdown"])
+            _append_config_block(target, f"ipv6 router ospf {process_id}", [])
+        return
+    elif operation["op"] == "set_eigrp_ipv6_interface":
+        asn = operation["asn"]
+        for target in _config_targets(device):
+            _append_unique_config_lines(target, ["ipv6 unicast-routing", "no ipv6 cef"])
+            _append_config_block(target, f"interface {operation['interface']}", [f" ipv6 eigrp {asn}", " no shutdown"])
+            _append_config_block(target, f"ipv6 router eigrp {asn}", [" no shutdown"])
+        return
+    elif operation["op"] == "set_ripng_interface":
+        for target in _config_targets(device):
+            _append_unique_config_lines(target, ["ipv6 unicast-routing"])
+            _append_config_block(target, f"interface {operation['interface']}", [f" ipv6 rip {operation['process_name']} enable", " no shutdown"])
+        return
+    elif operation["op"] == "set_hsrp_ipv6":
+        body = [" standby version 2", f" standby {operation['group']} ipv6 {operation['virtual_ipv6']}"]
+        if operation.get("priority"):
+            body.append(f" standby {operation['group']} priority {operation['priority']}")
+            body.append(f" standby {operation['group']} preempt")
+        for target in _config_targets(device):
+            _append_unique_config_lines(target, ["ipv6 unicast-routing"])
+            _append_config_block(target, f"interface {operation['interface']}", body)
         return
     else:
         return

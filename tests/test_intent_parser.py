@@ -215,6 +215,30 @@ def test_parse_feature_atlas_prompts_without_service_heavy_drift() -> None:
         assert plan.network_style != "service_heavy"
 
 
+def test_parse_explicit_ipv6_routing_operations() -> None:
+    plan = parse_intent(
+        "set Router0 ipv6 unicast-routing "
+        "set Router0 interface FastEthernet0/0 ipv6 2001:db8:10::1/64 "
+        "set Router0 slaac on FastEthernet0/0 prefix 2001:db8:10::/64 "
+        "set Router0 dhcpv6 pool V6POOL prefix 2001:db8:10::/64 interface FastEthernet0/0 dns 2001:4860:4860::8888 domain atlas.local "
+        "set Router0 ospfv3 1 area 0 interface FastEthernet0/0 "
+        "set Router0 eigrp ipv6 100 interface FastEthernet0/0 "
+        "set Router0 ripng RIPNG interface FastEthernet0/0 "
+        "set Router0 hsrp 10 ipv6 2001:db8:10::fe interface FastEthernet0/0 priority 110"
+    )
+
+    assert plan.network_style == "ipv6_routing"
+    assert {"ipv6_slaac", "dhcpv6_stateful", "ospfv3", "eigrp_ipv6", "ripng", "hsrp"} <= set(plan.capabilities)
+    assert any(op["op"] == "enable_ipv6_unicast_routing" for op in plan.router_ops)
+    assert any(op["op"] == "set_ipv6_address" and op["address"] == "2001:db8:10::1" for op in plan.router_ops)
+    assert any(op["op"] == "set_ipv6_slaac" and op["prefix"] == "2001:db8:10::" for op in plan.router_ops)
+    assert any(op["op"] == "set_dhcpv6_pool" and op["name"] == "V6POOL" for op in plan.router_ops)
+    assert any(op["op"] == "set_ospfv3_interface" and op["process_id"] == 1 for op in plan.router_ops)
+    assert any(op["op"] == "set_eigrp_ipv6_interface" and op["asn"] == 100 for op in plan.router_ops)
+    assert any(op["op"] == "set_ripng_interface" and op["process_name"] == "RIPNG" for op in plan.router_ops)
+    assert any(op["op"] == "set_hsrp_ipv6" and op["priority"] == 110 for op in plan.router_ops)
+
+
 def test_parse_management_ops_with_spaced_device_name() -> None:
     plan = parse_intent(
         "set Switch Management management vlan 99 ip 192.168.99.2/24 gateway 192.168.99.1 "

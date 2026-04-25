@@ -12,6 +12,19 @@ It is intentionally conservative:
 
 The atlas does not claim that every Packet Tracer feature is generate-ready. It turns missing or under-modelled Packet Tracer features into an auditable backlog before any broad config mutation is opened.
 
+## First Generate Enablement Wave
+
+The first promotion wave is `ipv6_routing`. The following subset can move beyond report-only only when explicit router/interface targets and an IPv6/routing donor are selected:
+
+- IPv6 interface/SLAAC config
+- DHCPv6 stateful pool binding
+- OSPFv3 interface routing
+- EIGRP IPv6 interface routing
+- RIPng interface routing
+- IPv6 HSRP virtual address
+
+IPv6 tunneling, ISATAP, prefix delegation, and AAAA DNS remain report-first until separate donor-backed editor proof exists.
+
 ## Current Feature Families
 
 - `ipv6_routing`: SLAAC, DHCPv6, prefix delegation, AAAA DNS, IPv6 tunneling, ISATAP, OSPFv3, EIGRP IPv6, RIPng, HSRP.

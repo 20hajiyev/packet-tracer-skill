@@ -439,6 +439,8 @@ def _required_runtime_features_for_plan(plan: IntentPlan) -> list[str]:
         features.add("security_runtime")
     if capabilities & {"multilayer_switching"}:
         features.add("multilayer_runtime")
+    if capabilities & {"ipv6_slaac", "dhcpv6_stateful", "dhcpv6_stateless", "ospfv3", "eigrp_ipv6", "ripng", "hsrp"}:
+        features.add("ipv6_runtime")
     return sorted(features)
 
 
@@ -523,6 +525,12 @@ def _candidate_acceptance_penalty(candidate: SampleCandidate, blueprint: dict[st
         "ppp": 18,
         "security_edge": 20,
         "multilayer_switching": 16,
+        "ipv6_slaac": 18,
+        "dhcpv6_stateful": 18,
+        "ospfv3": 18,
+        "eigrp_ipv6": 18,
+        "ripng": 16,
+        "hsrp": 16,
     }.items():
         if capability in requested_capabilities and capability not in supported_capabilities:
             penalty += penalty_value

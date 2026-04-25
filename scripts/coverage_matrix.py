@@ -119,6 +119,16 @@ REPORT_ONLY_CAPABILITIES = {
     "ios_license",
 }
 
+IPV6_DONOR_BACKED_CAPABILITIES = {
+    "ipv6_slaac",
+    "dhcpv6_stateful",
+    "ospfv3",
+    "eigrp_ipv6",
+    "ripng",
+    "hsrp",
+}
+EDIT_PROVEN_REPORT_CAPABILITIES = IPV6_DONOR_BACKED_CAPABILITIES
+
 CAPABILITY_PROVIDER_FAMILIES = {
     "access_port": {"switches", "multilayer switches"},
     "trunk": {"switches", "multilayer switches"},
@@ -580,6 +590,12 @@ CAPABILITY_REQUIRED_RUNTIME_FEATURES = {
     "ppp": ["workspace_validated", "wan_runtime"],
     "security_edge": ["workspace_validated", "security_runtime"],
     "multilayer_switching": ["workspace_validated", "multilayer_runtime"],
+    "ipv6_slaac": ["workspace_validated", "ipv6_runtime"],
+    "dhcpv6_stateful": ["workspace_validated", "ipv6_runtime"],
+    "ospfv3": ["workspace_validated", "ipv6_runtime"],
+    "eigrp_ipv6": ["workspace_validated", "ipv6_runtime"],
+    "ripng": ["workspace_validated", "ipv6_runtime"],
+    "hsrp": ["workspace_validated", "ipv6_runtime"],
 }
 
 
@@ -656,6 +672,19 @@ def _has_explicit_wan_security_intent(plan: IntentPlan) -> bool:
     )
 
 
+def _has_explicit_ipv6_operation(plan: IntentPlan, capability: str) -> bool:
+    operation_map = {
+        "ipv6_slaac": {"enable_ipv6_unicast_routing", "set_ipv6_address", "set_ipv6_slaac"},
+        "dhcpv6_stateful": {"set_dhcpv6_pool"},
+        "ospfv3": {"set_ospfv3_interface"},
+        "eigrp_ipv6": {"set_eigrp_ipv6_interface"},
+        "ripng": {"set_ripng_interface"},
+        "hsrp": {"set_hsrp_ipv6"},
+    }
+    expected_ops = operation_map.get(capability, set())
+    return any(str(op.get("op")) in expected_ops for op in plan.router_ops)
+
+
 def _selected_donor_capability_override(
     plan: IntentPlan,
     capability: str,
@@ -712,6 +741,13 @@ def _selected_donor_capability_override(
             and bool(runtime_features & wan_runtime_by_capability[capability])
             and _has_explicit_wan_security_intent(plan)
         )
+    if capability in IPV6_DONOR_BACKED_CAPABILITIES:
+        return (
+            "IPv6/routing" in archetypes
+            and capability in sample_capabilities
+            and "ipv6_runtime" in runtime_features
+            and _has_explicit_ipv6_operation(plan, capability)
+        )
     return False
 
 
@@ -741,6 +777,14 @@ def _recommended_next_action_for_capability(capability: str, mismatch_reason: st
         if mismatch_reason == "supported_but_acceptance_gated":
             return f"Keep {capability} in report/selection flow until a WAN/security edge donor is acceptance-backed."
         return f"Prefer a WAN/security edge donor with explicit {capability} evidence before strict generate."
+    if capability in IPV6_DONOR_BACKED_CAPABILITIES:
+        if mismatch_reason == "supported_in_edit_only":
+            return f"Use explicit edit commands for {capability}; strict prompt generate still needs a selected IPv6/routing donor."
+        if mismatch_reason == "supported_but_donor_limited":
+            return f"Provide an IPv6/routing donor with reusable IPv6 interface and routing skeleton for {capability}."
+        if mismatch_reason == "supported_but_acceptance_gated":
+            return f"Keep {capability} in report/edit flow until an IPv6/routing donor is acceptance-backed."
+        return f"Prefer an IPv6/routing donor and explicit router/interface targets before strict generate for {capability}."
     if capability == "iot_registration":
         if mismatch_reason == "supported_but_acceptance_gated":
             return "Use an IoT/home gateway donor and explicitly name the thing plus gateway/server target before strict generate."
@@ -916,9 +960,10 @@ def build_coverage_gap_report(
     requires_manual_acceptance: list[str] = []
     capability_statuses: list[dict[str, object]] = []
     for capability in requested_capabilities:
-        report_only = capability in REPORT_ONLY_CAPABILITIES
         provider_families = _provider_families_for_capability(capability, requested_families)
         selected_donor_backed = _selected_donor_capability_override(plan, capability, selected_sample)
+        edit_proven_only = capability in EDIT_PROVEN_REPORT_CAPABILITIES and not selected_donor_backed
+        report_only = capability in REPORT_ONLY_CAPABILITIES and not selected_donor_backed and not edit_proven_only
         matching_entries = [
             entry
             for entry in by_capability.get(capability, [])
@@ -931,9 +976,9 @@ def build_coverage_gap_report(
                 (any(entry.maturity_level == "acceptance-verified" for entry in matching_entries) and capability not in iot_acceptance_gated)
                 or selected_donor_backed
             )
-            if report_only:
+            if report_only or edit_proven_only:
                 acceptance_verified = False
-            requires_curated = best_entry.maturity_level == "safe-open-generate-supported" and not selected_donor_backed
+            requires_curated = best_entry.maturity_level == "safe-open-generate-supported" and not selected_donor_backed and not edit_proven_only
             if requires_curated:
                 requires_curated_donor.append(capability)
             if not acceptance_verified:
@@ -943,11 +988,11 @@ def build_coverage_gap_report(
                     "capability": capability,
                     "provider_families": sorted(provider_families),
                     "matching_device_families": sorted({entry.device_family for entry in matching_entries}),
-                    "best_maturity_level": "inventory-supported" if report_only else best_entry.maturity_level,
+                    "best_maturity_level": "inventory-supported" if report_only else "config-mutation-supported" if edit_proven_only else best_entry.maturity_level,
                     "inventory_supported": any(MATURITY_RANK[entry.maturity_level] >= MATURITY_RANK["inventory-supported"] for entry in matching_entries),
-                    "edit_supported": False if report_only else any(MATURITY_RANK[entry.maturity_level] >= MATURITY_RANK["config-mutation-supported"] for entry in matching_entries),
-                    "config_mutation_supported": False if report_only else any(MATURITY_RANK[entry.maturity_level] >= MATURITY_RANK["config-mutation-supported"] for entry in matching_entries),
-                    "safe_open_generate_supported": False if report_only else any(MATURITY_RANK[entry.maturity_level] >= MATURITY_RANK["safe-open-generate-supported"] for entry in matching_entries),
+                    "edit_supported": True if edit_proven_only else False if report_only else any(MATURITY_RANK[entry.maturity_level] >= MATURITY_RANK["config-mutation-supported"] for entry in matching_entries),
+                    "config_mutation_supported": True if edit_proven_only else False if report_only else any(MATURITY_RANK[entry.maturity_level] >= MATURITY_RANK["config-mutation-supported"] for entry in matching_entries),
+                    "safe_open_generate_supported": False if report_only or edit_proven_only else any(MATURITY_RANK[entry.maturity_level] >= MATURITY_RANK["safe-open-generate-supported"] for entry in matching_entries),
                     "acceptance_verified": acceptance_verified,
                     "requires_curated_donor": requires_curated,
                     "requires_manual_acceptance": not acceptance_verified,
@@ -1095,6 +1140,8 @@ def build_inventory_capability_report(payload: dict[str, Any]) -> dict[str, obje
         capabilities.add("acl")
     if payload.get("topology_summary", {}).get("network_style") == "wan_security":
         capabilities.update({"vpn", "ipsec", "gre", "ppp"})
+    for routing_details in payload.get("routing", {}).values():
+        capabilities.update(str(capability) for capability in routing_details.get("capabilities", []) if str(capability).strip())
     return {
         "device_families": families,
         "capabilities": sorted(capabilities),

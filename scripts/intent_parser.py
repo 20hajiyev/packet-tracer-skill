@@ -639,6 +639,72 @@ def _extract_router_ops(prompt: str) -> list[dict[str, object]]:
     for segment in _command_segments(prompt):
         for acl_name, direction, device, interface_name in acl_apply_pattern.findall(segment):
             ops.append({"op": "apply_acl", "device": device.strip(), "acl_name": acl_name, "direction": direction.lower(), "interface": interface_name})
+    ipv6_unicast_pattern = re.compile(r"set\s+([A-Za-z0-9_-]+)\s+ipv6\s+unicast-routing", flags=re.IGNORECASE)
+    ipv6_address_pattern = re.compile(
+        r"set\s+([A-Za-z0-9_-]+)\s+(?:interface\s+)?([A-Za-z0-9/._-]+)\s+ipv6\s+([0-9A-Fa-f:]+)/(\d+)",
+        flags=re.IGNORECASE,
+    )
+    ipv6_slaac_pattern = re.compile(
+        r"set\s+([A-Za-z0-9_-]+)\s+slaac\s+on\s+([A-Za-z0-9/._-]+)(?:\s+prefix\s+([0-9A-Fa-f:]+)/(\d+))?",
+        flags=re.IGNORECASE,
+    )
+    dhcpv6_pattern = re.compile(
+        r"set\s+([A-Za-z0-9_-]+)\s+dhcpv6\s+pool\s+([A-Za-z0-9_-]+)\s+prefix\s+([0-9A-Fa-f:]+)/(\d+)\s+interface\s+([A-Za-z0-9/._-]+)"
+        r"(?:\s+dns\s+([0-9A-Fa-f:]+))?(?:\s+domain\s+([A-Za-z0-9._-]+))?",
+        flags=re.IGNORECASE,
+    )
+    ospfv3_pattern = re.compile(r"set\s+([A-Za-z0-9_-]+)\s+ospfv3\s+(\d+)\s+area\s+(\d+)\s+interface\s+([A-Za-z0-9/._-]+)", flags=re.IGNORECASE)
+    eigrp_ipv6_pattern = re.compile(r"set\s+([A-Za-z0-9_-]+)\s+eigrp\s+ipv6\s+(\d+)\s+interface\s+([A-Za-z0-9/._-]+)", flags=re.IGNORECASE)
+    ripng_pattern = re.compile(r"set\s+([A-Za-z0-9_-]+)\s+ripng\s+([A-Za-z0-9_-]+)\s+interface\s+([A-Za-z0-9/._-]+)", flags=re.IGNORECASE)
+    hsrp_pattern = re.compile(
+        r"set\s+([A-Za-z0-9_-]+)\s+hsrp\s+(\d+)\s+ipv6\s+([0-9A-Fa-f:]+)\s+interface\s+([A-Za-z0-9/._-]+)(?:\s+priority\s+(\d+))?",
+        flags=re.IGNORECASE,
+    )
+    for segment in _command_segments(prompt):
+        for device in ipv6_unicast_pattern.findall(segment):
+            ops.append({"op": "enable_ipv6_unicast_routing", "device": device})
+        for device, interface_name, address, prefix in ipv6_address_pattern.findall(segment):
+            ops.append({"op": "set_ipv6_address", "device": device, "interface": interface_name, "address": address, "prefix": int(prefix)})
+        for device, interface_name, prefix_address, prefix_len in ipv6_slaac_pattern.findall(segment):
+            ops.append(
+                {
+                    "op": "set_ipv6_slaac",
+                    "device": device,
+                    "interface": interface_name,
+                    "prefix": prefix_address or None,
+                    "prefix_len": int(prefix_len) if prefix_len else None,
+                }
+            )
+        for device, name, prefix_address, prefix_len, interface_name, dns, domain in dhcpv6_pattern.findall(segment):
+            ops.append(
+                {
+                    "op": "set_dhcpv6_pool",
+                    "device": device,
+                    "name": name,
+                    "prefix": prefix_address,
+                    "prefix_len": int(prefix_len),
+                    "interface": interface_name,
+                    "dns": dns or None,
+                    "domain": domain or None,
+                }
+            )
+        for device, process_id, area, interface_name in ospfv3_pattern.findall(segment):
+            ops.append({"op": "set_ospfv3_interface", "device": device, "process_id": int(process_id), "area": int(area), "interface": interface_name})
+        for device, asn, interface_name in eigrp_ipv6_pattern.findall(segment):
+            ops.append({"op": "set_eigrp_ipv6_interface", "device": device, "asn": int(asn), "interface": interface_name})
+        for device, process_name, interface_name in ripng_pattern.findall(segment):
+            ops.append({"op": "set_ripng_interface", "device": device, "process_name": process_name, "interface": interface_name})
+        for device, group, virtual_ipv6, interface_name, priority in hsrp_pattern.findall(segment):
+            ops.append(
+                {
+                    "op": "set_hsrp_ipv6",
+                    "device": device,
+                    "group": int(group),
+                    "virtual_ipv6": virtual_ipv6,
+                    "interface": interface_name,
+                    "priority": int(priority) if priority else None,
+                }
+            )
     return ops
 
 
@@ -866,8 +932,23 @@ def parse_intent(prompt: str) -> IntentPlan:
         capability_set.add("end_device_mutation")
     if iot_ops:
         capability_set.update({"iot", "iot_registration"})
+    router_op_names = {str(op.get("op")) for op in router_ops}
+    if router_op_names & {"enable_ipv6_unicast_routing", "set_ipv6_address", "set_ipv6_slaac"}:
+        capability_set.add("ipv6_slaac")
+    if "set_dhcpv6_pool" in router_op_names:
+        capability_set.add("dhcpv6_stateful")
+    if "set_ospfv3_interface" in router_op_names:
+        capability_set.add("ospfv3")
+    if "set_eigrp_ipv6_interface" in router_op_names:
+        capability_set.add("eigrp_ipv6")
+    if "set_ripng_interface" in router_op_names:
+        capability_set.add("ripng")
+    if "set_hsrp_ipv6" in router_op_names:
+        capability_set.add("hsrp")
     if capability_set & {"vpn", "ipsec", "gre", "ppp", "security_edge"}:
         network_style = network_style or "wan_security"
+    if capability_set & {"ipv6_slaac", "dhcpv6_stateful", "dhcpv6_stateless", "ospfv3", "eigrp_ipv6", "ripng", "hsrp"}:
+        network_style = network_style or "ipv6_routing"
     if capability_set & {"mqtt", "real_http", "real_websocket", "visual_scripting", "ptp", "profinet", "l2nat", "cyberobserver", "industrial_firewall"}:
         network_style = "industrial_iot"
 

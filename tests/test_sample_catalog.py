@@ -139,6 +139,31 @@ def test_wan_security_catalog_inference_marks_security_tunnel_wan_and_multilayer
     )
 
 
+def test_ipv6_routing_catalog_inference_marks_runtime_and_archetype() -> None:
+    item = {
+        "relative_path": "01 Networking/OSPF/ipv6_ospf_network_p2p.pkt",
+        "version": "9.0.0.0810",
+        "devices": [
+            {"name": "Router0", "type": "Router", "model": "ISR4331"},
+            {"name": "Router1", "type": "Router", "model": "ISR4331"},
+        ],
+        "links": [{"from": "Router0", "to": "Router1", "media": "Serial"}],
+        "workspace_validation": "inventory_roundtrip_verified",
+        "apply_safety_level": "safe-open-generate-supported",
+    }
+
+    capability_tags = sample_catalog_module.infer_capability_tags(item)
+    enriched = {
+        **item,
+        "capability_tags": capability_tags,
+        "device_families": sample_catalog_module.infer_device_families(item),
+    }
+
+    assert {"ospfv3"} <= set(capability_tags)
+    assert "IPv6/routing" in sample_catalog_module.infer_archetype_tags(enriched)
+    assert {"ipv6_runtime", "workspace_validated"} <= set(sample_catalog_module.infer_runtime_features(enriched))
+
+
 def test_reference_ranking_prefers_matching_external_patterns() -> None:
     external_vlan = SampleDescriptor(
         path="ext1.pkt",

@@ -570,6 +570,8 @@ def infer_runtime_features(item: dict[str, Any]) -> list[str]:
         features.add("security_runtime")
     if tags & {"vpn", "ipsec", "gre"}:
         features.add("tunnel_runtime")
+    if tags & {"ipv6_slaac", "dhcpv6_stateful", "dhcpv6_stateless", "ospfv3", "eigrp_ipv6", "ripng", "hsrp"}:
+        features.add("ipv6_runtime")
     if families & {"multilayer switches"} or tags & {"multilayer_switching"}:
         features.add("multilayer_runtime")
     if item.get("workspace_validation"):
@@ -934,7 +936,7 @@ def enrich_catalog_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         new_item.setdefault("port_media_types", infer_port_media_types(new_item))
         new_item.setdefault("service_support", infer_service_support(new_item))
         new_item.setdefault("iot_roles", infer_iot_roles(new_item))
-        new_item.setdefault("runtime_features", infer_runtime_features(new_item))
+        new_item["runtime_features"] = sorted(set(new_item.get("runtime_features", [])) | set(infer_runtime_features(new_item)))
         new_item.setdefault("donor_graph_fingerprint", infer_donor_graph_fingerprint(new_item))
         new_item.setdefault("apply_safety_level", infer_apply_safety_level(new_item))
         new_item.setdefault("archetype_tags", infer_archetype_tags(new_item))

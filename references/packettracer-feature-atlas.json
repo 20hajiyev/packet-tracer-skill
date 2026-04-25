@@ -10,17 +10,17 @@
       "scenario_family": "ipv6_routing",
       "wave": 2,
       "features": [
-        {"id": "ipv6_slaac", "capability": "ipv6_slaac", "label": "IPv6 SLAAC", "sample_path_keywords": ["ipv6_slaac", "slaac"], "support_ceiling": "report_supported"},
-        {"id": "dhcpv6_stateful", "capability": "dhcpv6_stateful", "label": "DHCPv6 stateful", "sample_path_keywords": ["stateful_dhcpv6"], "support_ceiling": "report_supported"},
+        {"id": "ipv6_slaac", "capability": "ipv6_slaac", "label": "IPv6 SLAAC", "sample_path_keywords": ["ipv6_slaac", "slaac"], "support_ceiling": "edit_proven"},
+        {"id": "dhcpv6_stateful", "capability": "dhcpv6_stateful", "label": "DHCPv6 stateful", "sample_path_keywords": ["stateful_dhcpv6"], "support_ceiling": "edit_proven"},
         {"id": "dhcpv6_stateless", "capability": "dhcpv6_stateless", "label": "DHCPv6 stateless", "sample_path_keywords": ["stateless_dhcpv6"], "support_ceiling": "report_supported"},
         {"id": "ipv6_prefix_delegation", "capability": "ipv6_prefix_delegation", "label": "IPv6 prefix delegation", "sample_path_keywords": ["prefix_delegation"], "support_ceiling": "report_supported"},
         {"id": "ipv6_dns_aaaa", "capability": "ipv6_dns_aaaa", "label": "IPv6 DNS AAAA records", "sample_path_keywords": ["dns-a-and-aaaa", "aaaa"], "support_ceiling": "report_supported"},
         {"id": "ipv6_tunneling", "capability": "ipv6_tunneling", "label": "IPv6 tunneling", "sample_path_keywords": ["ipv6ip tunneling", "ipv6ip_"], "support_ceiling": "report_supported"},
         {"id": "isatap", "capability": "isatap", "label": "ISATAP", "sample_path_keywords": ["isatap"], "support_ceiling": "report_supported"},
-        {"id": "ospfv3", "capability": "ospfv3", "label": "OSPFv3", "sample_path_keywords": ["ospfv3", "ipv6_ospf"], "support_ceiling": "report_supported"},
-        {"id": "eigrp_ipv6", "capability": "eigrp_ipv6", "label": "EIGRP IPv6", "sample_path_keywords": ["ipv6_eigrp"], "support_ceiling": "report_supported"},
-        {"id": "ripng", "capability": "ripng", "label": "RIPng", "sample_path_keywords": ["ipv6", "rip"], "support_ceiling": "report_supported"},
-        {"id": "hsrp", "capability": "hsrp", "label": "HSRP", "sample_path_keywords": ["hsrp"], "support_ceiling": "report_supported"}
+        {"id": "ospfv3", "capability": "ospfv3", "label": "OSPFv3", "sample_path_keywords": ["ospfv3", "ipv6_ospf"], "support_ceiling": "edit_proven"},
+        {"id": "eigrp_ipv6", "capability": "eigrp_ipv6", "label": "EIGRP IPv6", "sample_path_keywords": ["ipv6_eigrp"], "support_ceiling": "edit_proven"},
+        {"id": "ripng", "capability": "ripng", "label": "RIPng", "sample_path_keywords": ["ipv6", "rip"], "support_ceiling": "edit_proven"},
+        {"id": "hsrp", "capability": "hsrp", "label": "HSRP", "sample_path_keywords": ["hsrp"], "support_ceiling": "edit_proven"}
       ]
     },
     {

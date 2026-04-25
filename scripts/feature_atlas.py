@@ -13,6 +13,14 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_FEATURE_ATLAS = ROOT / "references" / "packettracer-feature-atlas.json"
 DEFAULT_SAMPLE_CATALOG = ROOT / "references" / "packettracer-sample-catalog.json"
 EDITOR_TEST_PATH = ROOT / "tests" / "test_pkt_editor.py"
+EDITOR_TEST_ALIASES = {
+    "ipv6_slaac": ["set_ipv6_slaac", "slaac on"],
+    "dhcpv6_stateful": ["set_dhcpv6_pool", "dhcpv6 pool"],
+    "ospfv3": ["set_ospfv3_interface", "ospfv3"],
+    "eigrp_ipv6": ["set_eigrp_ipv6_interface", "eigrp ipv6"],
+    "ripng": ["set_ripng_interface", "ripng"],
+    "hsrp": ["set_hsrp_ipv6", "hsrp"],
+}
 
 STATUS_ORDER = [
     "not_mapped",
@@ -72,7 +80,9 @@ def _sample_hits(feature: dict[str, Any], samples: list[dict[str, Any]]) -> list
 def _editor_test_mentions(capability: str) -> bool:
     if not EDITOR_TEST_PATH.exists():
         return False
-    return capability in EDITOR_TEST_PATH.read_text(encoding="utf-8")
+    text = EDITOR_TEST_PATH.read_text(encoding="utf-8").lower()
+    needles = [capability.lower(), *[alias.lower() for alias in EDITOR_TEST_ALIASES.get(capability, [])]]
+    return any(needle in text for needle in needles)
 
 
 def _feature_status(feature: dict[str, Any], evidence: dict[str, Any]) -> str:

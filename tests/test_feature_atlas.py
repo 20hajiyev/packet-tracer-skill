@@ -43,7 +43,7 @@ def test_feature_gap_report_compares_parser_catalog_coverage_and_samples() -> No
     assert report["total_feature_count"] >= 50
     assert report["mapped_feature_count"] > report["unmapped_feature_count"]
     assert group_by_id["ipv6_routing"]["scenario_family"] == "ipv6_routing"
-    assert status_by_capability["dhcpv6_stateful"]["status"] == "report_supported"
+    assert status_by_capability["dhcpv6_stateful"]["status"] == "edit_proven"
     assert status_by_capability["snmp"]["evidence"]["parser_pattern"] is True
     assert status_by_capability["mqtt"]["evidence"]["sample_count"] >= 1
     assert status_by_capability["voip"]["status"] == "report_supported"
@@ -55,4 +55,4 @@ def test_feature_gap_report_keeps_atlas_features_below_generate_ready() -> None:
     for group in report["groups"]:
         for feature in group["features"]:
             assert feature["status"] != "generate_ready", feature
-            assert feature["support_ceiling"] in {"inventory_known", "report_supported"}
+            assert feature["support_ceiling"] in {"inventory_known", "report_supported", "edit_proven"}

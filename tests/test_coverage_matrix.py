@@ -837,6 +837,91 @@ def test_build_coverage_gap_report_keeps_feature_atlas_capabilities_report_only(
         assert parity_by_capability[capability]["generate_mismatch_reason"] == "report_only"
 
 
+def test_build_coverage_gap_report_promotes_explicit_ipv6_selected_donor() -> None:
+    plan = parse_intent(
+        "set Router0 ipv6 unicast-routing "
+        "set Router0 interface FastEthernet0/0 ipv6 2001:db8:10::1/64 "
+        "set Router0 slaac on FastEthernet0/0 prefix 2001:db8:10::/64 "
+        "set Router0 dhcpv6 pool V6POOL prefix 2001:db8:10::/64 interface FastEthernet0/0 "
+        "set Router0 ospfv3 1 area 0 interface FastEthernet0/0 "
+        "set Router0 eigrp ipv6 100 interface FastEthernet0/0 "
+        "set Router0 ripng RIPNG interface FastEthernet0/0 "
+        "set Router0 hsrp 10 ipv6 2001:db8:10::fe interface FastEthernet0/0"
+    )
+    sample = SampleDescriptor(
+        path="ipv6_routing.pkt",
+        relative_path="ipv6_routing.pkt",
+        version="9.0.0.0810",
+        device_count=2,
+        link_count=1,
+        devices=[
+            {"name": "Router0", "type": "Router", "model": "ISR4331"},
+            {"name": "Router1", "type": "Router", "model": "ISR4331"},
+        ],
+        links=[],
+        capability_tags=["ipv6_slaac", "dhcpv6_stateful", "ospfv3", "eigrp_ipv6", "ripng", "hsrp"],
+        topology_tags=["ipv6_routing"],
+        preferred_roles=["preferred_ipv6"],
+        trust_level="trusted",
+        origin="cisco-local",
+        role="primary",
+        prototype_eligible=True,
+        donor_eligible=True,
+        device_families=["routers"],
+        archetype_tags=["IPv6/routing"],
+        runtime_features=["workspace_validated", "ipv6_runtime"],
+        apply_safety_level="safe-open-generate-supported",
+    )
+
+    report = build_coverage_gap_report(plan, [sample], selected_donor="ipv6_routing.pkt")
+    parity_by_capability = {entry["capability"]: entry for entry in report.capability_parity}
+
+    assert report.scenario_family == "ipv6_routing"
+    assert report.scenario_generate_readiness["status"] == "ready"
+    for capability in ["ipv6_slaac", "dhcpv6_stateful", "ospfv3", "eigrp_ipv6", "ripng", "hsrp"]:
+        assert parity_by_capability[capability]["generate_supported"] is True
+        assert parity_by_capability[capability]["acceptance_verified"] is True
+        assert parity_by_capability[capability]["generate_mismatch_reason"] is None
+
+
+def test_build_coverage_gap_report_keeps_ipv6_edit_proven_without_selected_donor() -> None:
+    plan = parse_intent(
+        "set Router0 ipv6 unicast-routing "
+        "set Router0 interface FastEthernet0/0 ipv6 2001:db8:10::1/64 "
+        "set Router0 dhcpv6 pool V6POOL prefix 2001:db8:10::/64 interface FastEthernet0/0"
+    )
+    sample = SampleDescriptor(
+        path="ipv6_routing.pkt",
+        relative_path="ipv6_routing.pkt",
+        version="9.0.0.0810",
+        device_count=1,
+        link_count=0,
+        devices=[{"name": "Router0", "type": "Router", "model": "ISR4331"}],
+        links=[],
+        capability_tags=["ipv6_slaac", "dhcpv6_stateful"],
+        topology_tags=["ipv6_routing"],
+        preferred_roles=["preferred_ipv6"],
+        trust_level="trusted",
+        origin="cisco-local",
+        role="primary",
+        prototype_eligible=True,
+        donor_eligible=True,
+        device_families=["routers"],
+        archetype_tags=["IPv6/routing"],
+        runtime_features=["workspace_validated", "ipv6_runtime"],
+    )
+
+    report = build_coverage_gap_report(plan, [sample])
+    parity_by_capability = {entry["capability"]: entry for entry in report.capability_parity}
+
+    assert report.scenario_family == "ipv6_routing"
+    for capability in ["ipv6_slaac", "dhcpv6_stateful"]:
+        assert parity_by_capability[capability]["edit_supported"] is True
+        assert parity_by_capability[capability]["generate_supported"] is False
+        assert parity_by_capability[capability]["acceptance_verified"] is False
+        assert parity_by_capability[capability]["generate_mismatch_reason"] == "supported_in_edit_only"
+
+
 def test_build_coverage_gap_report_supports_phase_a_switching_capabilities() -> None:
     plan = parse_intent("router-on-a-stick trunk access management telnet")
     plan.capabilities = ["router_on_a_stick", "trunk", "access_port", "management_vlan", "telnet"]
@@ -1013,3 +1098,24 @@ def test_build_inventory_capability_report_infers_wireless_mutation() -> None:
     }
     report = build_inventory_capability_report(payload)
     assert "wireless_mutation" in report["capabilities"]
+
+
+def test_build_inventory_capability_report_infers_ipv6_routing_features() -> None:
+    payload = {
+        "topology_summary": {"device_counts": {"Router": 1}},
+        "routing": {
+            "Router0": {
+                "capabilities": [
+                    "ipv6_slaac",
+                    "dhcpv6_stateful",
+                    "ospfv3",
+                    "eigrp_ipv6",
+                    "ripng",
+                    "hsrp",
+                ]
+            }
+        },
+    }
+    report = build_inventory_capability_report(payload)
+    assert "routers" in report["device_families"]
+    assert {"ipv6_slaac", "dhcpv6_stateful", "ospfv3", "eigrp_ipv6", "ripng", "hsrp"} <= set(report["capabilities"])

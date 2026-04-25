@@ -368,6 +368,55 @@ def test_edit_pkt_file_roundtrip_preserves_router_on_a_stick_and_switching_mutat
     assert "ip address 192.168.10.1 255.255.255.0" in router_text
 
 
+def test_edit_pkt_file_roundtrip_preserves_ipv6_routing_mutations(tmp_path: Path) -> None:
+    source = _require_saves_root() / r"01 Networking\FTP\FTP.pkt"
+    output = tmp_path / "ipv6_routing_roundtrip.pkt"
+    xml_out = tmp_path / "ipv6_routing_roundtrip.xml"
+    plan = parse_intent(
+        "set Router0 ipv6 unicast-routing "
+        "set Router0 interface FastEthernet0/0 ipv6 2001:db8:10::1/64 "
+        "set Router0 slaac on FastEthernet0/0 prefix 2001:db8:10::/64 "
+        "set Router0 dhcpv6 pool V6POOL prefix 2001:db8:10::/64 interface FastEthernet0/0 dns 2001:4860:4860::8888 domain atlas.local "
+        "set Router0 ospfv3 1 area 0 interface FastEthernet0/0 "
+        "set Router0 eigrp ipv6 100 interface FastEthernet0/0 "
+        "set Router0 ripng RIPNG interface FastEthernet0/0 "
+        "set Router0 hsrp 10 ipv6 2001:db8:10::fe interface FastEthernet0/0 priority 110"
+    )
+    edit_pkt_file(source, plan, output, xml_out)
+
+    assert output.exists()
+    assert xml_out.exists()
+
+    updated = decode_pkt_to_root(output)
+    inventory = inventory_root(updated)
+    assert inventory["routing"]["Router0"]["capabilities"] == [
+        "dhcpv6_stateful",
+        "eigrp_ipv6",
+        "hsrp",
+        "ipv6_slaac",
+        "ospfv3",
+        "ripng",
+    ]
+    router = next(
+        device
+        for device in updated.findall(".//DEVICES/DEVICE")
+        if device.findtext("./ENGINE/NAME", default="") == "Router0"
+    )
+    router_text = "\n".join(line.text or "" for line in router.findall("./ENGINE/RUNNINGCONFIG/LINE"))
+    assert "ipv6 unicast-routing" in router_text
+    assert "ipv6 address 2001:db8:10::1/64" in router_text
+    assert "ipv6 nd prefix 2001:db8:10::/64" in router_text
+    assert "ipv6 dhcp pool V6POOL" in router_text
+    assert "address prefix 2001:db8:10::/64" in router_text
+    assert "ipv6 dhcp server V6POOL" in router_text
+    assert "ipv6 ospf 1 area 0" in router_text
+    assert "ipv6 router ospf 1" in router_text
+    assert "ipv6 eigrp 100" in router_text
+    assert "ipv6 router eigrp 100" in router_text
+    assert "ipv6 rip RIPNG enable" in router_text
+    assert "standby 10 ipv6 2001:db8:10::fe" in router_text
+
+
 def test_apply_plan_operations_updates_acl_and_dns() -> None:
     root = decode_pkt_to_root(_require_saves_root() / r"01 Networking\FTP\FTP.pkt")
     plan = parse_intent(
