@@ -786,6 +786,7 @@ def test_build_coverage_gap_report_supports_donor_backed_wan_security_when_selec
         archetype_tags=["WAN/security edge"],
         runtime_features=["workspace_validated", "tunnel_runtime", "wan_runtime", "security_runtime", "multilayer_runtime"],
         apply_safety_level="safe-open-generate-supported",
+        acceptance_fixtures=["wan_security_complex"],
     )
 
     report = build_coverage_gap_report(plan, [sample], selected_donor="wan_edge_ready.pkt")
@@ -918,6 +919,89 @@ def test_build_coverage_gap_report_promotes_explicit_wireless_wep_and_enterprise
         assert parity_by_capability[capability]["generate_supported"] is False
         assert parity_by_capability[capability]["acceptance_verified"] is False
         assert parity_by_capability[capability]["generate_mismatch_reason"] == "supported_in_edit_only"
+
+
+def test_build_coverage_gap_report_promotes_explicit_wan_security_edits_to_edit_only() -> None:
+    plan = parse_intent(
+        "set R1 gre tunnel Tunnel0 source 10.0.0.1 destination 10.0.0.2 ip 172.16.0.1/30 "
+        "set R1 ppp interface Serial0/0/0 authentication chap "
+        "set R1 ipsec transform-set TS esp-aes esp-sha-hmac "
+        "set R1 crypto map VPNMAP 10 peer 203.0.113.2 transform-set TS match ACL_VPN interface Serial0/0/0"
+    )
+    sample = SampleDescriptor(
+        path="wan_security.pkt",
+        relative_path="wan_security.pkt",
+        version="9.0.0.0810",
+        device_count=3,
+        link_count=2,
+        devices=[
+            {"name": "R1", "type": "Router", "model": "ISR4331"},
+            {"name": "R2", "type": "Router", "model": "ISR4331"},
+            {"name": "Cloud0", "type": "Cloud", "model": "Cloud-PT"},
+        ],
+        links=[],
+        capability_tags=["vpn", "ipsec", "gre", "ppp"],
+        topology_tags=["wan_security_edge"],
+        preferred_roles=["preferred_wan_security"],
+        trust_level="trusted",
+        origin="cisco-local",
+        role="primary",
+        prototype_eligible=True,
+        donor_eligible=True,
+        device_families=["routers", "wan/cloud/dsl/cable devices"],
+        archetype_tags=["WAN/security edge"],
+        runtime_features=["workspace_validated", "wan_runtime", "tunnel_runtime"],
+    )
+
+    report = build_coverage_gap_report(plan, [sample])
+    parity_by_capability = {entry["capability"]: entry for entry in report.capability_parity}
+
+    assert report.scenario_family == "wan_security_edge"
+    for capability in ["gre", "ppp", "ipsec", "vpn"]:
+        assert parity_by_capability[capability]["edit_supported"] is True
+        assert parity_by_capability[capability]["generate_supported"] is False
+        assert parity_by_capability[capability]["acceptance_verified"] is False
+        assert parity_by_capability[capability]["generate_mismatch_reason"] == "supported_in_edit_only"
+
+
+def test_build_coverage_gap_report_keeps_broad_wan_security_generate_donor_limited() -> None:
+    plan = parse_intent("wan security edge gre tunnel ipsec vpn ppp asa firewall multilayer")
+    sample = SampleDescriptor(
+        path="wan_security.pkt",
+        relative_path="wan_security.pkt",
+        version="9.0.0.0810",
+        device_count=3,
+        link_count=2,
+        devices=[
+            {"name": "R1", "type": "Router", "model": "ISR4331"},
+            {"name": "R2", "type": "Router", "model": "ISR4331"},
+            {"name": "Cloud0", "type": "Cloud", "model": "Cloud-PT"},
+        ],
+        links=[],
+        capability_tags=["vpn", "ipsec", "gre", "ppp", "security_edge"],
+        topology_tags=["wan_security_edge"],
+        preferred_roles=["preferred_wan_security"],
+        trust_level="trusted",
+        origin="cisco-local",
+        role="primary",
+        prototype_eligible=True,
+        donor_eligible=True,
+        device_families=["routers", "security devices", "wan/cloud/dsl/cable devices"],
+        archetype_tags=["WAN/security edge"],
+        runtime_features=["workspace_validated", "wan_runtime", "tunnel_runtime", "security_runtime"],
+        apply_safety_level="acceptance-verified",
+    )
+
+    report = build_coverage_gap_report(plan, [sample], selected_donor="wan_security.pkt")
+    parity_by_capability = {entry["capability"]: entry for entry in report.capability_parity}
+
+    assert report.scenario_family == "wan_security_edge"
+    assert report.scenario_generate_readiness["status"] != "ready"
+    for capability in ["gre", "ppp", "ipsec", "vpn", "security_edge"]:
+        assert parity_by_capability[capability]["edit_supported"] is True
+        assert parity_by_capability[capability]["generate_supported"] is False
+        assert parity_by_capability[capability]["acceptance_verified"] is False
+        assert parity_by_capability[capability]["generate_mismatch_reason"] == "supported_but_donor_limited"
 
 
 def test_build_coverage_gap_report_promotes_explicit_ipv6_selected_donor() -> None:

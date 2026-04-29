@@ -30,6 +30,10 @@ EDITOR_TEST_ALIASES = {
     "port_security": ["set_port_security", "port-security"],
     "wep": ["security wep", "WEP_KEY"],
     "wpa_enterprise": ["wpa-enterprise", "wpa2-enterprise", "802.1x", "radius_server"],
+    "gre": ["set_gre_tunnel", "gre tunnel", "tunnel mode gre ip"],
+    "ppp": ["set_ppp_interface", "encapsulation ppp"],
+    "ipsec": ["set_ipsec_transform_set", "crypto ipsec transform-set", "set_crypto_map"],
+    "vpn": ["set_crypto_map", "crypto map"],
 }
 
 STATUS_ORDER = [

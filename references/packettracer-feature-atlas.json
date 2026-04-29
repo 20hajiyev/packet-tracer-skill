@@ -42,6 +42,20 @@
       ]
     },
     {
+      "id": "wan_security_edge",
+      "label": "WAN Security Edge",
+      "scenario_family": "wan_security_edge",
+      "wave": 4,
+      "features": [
+        {"id": "vpn", "capability": "vpn", "label": "Site-to-site VPN crypto map", "sample_path_keywords": ["vpn", "ipsec"], "support_ceiling": "edit_proven"},
+        {"id": "ipsec", "capability": "ipsec", "label": "IPSec transform set / crypto map", "sample_path_keywords": ["ipsec", "ike"], "support_ceiling": "edit_proven"},
+        {"id": "gre", "capability": "gre", "label": "GRE tunnel basics", "sample_path_keywords": ["gre"], "support_ceiling": "edit_proven"},
+        {"id": "ppp", "capability": "ppp", "label": "PPP serial encapsulation", "sample_path_keywords": ["ppp", "chap", "pap"], "support_ceiling": "edit_proven"},
+        {"id": "security_edge", "capability": "security_edge", "label": "Security edge device evidence", "sample_path_keywords": ["asa", "firewall", "security appliance"], "support_ceiling": "report_supported"},
+        {"id": "multilayer_switching", "capability": "multilayer_switching", "label": "Multilayer switch / SVI evidence", "sample_path_keywords": ["multilayer", "3560", "svi"], "support_ceiling": "report_supported"}
+      ]
+    },
+    {
       "id": "security_edge_deepening",
       "label": "Security Edge Deepening",
       "scenario_family": "wan_security_edge",

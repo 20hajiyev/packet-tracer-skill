@@ -321,6 +321,7 @@ Current feature-support truth:
 | Campus / service-heavy / Home IoT / WAN-security scenario families | Donor-aware planning and parity/report surfaces | Use `--explain-plan`, `--compare-scenarios`, and donor proof docs before strict generate claims |
 | IPv6/routing | Edit-proven subset | Use explicit router/interface commands; strict generate still needs selected-donor acceptance |
 | L2 security/monitoring | Edit-proven subset | Use explicit DHCP snooping, DAI, LLDP, REP, SNMP, NetFlow, SPAN/RSPAN, and port-security commands |
+| WAN/security edge | GRE, PPP, IPSec transform-set, and VPN crypto-map skeleton are explicit-edit capable; ASA policies and multilayer switching remain report-only | Use explicit router edit commands; strict generate still needs selected-donor acceptance |
 | Advanced wireless | WEP and WPA Enterprise/RADIUS are explicit-edit capable; WLC, Meraki, cellular, Bluetooth, beamforming, and guest Wi-Fi remain report-only | Keep controller/cellular/Bluetooth claims in atlas/report mode until donor-backed proof exists |
 | Voice, automation/controller, industrial IoT, physical/media gaps | Report-supported atlas entries | Do not claim edit/generate support until a proof wave promotes them |
 
@@ -410,7 +411,7 @@ The campus donor proof is intentionally more specific than the gallery cards. It
 
 The Home IoT donor proof is intentionally narrower than a generic smart-home claim. It shows that donor-backed registration, rule control, and wireless association are integrated only inside a constrained path with explicit targets and a selected donor.
 
-The WAN/security donor proof is also conservative. It shows family-correct report/selection behavior and donor-backed readiness semantics for VPN, IPSec, GRE, PPP, security-edge, and multilayer evidence, but it does not claim broad synthetic WAN/security configuration generation.
+The WAN/security donor proof is also conservative. It shows family-correct report/selection behavior, donor-backed readiness semantics, and a narrow explicit-edit subset for GRE, PPP, IPSec transform-set, and VPN crypto-map skeletons. It does not claim broad synthetic WAN/security configuration generation.
 
 The advanced wireless proof is narrower again. It promotes only explicit WEP and WPA Enterprise/RADIUS edit semantics while keeping WLC, Meraki, cellular, Bluetooth, beamforming, and guest Wi-Fi in report-only atlas mode.
 
@@ -502,6 +503,7 @@ Hazırda ən güclü sahələr:
 - campus və service-heavy lab planning/parity/reporting
 - donor-backed Home IoT constrained edits
 - WAN/security edge report və donor-backed readiness semantics
+- WAN/security edge üçün GRE, PPP, IPSec transform-set və VPN crypto-map explicit edit semantics
 - IPv6/routing üçün explicit edit-proven subset
 - L2 security/monitoring üçün explicit edit-proven subset
 - advanced wireless üçün WEP və WPA Enterprise/RADIUS explicit edit semantics

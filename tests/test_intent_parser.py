@@ -199,6 +199,22 @@ def test_parse_wan_security_prompt_recognizes_phase_d_intent() -> None:
     assert plan.device_requirements["Cloud"] == 1
 
 
+def test_parse_explicit_wan_security_edit_operations() -> None:
+    plan = parse_intent(
+        "set R1 gre tunnel Tunnel0 source 10.0.0.1 destination 10.0.0.2 ip 172.16.0.1/30 "
+        "set R1 ppp interface Serial0/0/0 authentication chap "
+        "set R1 ipsec transform-set TS esp-aes esp-sha-hmac "
+        "set R1 crypto map VPNMAP 10 peer 203.0.113.2 transform-set TS match ACL_VPN interface Serial0/0/0"
+    )
+
+    assert plan.network_style == "wan_security"
+    assert {"gre", "ppp", "ipsec", "vpn"} <= set(plan.capabilities)
+    assert any(op["op"] == "set_gre_tunnel" and op["interface"] == "Tunnel0" for op in plan.router_ops)
+    assert any(op["op"] == "set_ppp_interface" and op["authentication"] == "chap" for op in plan.router_ops)
+    assert any(op["op"] == "set_ipsec_transform_set" and op["name"] == "TS" for op in plan.router_ops)
+    assert any(op["op"] == "set_crypto_map" and op["map_name"] == "VPNMAP" for op in plan.router_ops)
+
+
 def test_parse_feature_atlas_prompts_without_service_heavy_drift() -> None:
     cases = [
         ("ipv6 ospf dhcpv6 slaac hsrp", "ipv6_routing", {"ipv6_slaac", "dhcpv6_stateful", "hsrp"}),

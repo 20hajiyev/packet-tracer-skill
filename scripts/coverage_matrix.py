@@ -141,6 +141,21 @@ WIRELESS_ADVANCED_EDIT_PROVEN_CAPABILITIES = {
     "wep",
     "wpa_enterprise",
 }
+WAN_SECURITY_EDIT_PROVEN_CAPABILITIES = {
+    "gre",
+    "ppp",
+    "ipsec",
+    "vpn",
+}
+
+WAN_SECURITY_DONOR_LIMITED_CAPABILITIES = {
+    "gre",
+    "ppp",
+    "ipsec",
+    "vpn",
+    "security_edge",
+    "multilayer_switching",
+}
 EDIT_PROVEN_REPORT_CAPABILITIES = IPV6_DONOR_BACKED_CAPABILITIES | L2_SECURITY_MONITORING_EDIT_PROVEN_CAPABILITIES
 
 CAPABILITY_PROVIDER_FAMILIES = {
@@ -621,6 +636,8 @@ def _generate_mismatch_reason(status: dict[str, object]) -> str | None:
         return "report_only"
     if not bool(status.get("inventory_supported")):
         return "unsupported"
+    if bool(status.get("donor_limited_generate")):
+        return "supported_but_donor_limited"
     if bool(status.get("edit_supported")) and not bool(status.get("safe_open_generate_supported")):
         return "supported_in_edit_only"
     if bool(status.get("safe_open_generate_supported")) and bool(status.get("requires_curated_donor")):
@@ -688,6 +705,33 @@ def _has_explicit_advanced_wireless_edit(plan: IntentPlan, capability: str) -> b
             return True
         if capability == "wpa_enterprise" and security in {"wpa-enterprise", "wpa2-enterprise", "802.1x"} and str(op.get("device") or "").strip() and str(op.get("ssid") or "").strip():
             return True
+    return False
+
+
+def _has_explicit_wan_security_edit(plan: IntentPlan, capability: str) -> bool:
+    expected_ops = {
+        "gre": {"set_gre_tunnel"},
+        "ppp": {"set_ppp_interface"},
+        "ipsec": {"set_ipsec_transform_set", "set_crypto_map"},
+        "vpn": {"set_crypto_map"},
+    }.get(capability, set())
+    if not expected_ops:
+        return False
+    for op in plan.router_ops:
+        if str(op.get("op")) not in expected_ops:
+            continue
+        if not str(op.get("device") or "").strip():
+            continue
+        if capability == "gre":
+            return bool(str(op.get("interface") or "").strip() and str(op.get("source") or "").strip() and str(op.get("destination") or "").strip())
+        if capability == "ppp":
+            return bool(str(op.get("interface") or "").strip())
+        if capability == "ipsec":
+            if op.get("op") == "set_ipsec_transform_set":
+                return bool(str(op.get("name") or "").strip() and str(op.get("encryption") or "").strip() and str(op.get("integrity") or "").strip())
+            return bool(str(op.get("map_name") or "").strip() and str(op.get("transform_set") or "").strip())
+        if capability == "vpn":
+            return bool(str(op.get("map_name") or "").strip() and str(op.get("peer") or "").strip())
     return False
 
 
@@ -764,10 +808,15 @@ def _selected_donor_capability_override(
         "multilayer_switching": {"multilayer_runtime"},
     }
     if capability in wan_runtime_by_capability:
+        has_acceptance_backed_wan_generate = (
+            bool(selected_sample.acceptance_fixtures)
+            and selected_sample.apply_safety_level in {"acceptance-verified", "safe-open-generate-supported"}
+        )
         return (
             "WAN/security edge" in archetypes
             and capability in sample_capabilities
             and bool(runtime_features & wan_runtime_by_capability[capability])
+            and has_acceptance_backed_wan_generate
             and _has_explicit_wan_security_intent(plan)
         )
     if capability in IPV6_DONOR_BACKED_CAPABILITIES:
@@ -801,6 +850,8 @@ def _recommended_next_action_for_capability(capability: str, mismatch_reason: st
     if mismatch_reason == "report_only":
         return f"Keep {capability} in atlas/report mode until donor-backed edit or generate evidence exists."
     if capability in {"vpn", "ipsec", "gre", "ppp", "security_edge", "multilayer_switching"}:
+        if mismatch_reason == "supported_in_edit_only":
+            return f"Use explicit WAN/security edit commands for {capability}; strict prompt generate still needs an acceptance-backed WAN/security donor."
         if mismatch_reason == "supported_but_donor_limited":
             return f"Provide a WAN/security edge donor with reusable ASA/cloud/serial or tunnel skeleton for {capability}."
         if mismatch_reason == "supported_but_acceptance_gated":
@@ -1008,7 +1059,18 @@ def build_coverage_gap_report(
             and _has_explicit_advanced_wireless_edit(plan, capability)
             and not selected_donor_backed
         )
-        edit_proven_only = (capability in EDIT_PROVEN_REPORT_CAPABILITIES or wireless_edit_proven_only) and not selected_donor_backed
+        wan_security_edit_proven_only = (
+            capability in WAN_SECURITY_EDIT_PROVEN_CAPABILITIES
+            and _has_explicit_wan_security_edit(plan, capability)
+            and not selected_donor_backed
+        )
+        wan_security_donor_limited = (
+            capability in WAN_SECURITY_DONOR_LIMITED_CAPABILITIES
+            and _has_explicit_wan_security_intent(plan)
+            and not selected_donor_backed
+            and not wan_security_edit_proven_only
+        )
+        edit_proven_only = (capability in EDIT_PROVEN_REPORT_CAPABILITIES or wireless_edit_proven_only or wan_security_edit_proven_only) and not selected_donor_backed
         report_only = capability in REPORT_ONLY_CAPABILITIES and not selected_donor_backed and not edit_proven_only
         matching_entries = [
             entry
@@ -1022,9 +1084,13 @@ def build_coverage_gap_report(
                 (any(entry.maturity_level == "acceptance-verified" for entry in matching_entries) and capability not in iot_acceptance_gated)
                 or selected_donor_backed
             )
-            if report_only or edit_proven_only:
+            if report_only or edit_proven_only or wan_security_donor_limited:
                 acceptance_verified = False
-            requires_curated = best_entry.maturity_level == "safe-open-generate-supported" and not selected_donor_backed and not edit_proven_only
+            requires_curated = (
+                best_entry.maturity_level == "safe-open-generate-supported"
+                and not selected_donor_backed
+                and not edit_proven_only
+            ) or wan_security_donor_limited
             if requires_curated:
                 requires_curated_donor.append(capability)
             if not acceptance_verified:
@@ -1038,11 +1104,12 @@ def build_coverage_gap_report(
                     "inventory_supported": any(MATURITY_RANK[entry.maturity_level] >= MATURITY_RANK["inventory-supported"] for entry in matching_entries),
                     "edit_supported": True if edit_proven_only else False if report_only else any(MATURITY_RANK[entry.maturity_level] >= MATURITY_RANK["config-mutation-supported"] for entry in matching_entries),
                     "config_mutation_supported": True if edit_proven_only else False if report_only else any(MATURITY_RANK[entry.maturity_level] >= MATURITY_RANK["config-mutation-supported"] for entry in matching_entries),
-                    "safe_open_generate_supported": False if report_only or edit_proven_only else any(MATURITY_RANK[entry.maturity_level] >= MATURITY_RANK["safe-open-generate-supported"] for entry in matching_entries),
+                    "safe_open_generate_supported": False if report_only or edit_proven_only or wan_security_donor_limited else any(MATURITY_RANK[entry.maturity_level] >= MATURITY_RANK["safe-open-generate-supported"] for entry in matching_entries),
                     "acceptance_verified": acceptance_verified,
                     "requires_curated_donor": requires_curated,
                     "requires_manual_acceptance": not acceptance_verified,
                     "report_only": report_only,
+                    "donor_limited_generate": wan_security_donor_limited,
                     "recommended_donors": list(dict.fromkeys(donor for entry in matching_entries for donor in entry.accepted_donors))[:10],
                     "known_limitations": list(dict.fromkeys(item for entry in matching_entries for item in entry.known_limitations)),
                 }
@@ -1063,6 +1130,7 @@ def build_coverage_gap_report(
                     "requires_curated_donor": False,
                     "requires_manual_acceptance": True,
                     "report_only": False,
+                    "donor_limited_generate": False,
                     "recommended_donors": [],
                     "known_limitations": ["editor-proven without sample-backed donor selection"],
                 }
@@ -1083,6 +1151,7 @@ def build_coverage_gap_report(
                     "requires_curated_donor": False,
                     "requires_manual_acceptance": True,
                     "report_only": True,
+                    "donor_limited_generate": False,
                     "recommended_donors": [],
                     "known_limitations": ["report-supported without decode-backed donor selection"],
                 }
@@ -1102,6 +1171,7 @@ def build_coverage_gap_report(
                     "acceptance_verified": True,
                     "requires_curated_donor": False,
                     "requires_manual_acceptance": False,
+                    "donor_limited_generate": False,
                     "recommended_donors": [selected_sample.relative_path],
                     "known_limitations": [],
                 }
@@ -1121,6 +1191,7 @@ def build_coverage_gap_report(
                     "acceptance_verified": False,
                     "requires_curated_donor": False,
                     "requires_manual_acceptance": True,
+                    "donor_limited_generate": False,
                     "recommended_donors": [],
                     "known_limitations": ["no matching donor coverage found"],
                 }

@@ -56,11 +56,31 @@ SSID. They still report `generate_supported=false` and
 WLC/controller workflows, Meraki, cellular/5G, Bluetooth, beamforming, and
 guest Wi-Fi remain report-only until separate donor-backed editor proof exists.
 
+## Fourth Edit-Proven Wave
+
+The fourth promotion wave is `wan_security_edge`. This wave promotes only
+explicit, deterministic router edit commands:
+
+- GRE tunnel basics
+- PPP serial encapsulation
+- IPSec transform-set lines
+- site-to-site VPN crypto-map skeleton binding
+
+These capabilities can report `edit_supported=true` only when the prompt names
+the router, interface or tunnel, peer/source/destination, and required crypto
+objects. They still report `generate_supported=false` and
+`generate_mismatch_reason=supported_in_edit_only`.
+
+ASA ACL/NAT, service policies, clientless VPN, CBAC, ZFW, security-edge device
+mutation, and multilayer switching remain report-only until separate donor-backed
+editor proof exists.
+
 ## Current Feature Families
 
 - `ipv6_routing`: SLAAC, DHCPv6, prefix delegation, AAAA DNS, IPv6 tunneling, ISATAP, OSPFv3, EIGRP IPv6, RIPng, HSRP.
 - `l2_security_monitoring`: DHCP snooping, DAI, 802.1X/NAC, LLDP, REP, SNMP, NetFlow, SPAN/RSPAN, QoS, port security.
-- `wan_security_edge`: ASA ACL/NAT, ASA service policy, clientless VPN, CBAC, ZFW, sniffer, IPSec variants.
+- `wan_security_edge`: VPN crypto-map skeleton, IPSec transform-set, GRE tunnel basics, PPP serial encapsulation, security-edge evidence, multilayer evidence.
+- `security_edge_deepening`: ASA ACL/NAT, ASA service policy, clientless VPN, CBAC, ZFW, sniffer, IPSec variants.
 - `wireless_advanced`: WLC, WPA Enterprise/RADIUS, WEP/WPA modes, guest Wi-Fi, beamforming, Meraki, 5G/cellular, Bluetooth.
 - `automation_controller`: Network Controller, Python, JavaScript, Blockly, TCP/UDP test apps, VM/IOx samples.
 - `voice_collaboration`: VoIP, IP phones, Call Manager-style telephony, Linksys voice.

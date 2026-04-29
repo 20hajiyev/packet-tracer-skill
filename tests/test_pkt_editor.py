@@ -503,6 +503,46 @@ def test_edit_pkt_file_roundtrip_preserves_l2_security_monitoring_mutations(tmp_
     assert "ip flow ingress" in router_text
 
 
+def test_edit_pkt_file_roundtrip_preserves_wan_security_mutations(tmp_path: Path) -> None:
+    source = _require_saves_root() / r"01 Networking\FTP\FTP.pkt"
+    output = tmp_path / "wan_security_roundtrip.pkt"
+    xml_out = tmp_path / "wan_security_roundtrip.xml"
+    plan = parse_intent(
+        "set Router0 gre tunnel Tunnel0 source 10.0.0.1 destination 10.0.0.2 ip 172.16.0.1/30 "
+        "set Router0 ppp interface Serial0/0/0 authentication chap "
+        "set Router0 ipsec transform-set TS esp-aes esp-sha-hmac "
+        "set Router0 crypto map VPNMAP 10 peer 203.0.113.2 transform-set TS match ACL_VPN interface Serial0/0/0"
+    )
+    edit_pkt_file(source, plan, output, xml_out)
+
+    assert output.exists()
+    assert xml_out.exists()
+
+    updated = decode_pkt_to_root(output)
+    inventory = inventory_root(updated)
+    assert inventory["routing"]["Router0"]["capabilities"] == ["gre", "ipsec", "ppp", "vpn"]
+    router = next(
+        device
+        for device in updated.findall(".//DEVICES/DEVICE")
+        if device.findtext("./ENGINE/NAME", default="") == "Router0"
+    )
+    router_text = "\n".join(line.text or "" for line in router.findall("./ENGINE/RUNNINGCONFIG/LINE"))
+    assert "interface Tunnel0" in router_text
+    assert "ip address 172.16.0.1 255.255.255.252" in router_text
+    assert "tunnel source 10.0.0.1" in router_text
+    assert "tunnel destination 10.0.0.2" in router_text
+    assert "tunnel mode gre ip" in router_text
+    assert "interface Serial0/0/0" in router_text
+    assert "encapsulation ppp" in router_text
+    assert "ppp authentication chap" in router_text
+    assert "crypto ipsec transform-set TS esp-aes esp-sha-hmac" in router_text
+    assert "crypto map VPNMAP 10 ipsec-isakmp" in router_text
+    assert "set peer 203.0.113.2" in router_text
+    assert "set transform-set TS" in router_text
+    assert "match address ACL_VPN" in router_text
+    assert "crypto map VPNMAP" in router_text
+
+
 def test_apply_plan_operations_updates_acl_and_dns() -> None:
     root = decode_pkt_to_root(_require_saves_root() / r"01 Networking\FTP\FTP.pkt")
     plan = parse_intent(

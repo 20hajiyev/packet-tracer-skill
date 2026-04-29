@@ -234,7 +234,11 @@ TRANSLITERATION_TABLE = str.maketrans(
 
 
 def _command_segments(prompt: str) -> list[str]:
-    parts = re.split(r"(?=\b(?:device|connect|link|set|enable|associate|change|update|rename|apply)\b)", prompt, flags=re.IGNORECASE)
+    parts = re.split(
+        r"(?=(?<!-)\b(?:device|connect|link|set|enable|associate|change|update|rename|apply)\b)",
+        prompt,
+        flags=re.IGNORECASE,
+    )
     return [part.strip() for part in parts if part.strip()]
 
 
@@ -700,6 +704,23 @@ def _extract_router_ops(prompt: str) -> list[dict[str, object]]:
         r"set\s+([A-Za-z0-9_-]+)\s+netflow\s+destination\s+(\d+\.\d+\.\d+\.\d+)\s+(\d+)(?:\s+version\s+(\d+))?(?:\s+interface\s+([A-Za-z0-9/._-]+)\s+(ingress|egress))?",
         flags=re.IGNORECASE,
     )
+    gre_tunnel_pattern = re.compile(
+        r"set\s+([A-Za-z0-9_-]+)\s+gre\s+tunnel\s+([A-Za-z0-9/._-]+)\s+source\s+([A-Za-z0-9/._:-]+)\s+destination\s+([A-Za-z0-9/._:-]+)"
+        r"(?:\s+ip\s+(\d+\.\d+\.\d+\.\d+)/(\d+))?",
+        flags=re.IGNORECASE,
+    )
+    ppp_pattern = re.compile(
+        r"set\s+([A-Za-z0-9_-]+)\s+ppp\s+interface\s+([A-Za-z0-9/._-]+)(?:\s+authentication\s+(chap|pap))?",
+        flags=re.IGNORECASE,
+    )
+    ipsec_transform_pattern = re.compile(
+        r"set\s+([A-Za-z0-9_-]+)\s+ipsec\s+transform-set\s+([A-Za-z0-9_-]+)\s+([A-Za-z0-9_-]+)\s+([A-Za-z0-9_-]+)",
+        flags=re.IGNORECASE,
+    )
+    crypto_map_pattern = re.compile(
+        r"set\s+([A-Za-z0-9_-]+)\s+crypto\s+map\s+([A-Za-z0-9_-]+)\s+(\d+)\s+peer\s+(\d+\.\d+\.\d+\.\d+)\s+transform-set\s+([A-Za-z0-9_-]+)\s+match\s+([A-Za-z0-9_-]+)(?:\s+interface\s+([A-Za-z0-9/._-]+))?",
+        flags=re.IGNORECASE,
+    )
     for segment in _command_segments(prompt):
         for device in ipv6_unicast_pattern.findall(segment):
             ops.append({"op": "enable_ipv6_unicast_routing", "device": device})
@@ -757,6 +778,50 @@ def _extract_router_ops(prompt: str) -> list[dict[str, object]]:
                     "version": int(version) if version else 9,
                     "interface": interface_name or None,
                     "direction": direction.lower() if direction else None,
+                }
+            )
+        for device, tunnel_interface, source, destination, ip, prefix in gre_tunnel_pattern.findall(segment):
+            ops.append(
+                {
+                    "op": "set_gre_tunnel",
+                    "device": device,
+                    "interface": tunnel_interface,
+                    "source": source,
+                    "destination": destination,
+                    "ip": ip or None,
+                    "prefix": int(prefix) if prefix else None,
+                }
+            )
+        for device, interface_name, authentication in ppp_pattern.findall(segment):
+            ops.append(
+                {
+                    "op": "set_ppp_interface",
+                    "device": device,
+                    "interface": interface_name,
+                    "authentication": authentication.lower() if authentication else None,
+                }
+            )
+        for device, name, encryption, integrity in ipsec_transform_pattern.findall(segment):
+            ops.append(
+                {
+                    "op": "set_ipsec_transform_set",
+                    "device": device,
+                    "name": name,
+                    "encryption": encryption,
+                    "integrity": integrity,
+                }
+            )
+        for device, map_name, sequence, peer, transform_set, acl_name, interface_name in crypto_map_pattern.findall(segment):
+            ops.append(
+                {
+                    "op": "set_crypto_map",
+                    "device": device,
+                    "map_name": map_name,
+                    "sequence": int(sequence),
+                    "peer": peer,
+                    "transform_set": transform_set,
+                    "acl_name": acl_name,
+                    "interface": interface_name or None,
                 }
             )
     return ops
@@ -1048,6 +1113,12 @@ def parse_intent(prompt: str) -> IntentPlan:
         capability_set.add("snmp")
     if "set_netflow" in router_op_names:
         capability_set.add("netflow")
+    if "set_gre_tunnel" in router_op_names:
+        capability_set.add("gre")
+    if "set_ppp_interface" in router_op_names:
+        capability_set.add("ppp")
+    if router_op_names & {"set_ipsec_transform_set", "set_crypto_map"}:
+        capability_set.update({"ipsec", "vpn"})
     if router_op_names & {"enable_ipv6_unicast_routing", "set_ipv6_address", "set_ipv6_slaac"}:
         capability_set.add("ipv6_slaac")
     if "set_dhcpv6_pool" in router_op_names:

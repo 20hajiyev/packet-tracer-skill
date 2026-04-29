@@ -18,6 +18,7 @@ def test_feature_atlas_truth_source_covers_packet_tracer_gap_families() -> None:
     assert {
         "ipv6_routing",
         "l2_security_monitoring",
+        "wan_security_edge",
         "security_edge_deepening",
         "wireless_advanced",
         "automation_controller",
@@ -27,6 +28,7 @@ def test_feature_atlas_truth_source_covers_packet_tracer_gap_families() -> None:
     } <= set(groups)
     assert any(feature["capability"] == "dhcpv6_stateful" for feature in groups["ipv6_routing"]["features"])
     assert any(feature["capability"] == "netflow" for feature in groups["l2_security_monitoring"]["features"])
+    assert any(feature["capability"] == "gre" for feature in groups["wan_security_edge"]["features"])
     assert any(feature["capability"] == "mqtt" for feature in groups["industrial_iot"]["features"])
 
 
@@ -59,6 +61,11 @@ def test_feature_gap_report_compares_parser_catalog_coverage_and_samples() -> No
     assert status_by_capability["wpa_enterprise"]["status"] == "edit_proven"
     assert status_by_capability["wlc"]["status"] == "report_supported"
     assert status_by_capability["bluetooth"]["status"] == "report_supported"
+    assert status_by_capability["gre"]["status"] == "edit_proven"
+    assert status_by_capability["ppp"]["status"] == "edit_proven"
+    assert status_by_capability["ipsec"]["status"] == "edit_proven"
+    assert status_by_capability["vpn"]["status"] == "edit_proven"
+    assert status_by_capability["security_edge"]["status"] == "report_supported"
 
 
 def test_feature_gap_report_keeps_atlas_features_below_generate_ready() -> None:

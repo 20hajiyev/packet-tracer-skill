@@ -297,6 +297,14 @@ def inventory_routing(root: ET.Element) -> dict[str, dict[str, object]]:
             capabilities.add("ripng")
         if re.search(r"(?mi)^\s*standby\s+\d+\s+ipv6\b", running):
             capabilities.add("hsrp")
+        if re.search(r"(?mi)^\s*interface\s+Tunnel\d+\b", running) or re.search(r"(?mi)^\s*tunnel\s+(?:source|destination|mode\s+gre)\b", running):
+            capabilities.add("gre")
+        if re.search(r"(?mi)^\s*encapsulation\s+ppp\b", running):
+            capabilities.add("ppp")
+        if re.search(r"(?mi)^\s*crypto\s+ipsec\s+transform-set\b", running) or re.search(r"(?mi)^\s*crypto\s+map\b", running):
+            capabilities.add("ipsec")
+        if re.search(r"(?mi)^\s*crypto\s+map\b", running):
+            capabilities.add("vpn")
         if capabilities:
             result[name] = {"capabilities": sorted(capabilities)}
     return result
@@ -915,6 +923,50 @@ def _apply_router_op(device: ET.Element, operation: dict[str, object]) -> None:
             _append_unique_config_lines(target, global_lines)
             if operation.get("interface") and operation.get("direction"):
                 _append_config_block(target, f"interface {operation['interface']}", [f" ip flow {operation['direction']}"])
+        return
+    elif operation["op"] == "set_gre_tunnel":
+        body = []
+        if operation.get("ip") and operation.get("prefix"):
+            body.append(f" ip address {operation['ip']} {_prefix_to_mask(int(operation['prefix']))}")
+        body.extend(
+            [
+                f" tunnel source {operation['source']}",
+                f" tunnel destination {operation['destination']}",
+                " tunnel mode gre ip",
+                " no shutdown",
+            ]
+        )
+        for target in _config_targets(device):
+            _append_config_block(target, f"interface {operation['interface']}", body)
+        return
+    elif operation["op"] == "set_ppp_interface":
+        body = [" encapsulation ppp"]
+        if operation.get("authentication"):
+            body.append(f" ppp authentication {operation['authentication']}")
+        body.append(" no shutdown")
+        for target in _config_targets(device):
+            _append_config_block(target, f"interface {operation['interface']}", body)
+        return
+    elif operation["op"] == "set_ipsec_transform_set":
+        for target in _config_targets(device):
+            _append_unique_config_lines(
+                target,
+                [f"crypto ipsec transform-set {operation['name']} {operation['encryption']} {operation['integrity']}"],
+            )
+        return
+    elif operation["op"] == "set_crypto_map":
+        for target in _config_targets(device):
+            _append_config_block(
+                target,
+                f"crypto map {operation['map_name']} {operation['sequence']} ipsec-isakmp",
+                [
+                    f" set peer {operation['peer']}",
+                    f" set transform-set {operation['transform_set']}",
+                    f" match address {operation['acl_name']}",
+                ],
+            )
+            if operation.get("interface"):
+                _append_config_block(target, f"interface {operation['interface']}", [f" crypto map {operation['map_name']}"])
         return
     else:
         return
