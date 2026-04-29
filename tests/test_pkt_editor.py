@@ -56,6 +56,28 @@ def test_inventory_root_lists_wlc_wireless_and_iot_roles() -> None:
     assert {"open garage", "close garage"} <= rule_names
 
 
+def test_inventory_root_lists_programming_apps_without_source_dump() -> None:
+    mqtt_root = decode_pkt_to_root(_require_saves_root() / r"04 IoT\MQTT\mqttdemo.pkt")
+    mqtt_inventory = inventory_root(mqtt_root)
+    assert "MQTT Broker" in mqtt_inventory["programming"]
+    assert "mqtt" in mqtt_inventory["programming"]["MQTT Broker"]["feature_tags"]
+
+    real_http_root = decode_pkt_to_root(_require_saves_root() / r"04 IoT\Real HTTP\real-http-server-py.pkt")
+    real_http_inventory = inventory_root(real_http_root)
+    server_programming = real_http_inventory["programming"]["Py: real http server 2"]
+    assert "real_http" in server_programming["feature_tags"]
+    main_py = next(
+        file
+        for app in server_programming["apps"]
+        for file in app["files"]
+        if app["app_name"] == "New Project (Python)" and file["name"] == "main.py"
+    )
+    assert main_py["language"] == "python"
+    assert main_py["content_length"] > 100
+    assert "content_sha256" in main_py
+    assert "content" not in main_py
+
+
 def test_apply_plan_operations_updates_server_and_wireless_fields() -> None:
     root = decode_pkt_to_root(_require_saves_root() / r"01 Networking\DHCP\dhcp_reservation.pkt")
     plan = parse_intent(
@@ -75,6 +97,49 @@ def test_apply_plan_operations_updates_server_and_wireless_fields() -> None:
     assert wireless_router.findtext("./ENGINE/WIRELESS_SERVER/WIRELESS_COMMON/SSID") == "FIN_WIFI"
     assert wireless_client is not None
     assert wireless_client.findtext("./ENGINE/WIRELESS_CLIENT/WIRELESS_COMMON/SSID") == "FIN_WIFI"
+
+
+def test_edit_pkt_file_roundtrip_preserves_real_http_script_mutation(tmp_path: Path) -> None:
+    source = _require_saves_root() / r"04 IoT\Real HTTP\real-http-server-py.pkt"
+    output = tmp_path / "real_http_script_roundtrip.pkt"
+    xml_out = tmp_path / "real_http_script_roundtrip.xml"
+    new_content = 'from realhttp import *\nprint("codex-real-http")'
+    plan = parse_intent(
+        'set "Py: real http server 2" script app "New Project (Python)" file "main.py" '
+        'content "from realhttp import *\\nprint(\\"codex-real-http\\")"'
+    )
+    edit_pkt_file(source, plan, output, xml_out)
+
+    updated = decode_pkt_to_root(output)
+    inventory = inventory_root(updated)
+    assert "real_http" in inventory["programming"]["Py: real http server 2"]["feature_tags"]
+    script = next(
+        file
+        for app in inventory["programming"]["Py: real http server 2"]["apps"]
+        for file in app["files"]
+        if app["app_name"] == "New Project (Python)" and file["name"] == "main.py"
+    )
+    assert script["content_length"] == len(new_content)
+    device = next(device for device in updated.findall(".//DEVICES/DEVICE") if device.findtext("./ENGINE/NAME", default="") == "Py: real http server 2")
+    assert device.findtext('.//FILE[@class="CDirectory"][NAME="New Project (Python)"]//FILE[@class="CFile"][NAME="main.py"]/FILE_CONTENT/TEXT') == new_content
+
+
+def test_edit_pkt_file_roundtrip_preserves_real_websocket_script_mutation(tmp_path: Path) -> None:
+    source = _require_saves_root() / r"04 IoT\Real WebSocket\real-websocket.pkt"
+    output = tmp_path / "real_websocket_script_roundtrip.pkt"
+    xml_out = tmp_path / "real_websocket_script_roundtrip.xml"
+    new_content = 'from realhttp import *\nclient = RealWSClient()\nprint("codex-ws")'
+    plan = parse_intent(
+        'set "WebSockets Client" script app "ws client (Python)" file "main.py" '
+        'content "from realhttp import *\\nclient = RealWSClient()\\nprint(\\"codex-ws\\")"'
+    )
+    edit_pkt_file(source, plan, output, xml_out)
+
+    updated = decode_pkt_to_root(output)
+    inventory = inventory_root(updated)
+    assert "real_websocket" in inventory["programming"]["WebSockets Client"]["feature_tags"]
+    device = next(device for device in updated.findall(".//DEVICES/DEVICE") if device.findtext("./ENGINE/NAME", default="") == "WebSockets Client")
+    assert device.findtext('.//FILE[@class="CDirectory"][NAME="ws client (Python)"]//FILE[@class="CFile"][NAME="main.py"]/FILE_CONTENT/TEXT') == new_content
 
 
 def test_edit_pkt_file_roundtrip_preserves_wireless_mutation_and_association(tmp_path: Path) -> None:

@@ -167,6 +167,7 @@ Launch references:
 - [docs/home-iot-donor-proof.md](docs/home-iot-donor-proof.md)
 - [docs/wan-security-donor-proof.md](docs/wan-security-donor-proof.md)
 - [docs/wireless-advanced-proof.md](docs/wireless-advanced-proof.md)
+- [docs/industrial-programming-proof.md](docs/industrial-programming-proof.md)
 - [docs/packet-tracer-feature-gap-atlas.md](docs/packet-tracer-feature-gap-atlas.md)
 
 ## Runtime Doctor Contract
@@ -303,7 +304,7 @@ Use `--feature-gap-report` for the Packet Tracer 9.0 feature atlas:
 python .\scripts\generate_pkt.py --feature-gap-report
 ```
 
-The atlas now distinguishes report-only features from edit-proven features. IPv6/routing, a constrained L2 security/monitoring subset, and a narrow advanced-wireless edit subset can be edited with explicit commands, but none of these are claimed as broad generate-ready without donor-backed acceptance evidence.
+The atlas now distinguishes report-only features from edit-proven features. IPv6/routing, a constrained L2 security/monitoring subset, a narrow WAN/security subset, a narrow advanced-wireless subset, and Real HTTP/WebSocket script-file edits can be edited with explicit commands, but none of these are claimed as broad generate-ready without donor-backed acceptance evidence.
 
 Support levels used by the atlas:
 
@@ -323,9 +324,13 @@ Current feature-support truth:
 | L2 security/monitoring | Edit-proven subset | Use explicit DHCP snooping, DAI, LLDP, REP, SNMP, NetFlow, SPAN/RSPAN, and port-security commands |
 | WAN/security edge | GRE, PPP, IPSec transform-set, and VPN crypto-map skeleton are explicit-edit capable; ASA policies and multilayer switching remain report-only | Use explicit router edit commands; strict generate still needs selected-donor acceptance |
 | Advanced wireless | WEP and WPA Enterprise/RADIUS are explicit-edit capable; WLC, Meraki, cellular, Bluetooth, beamforming, and guest Wi-Fi remain report-only | Keep controller/cellular/Bluetooth claims in atlas/report mode until donor-backed proof exists |
-| Voice, automation/controller, industrial IoT, physical/media gaps | Report-supported atlas entries | Do not claim edit/generate support until a proof wave promotes them |
+| Industrial programming | Real HTTP and Real WebSocket existing script files are explicit-edit capable; MQTT, Profinet, PTP, L2NAT, CyberObserver, and industrial firewall remain report-only | Use quoted device/app/file script edit commands only |
+| Voice, automation/controller, physical/media gaps | Report-supported atlas entries | Do not claim edit/generate support until a proof wave promotes them |
 
 The important number is still `generate_ready=0` for the atlas gap families. That is deliberate: visibility comes first, then edit proof, then donor-backed readiness, and only then generate readiness.
+
+For `--parity-report`, prefer the critical parity counters when reading a scenario-level answer:
+`critical_parity_generate_ready_count` only counts capabilities that are critical for the detected scenario family. The older total `parity_generate_ready_count` remains for backward compatibility, but it can include non-critical helper capabilities.
 
 Stable CLI surfaces:
 
@@ -414,6 +419,8 @@ The Home IoT donor proof is intentionally narrower than a generic smart-home cla
 The WAN/security donor proof is also conservative. It shows family-correct report/selection behavior, donor-backed readiness semantics, and a narrow explicit-edit subset for GRE, PPP, IPSec transform-set, and VPN crypto-map skeletons. It does not claim broad synthetic WAN/security configuration generation.
 
 The advanced wireless proof is narrower again. It promotes only explicit WEP and WPA Enterprise/RADIUS edit semantics while keeping WLC, Meraki, cellular, Bluetooth, beamforming, and guest Wi-Fi in report-only atlas mode.
+
+The industrial programming proof is explicit-file-edit only. It can replace an existing Real HTTP or Real WebSocket script file when the device, app, and file names are quoted and uniquely resolved. It does not create apps, files, MQTT brokers, Profinet/PTP/L2NAT workflows, or broad Industrial IoT topologies.
 
 What the proof now tries to surface explicitly:
 

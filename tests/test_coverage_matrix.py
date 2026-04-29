@@ -202,6 +202,67 @@ def test_build_inventory_capability_report_derives_iot_registration_and_control(
     assert {"iot", "iot_registration", "iot_control"} <= set(report["capabilities"])
 
 
+def test_build_inventory_capability_report_derives_programming_capabilities() -> None:
+    report = build_inventory_capability_report(
+        {
+            "topology_summary": {"device_counts": {"SBC": 1}},
+            "programming": {
+                "WebSockets Client": {
+                    "feature_tags": ["real_websocket", "python_programming"],
+                    "apps": [],
+                }
+            },
+        }
+    )
+
+    assert {"real_websocket", "python_programming"} <= set(report["capabilities"])
+
+
+def test_build_coverage_gap_report_promotes_explicit_programming_edits_to_edit_only() -> None:
+    plan = parse_intent(
+        'set "Py: real http server 2" script app "New Project (Python)" file "main.py" '
+        'content "from realhttp import *\\nprint(\\"ok\\")"'
+    )
+
+    report = build_coverage_gap_report(plan, [])
+    parity_by_capability = {entry["capability"]: entry for entry in report.capability_parity}
+
+    assert report.scenario_family == "industrial_iot"
+    for capability in ["real_http", "python_programming"]:
+        assert parity_by_capability[capability]["edit_supported"] is True
+        assert parity_by_capability[capability]["generate_supported"] is False
+        assert parity_by_capability[capability]["generate_mismatch_reason"] == "supported_in_edit_only"
+
+
+def test_build_coverage_gap_report_keeps_broad_industrial_prompt_critical_generate_zero() -> None:
+    plan = parse_intent("mqtt real http websocket industrial iot")
+    sample = SampleDescriptor(
+        path="industrial.pkt",
+        relative_path="industrial.pkt",
+        version="9.0.0.0810",
+        device_count=3,
+        link_count=2,
+        devices=[
+            {"name": "SBC0", "type": "SBC", "model": "SBC-PT"},
+            {"name": "MCU0", "type": "MCU", "model": "MCU-PT"},
+        ],
+        links=[],
+        capability_tags=["mqtt", "real_http", "real_websocket"],
+        topology_tags=["industrial_iot"],
+        preferred_roles=["preferred_industrial"],
+        device_families=["iot devices", "pt-specific edge/utility devices"],
+        archetype_tags=["industrial IoT"],
+    )
+
+    report = build_coverage_gap_report(plan, [sample])
+    parity_by_capability = {entry["capability"]: entry for entry in report.capability_parity}
+
+    assert report.scenario_family == "industrial_iot"
+    assert report.scenario_generate_readiness["status"] != "ready"
+    for capability in report.scenario_generate_readiness["critical_capabilities"]:
+        assert parity_by_capability[capability]["generate_supported"] is False
+
+
 def test_build_capability_matrix_derives_phase_a_switching_capabilities() -> None:
     sample = SampleDescriptor(
         path="phase_a.pkt",

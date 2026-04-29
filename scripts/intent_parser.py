@@ -310,6 +310,7 @@ class IntentPlan:
     management_ops: list[dict[str, object]] = field(default_factory=list)
     verification_ops: list[dict[str, object]] = field(default_factory=list)
     iot_ops: list[dict[str, object]] = field(default_factory=list)
+    programming_ops: list[dict[str, object]] = field(default_factory=list)
 
     def all_operations(self) -> list[dict[str, object]]:
         merged: list[dict[str, object]] = []
@@ -323,6 +324,7 @@ class IntentPlan:
             self.management_ops,
             self.verification_ops,
             self.iot_ops,
+            self.programming_ops,
         ]:
             merged.extend(bucket)
         return merged
@@ -995,6 +997,36 @@ def _extract_iot_ops(prompt: str) -> list[dict[str, object]]:
     return ops
 
 
+def _decode_prompt_string(value: str) -> str:
+    return (
+        value.replace(r"\\", "\0")
+        .replace(r"\"", '"')
+        .replace(r"\n", "\n")
+        .replace(r"\r", "\r")
+        .replace(r"\t", "\t")
+        .replace("\0", "\\")
+    )
+
+
+def _extract_programming_ops(prompt: str) -> list[dict[str, object]]:
+    ops: list[dict[str, object]] = []
+    script_pattern = re.compile(
+        r'set\s+"((?:\\.|[^"\\])*)"\s+script\s+app\s+"((?:\\.|[^"\\])*)"\s+file\s+"((?:\\.|[^"\\])*)"\s+content\s+"((?:\\.|[^"\\])*)"',
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    for device, app_name, file_name, content in script_pattern.findall(prompt):
+        ops.append(
+            {
+                "op": "set_script_file_content",
+                "device": _decode_prompt_string(device).strip(),
+                "app_name": _decode_prompt_string(app_name).strip(),
+                "file_name": _decode_prompt_string(file_name).strip(),
+                "content": _decode_prompt_string(content),
+            }
+        )
+    return ops
+
+
 def parse_intent(prompt: str) -> IntentPlan:
     pkt_path_match = re.search(r"([A-Za-z]:\\[^\"\n]+?\.pkt)\b", prompt, flags=re.IGNORECASE)
     pkt_path = pkt_path_match.group(1) if pkt_path_match else None
@@ -1075,6 +1107,7 @@ def parse_intent(prompt: str) -> IntentPlan:
     management_ops = _extract_management_ops(prompt)
     verification_ops = _extract_verification_ops(prompt)
     iot_ops = _extract_iot_ops(prompt)
+    programming_ops = _extract_programming_ops(prompt)
 
     if any(op["op"] == "associate_wireless_client" for op in wireless_ops):
         capability_set.update({"wireless_client", "wireless_client_association"})
@@ -1095,6 +1128,24 @@ def parse_intent(prompt: str) -> IntentPlan:
         capability_set.add("end_device_mutation")
     if iot_ops:
         capability_set.update({"iot", "iot_registration"})
+        if any(op.get("op") == "set_iot_rule_state" for op in iot_ops):
+            capability_set.add("iot_control")
+    for operation in programming_ops:
+        file_name = str(operation.get("file_name") or "").lower()
+        app_name = str(operation.get("app_name") or "").lower()
+        content = str(operation.get("content") or "").lower()
+        if file_name.endswith(".py") or "python" in app_name:
+            capability_set.add("python_programming")
+        if file_name.endswith(".js") or "javascript" in app_name:
+            capability_set.add("javascript_programming")
+        if file_name.endswith(".visual") or "visual" in app_name or "<xml" in content:
+            capability_set.add("blockly_programming")
+        if "realhttp" in content or "real http" in app_name:
+            capability_set.add("real_http")
+        if "realws" in content or "websocket" in content or "websocket" in app_name:
+            capability_set.add("real_websocket")
+        if "mqtt" in content or "mqtt" in app_name:
+            capability_set.add("mqtt")
     switch_op_names = {str(op.get("op")) for op in switch_ops}
     if "set_dhcp_snooping" in switch_op_names:
         capability_set.add("dhcp_snooping")
@@ -1141,6 +1192,15 @@ def parse_intent(prompt: str) -> IntentPlan:
         network_style = "wireless_advanced"
     if capability_set & {"mqtt", "real_http", "real_websocket", "visual_scripting", "ptp", "profinet", "l2nat", "cyberobserver", "industrial_firewall"}:
         network_style = "industrial_iot"
+        if capability_set & {"real_http", "real_websocket"}:
+            capability_set.discard("server_http")
+            capability_set.discard("server_https")
+        if not (
+            iot_ops
+            or re.search(r"\b(?:home\s+gateway|smart\s+home|iot\s+registration|iot\s+control|iot\s+rule)\b", lowered)
+            or re.search(r"\bregister\s+.+\s+to\b", lowered)
+        ):
+            capability_set.discard("iot")
 
     capabilities = sorted(capability_set)
 
@@ -1206,4 +1266,5 @@ def parse_intent(prompt: str) -> IntentPlan:
         management_ops=management_ops,
         verification_ops=verification_ops,
         iot_ops=iot_ops,
+        programming_ops=programming_ops,
     )

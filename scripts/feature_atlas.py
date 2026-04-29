@@ -34,6 +34,10 @@ EDITOR_TEST_ALIASES = {
     "ppp": ["set_ppp_interface", "encapsulation ppp"],
     "ipsec": ["set_ipsec_transform_set", "crypto ipsec transform-set", "set_crypto_map"],
     "vpn": ["set_crypto_map", "crypto map"],
+    "real_http": ["set_script_file_content", "realhttp", "real http"],
+    "real_websocket": ["set_script_file_content", "realws", "websocket"],
+    "python_programming": ["set_script_file_content", "main.py", "python"],
+    "javascript_programming": ["set_script_file_content", "main.js", "javascript"],
 }
 
 STATUS_ORDER = [

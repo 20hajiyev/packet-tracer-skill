@@ -118,8 +118,8 @@
       "wave": 5,
       "features": [
         {"id": "mqtt", "capability": "mqtt", "label": "MQTT", "sample_path_keywords": ["mqtt"], "support_ceiling": "report_supported"},
-        {"id": "real_http", "capability": "real_http", "label": "Real HTTP", "sample_path_keywords": ["real http", "real-http"], "support_ceiling": "report_supported"},
-        {"id": "real_websocket", "capability": "real_websocket", "label": "Real WebSocket", "sample_path_keywords": ["real websocket", "real-websocket"], "support_ceiling": "report_supported"},
+        {"id": "real_http", "capability": "real_http", "label": "Real HTTP", "sample_path_keywords": ["real http", "real-http"], "support_ceiling": "edit_proven"},
+        {"id": "real_websocket", "capability": "real_websocket", "label": "Real WebSocket", "sample_path_keywords": ["real websocket", "real-websocket"], "support_ceiling": "edit_proven"},
         {"id": "visual_scripting", "capability": "visual_scripting", "label": "Visual scripting", "sample_path_keywords": ["visual-scripting", "visual scripting"], "support_ceiling": "report_supported"},
         {"id": "ptp", "capability": "ptp", "label": "PTP", "sample_path_keywords": ["ptp"], "support_ceiling": "report_supported"},
         {"id": "profinet", "capability": "profinet", "label": "Profinet", "sample_path_keywords": ["profinet"], "support_ceiling": "report_supported"},

@@ -24,6 +24,7 @@ def test_release_docs_and_trust_files_exist() -> None:
         ROOT / "docs" / "home-iot-donor-proof.md",
         ROOT / "docs" / "wan-security-donor-proof.md",
         ROOT / "docs" / "wireless-advanced-proof.md",
+        ROOT / "docs" / "industrial-programming-proof.md",
         ROOT / "docs" / "packet-tracer-feature-gap-atlas.md",
         ROOT / "docs" / "discovery-keywords.md",
         ROOT / "docs" / "github-launch-ops-0.2.2.md",
@@ -64,6 +65,7 @@ def test_readme_highlights_release_and_runtime_contracts() -> None:
     assert "docs/home-iot-donor-proof.md" in readme
     assert "docs/wan-security-donor-proof.md" in readme
     assert "docs/wireless-advanced-proof.md" in readme
+    assert "docs/industrial-programming-proof.md" in readme
     assert "docs/packet-tracer-feature-gap-atlas.md" in readme
     assert "references/packettracer-feature-atlas.json" in readme
     assert "--feature-gap-report" in readme
@@ -103,6 +105,7 @@ def test_package_metadata_is_publish_ready() -> None:
         "docs/home-iot-donor-proof.md",
         "docs/wan-security-donor-proof.md",
         "docs/wireless-advanced-proof.md",
+        "docs/industrial-programming-proof.md",
         "docs/packet-tracer-feature-gap-atlas.md",
         "docs/github-launch-ops-0.2.2.md",
         "docs/post-launch-follow-up.md",
@@ -137,6 +140,7 @@ def test_launch_prep_docs_are_decision_complete() -> None:
     home_iot_proof = (ROOT / "docs" / "home-iot-donor-proof.md").read_text(encoding="utf-8")
     wan_security_proof = (ROOT / "docs" / "wan-security-donor-proof.md").read_text(encoding="utf-8")
     wireless_advanced_proof = (ROOT / "docs" / "wireless-advanced-proof.md").read_text(encoding="utf-8")
+    industrial_programming_proof = (ROOT / "docs" / "industrial-programming-proof.md").read_text(encoding="utf-8")
     feature_gap_atlas = (ROOT / "docs" / "packet-tracer-feature-gap-atlas.md").read_text(encoding="utf-8")
     follow_up = (ROOT / "docs" / "post-launch-follow-up.md").read_text(encoding="utf-8")
     gallery = (ROOT / "examples" / "gallery.md").read_text(encoding="utf-8")
@@ -175,7 +179,12 @@ def test_launch_prep_docs_are_decision_complete() -> None:
     assert "What This Proves" in wireless_advanced_proof
     assert "What This Does Not Prove" in wireless_advanced_proof
     assert "does not make any advanced wireless feature `generate_ready`" in wireless_advanced_proof
+    assert "Industrial Programming Proof" in industrial_programming_proof
+    assert "Real HTTP and Real WebSocket" in industrial_programming_proof
+    assert "set \"Py: real http server 2\" script app" in industrial_programming_proof
+    assert "does not make any industrial programming feature `generate_ready`" in industrial_programming_proof
     assert "Feature atlas support is not the same as generation support" in feature_gap_atlas
+    assert "Fifth Edit-Proven Wave" in feature_gap_atlas
     assert "Third Edit-Proven Wave" in feature_gap_atlas
     assert "--feature-gap-report" in feature_gap_atlas
     assert "Trigger Conditions for `0.2.2` or the Next Minor" in follow_up

@@ -141,6 +141,12 @@ WIRELESS_ADVANCED_EDIT_PROVEN_CAPABILITIES = {
     "wep",
     "wpa_enterprise",
 }
+PROGRAMMING_EDIT_PROVEN_CAPABILITIES = {
+    "real_http",
+    "real_websocket",
+    "python_programming",
+    "javascript_programming",
+}
 WAN_SECURITY_EDIT_PROVEN_CAPABILITIES = {
     "gre",
     "ppp",
@@ -708,6 +714,30 @@ def _has_explicit_advanced_wireless_edit(plan: IntentPlan, capability: str) -> b
     return False
 
 
+def _has_explicit_programming_edit(plan: IntentPlan, capability: str) -> bool:
+    for op in plan.programming_ops:
+        if op.get("op") != "set_script_file_content":
+            continue
+        if not (
+            str(op.get("device") or "").strip()
+            and str(op.get("app_name") or "").strip()
+            and str(op.get("file_name") or "").strip()
+        ):
+            continue
+        file_name = str(op.get("file_name") or "").lower()
+        app_name = str(op.get("app_name") or "").lower()
+        content = str(op.get("content") or "").lower()
+        if capability == "python_programming" and (file_name.endswith(".py") or "python" in app_name):
+            return True
+        if capability == "javascript_programming" and (file_name.endswith(".js") or "javascript" in app_name):
+            return True
+        if capability == "real_http" and ("realhttp" in content or "real http" in app_name):
+            return True
+        if capability == "real_websocket" and ("realws" in content or "websocket" in content or "websocket" in app_name):
+            return True
+    return False
+
+
 def _has_explicit_wan_security_edit(plan: IntentPlan, capability: str) -> bool:
     expected_ops = {
         "gre": {"set_gre_tunnel"},
@@ -1059,6 +1089,11 @@ def build_coverage_gap_report(
             and _has_explicit_advanced_wireless_edit(plan, capability)
             and not selected_donor_backed
         )
+        programming_edit_proven_only = (
+            capability in PROGRAMMING_EDIT_PROVEN_CAPABILITIES
+            and _has_explicit_programming_edit(plan, capability)
+            and not selected_donor_backed
+        )
         wan_security_edit_proven_only = (
             capability in WAN_SECURITY_EDIT_PROVEN_CAPABILITIES
             and _has_explicit_wan_security_edit(plan, capability)
@@ -1070,7 +1105,12 @@ def build_coverage_gap_report(
             and not selected_donor_backed
             and not wan_security_edit_proven_only
         )
-        edit_proven_only = (capability in EDIT_PROVEN_REPORT_CAPABILITIES or wireless_edit_proven_only or wan_security_edit_proven_only) and not selected_donor_backed
+        edit_proven_only = (
+            capability in EDIT_PROVEN_REPORT_CAPABILITIES
+            or wireless_edit_proven_only
+            or programming_edit_proven_only
+            or wan_security_edit_proven_only
+        ) and not selected_donor_backed
         report_only = capability in REPORT_ONLY_CAPABILITIES and not selected_donor_backed and not edit_proven_only
         matching_entries = [
             entry
@@ -1301,6 +1341,8 @@ def build_inventory_capability_report(payload: dict[str, Any]) -> dict[str, obje
         capabilities.update(str(capability) for capability in routing_details.get("capabilities", []) if str(capability).strip())
     for l2_details in payload.get("l2_security_monitoring", {}).values():
         capabilities.update(str(capability) for capability in l2_details.get("capabilities", []) if str(capability).strip())
+    for programming_details in payload.get("programming", {}).values():
+        capabilities.update(str(capability) for capability in programming_details.get("feature_tags", []) if str(capability).strip())
     return {
         "device_families": families,
         "capabilities": sorted(capabilities),

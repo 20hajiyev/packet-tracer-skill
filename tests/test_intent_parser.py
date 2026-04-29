@@ -215,6 +215,25 @@ def test_parse_explicit_wan_security_edit_operations() -> None:
     assert any(op["op"] == "set_crypto_map" and op["map_name"] == "VPNMAP" for op in plan.router_ops)
 
 
+def test_parse_explicit_programming_script_edit_operation() -> None:
+    plan = parse_intent(
+        'set "Py: real http server 2" script app "New Project (Python)" file "main.py" '
+        'content "from realhttp import *\\nprint(\\"ok\\")"'
+    )
+
+    assert plan.network_style == "industrial_iot"
+    assert {"real_http", "python_programming"} <= set(plan.capabilities)
+    assert plan.programming_ops == [
+        {
+            "op": "set_script_file_content",
+            "device": "Py: real http server 2",
+            "app_name": "New Project (Python)",
+            "file_name": "main.py",
+            "content": 'from realhttp import *\nprint("ok")',
+        }
+    ]
+
+
 def test_parse_feature_atlas_prompts_without_service_heavy_drift() -> None:
     cases = [
         ("ipv6 ospf dhcpv6 slaac hsrp", "ipv6_routing", {"ipv6_slaac", "dhcpv6_stateful", "hsrp"}),
@@ -231,6 +250,15 @@ def test_parse_feature_atlas_prompts_without_service_heavy_drift() -> None:
         assert plan.network_style == family
         assert capabilities <= set(plan.capabilities)
         assert plan.network_style != "service_heavy"
+
+
+def test_parse_industrial_real_http_does_not_drift_to_generic_http_generate_signal() -> None:
+    plan = parse_intent("mqtt real http websocket industrial iot")
+
+    assert plan.network_style == "industrial_iot"
+    assert {"mqtt", "real_http", "real_websocket"} <= set(plan.capabilities)
+    assert "server_http" not in plan.capabilities
+    assert "iot" not in plan.capabilities
 
 
 def test_parse_explicit_ipv6_routing_operations() -> None:

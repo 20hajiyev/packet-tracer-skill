@@ -66,6 +66,9 @@ def test_feature_gap_report_compares_parser_catalog_coverage_and_samples() -> No
     assert status_by_capability["ipsec"]["status"] == "edit_proven"
     assert status_by_capability["vpn"]["status"] == "edit_proven"
     assert status_by_capability["security_edge"]["status"] == "report_supported"
+    assert status_by_capability["real_http"]["status"] == "edit_proven"
+    assert status_by_capability["real_websocket"]["status"] == "edit_proven"
+    assert status_by_capability["mqtt"]["status"] == "report_supported"
 
 
 def test_feature_gap_report_keeps_atlas_features_below_generate_ready() -> None:

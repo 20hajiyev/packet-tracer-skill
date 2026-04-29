@@ -75,6 +75,23 @@ ASA ACL/NAT, service policies, clientless VPN, CBAC, ZFW, security-edge device
 mutation, and multilayer switching remain report-only until separate donor-backed
 editor proof exists.
 
+## Fifth Edit-Proven Wave
+
+The fifth promotion wave is `industrial_iot` programming. This wave promotes
+only existing script-file replacement for Real HTTP and Real WebSocket samples:
+
+- Real HTTP Python script file replacement
+- Real WebSocket Python/JavaScript script file replacement
+- programming inventory with hashes and lengths instead of source dumps
+
+These capabilities can report `edit_supported=true` only when the prompt quotes
+the device name, app name, and existing file name. They still report
+`generate_supported=false` and `generate_mismatch_reason=supported_in_edit_only`.
+
+MQTT protocol mutation, visual scripting generation, PTP, Profinet, L2NAT,
+CyberObserver, and industrial firewall workflows remain report-only until
+separate donor-backed editor proof exists.
+
 ## Current Feature Families
 
 - `ipv6_routing`: SLAAC, DHCPv6, prefix delegation, AAAA DNS, IPv6 tunneling, ISATAP, OSPFv3, EIGRP IPv6, RIPng, HSRP.
@@ -84,7 +101,7 @@ editor proof exists.
 - `wireless_advanced`: WLC, WPA Enterprise/RADIUS, WEP/WPA modes, guest Wi-Fi, beamforming, Meraki, 5G/cellular, Bluetooth.
 - `automation_controller`: Network Controller, Python, JavaScript, Blockly, TCP/UDP test apps, VM/IOx samples.
 - `voice_collaboration`: VoIP, IP phones, Call Manager-style telephony, Linksys voice.
-- `industrial_iot`: MQTT, Real HTTP, Real WebSocket, visual scripting, PTP, Profinet, L2NAT, CyberObserver, industrial firewall.
+- `industrial_iot`: MQTT, Real HTTP, Real WebSocket, visual scripting, PTP, Profinet, L2NAT, CyberObserver, industrial firewall; only Real HTTP/WebSocket existing script-file edits are edit-proven.
 - `physical_media_device`: coaxial, cable/DSL, central office, cell tower, power distribution, hot-swappable modules, IOS/license workflows.
 
 ## CLI

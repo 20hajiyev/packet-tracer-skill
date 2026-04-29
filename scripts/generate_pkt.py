@@ -795,6 +795,15 @@ def _parity_counts(parity_entries: list[dict[str, object]]) -> dict[str, int]:
     }
 
 
+def _critical_parity_counts(critical_entries: list[dict[str, object]]) -> dict[str, int]:
+    return {
+        "critical_parity_supported_count": sum(1 for entry in critical_entries if bool(entry.get("inventory_supported"))),
+        "critical_parity_generate_ready_count": sum(1 for entry in critical_entries if bool(entry.get("generate_supported"))),
+        "critical_parity_acceptance_verified_count": sum(1 for entry in critical_entries if bool(entry.get("acceptance_verified"))),
+        "critical_parity_mismatch_count": sum(1 for entry in critical_entries if entry.get("generate_mismatch_reason")),
+    }
+
+
 def _selected_donor_summary(
     diagnostics: list[dict[str, object]],
     donor_archetype: DonorArchetypePlan | None = None,
@@ -2988,6 +2997,7 @@ def _scenario_acceptance_summary(
         "missing_critical_capabilities": [str(item) for item in list(readiness.get("missing_critical_capabilities", [])) if str(item).strip()],
         "critical_capability_parity": critical_capability_parity,
         "critical_parity_mismatches": critical_parity_mismatches,
+        **_critical_parity_counts(critical_capability_parity),
         "key_reasons": key_reasons[:3],
         "next_best_action": next_best_action,
         "remediation_steps": remediation_steps,
@@ -3627,6 +3637,8 @@ def _explain_plan_payload(
     result["scenario_matrix_row"]["fixture_name"] = _scenario_fixture_name(result["scenario_matrix_row"].get("family"))
     result["scenario_matrix_row"]["matrix_version"] = "2.1"
     result["scenario_matrix_row"].update(_parity_counts(_capability_parity_entries(result.get("coverage_gaps", {}))))
+    critical_capability_parity, _critical_parity_mismatches = _critical_capability_parity(dict(result.get("coverage_gaps") or {}))
+    result["scenario_matrix_row"].update(_critical_parity_counts(critical_capability_parity))
     fixture_status, fixture_gaps = _fixture_expectation_status(result)
     result["fixture_registry_version"] = _load_fixture_corpus().get("fixture_registry_version", "unknown")
     result["fixture_expectation_status"] = fixture_status
@@ -3865,6 +3877,7 @@ def parity_report(
         "critical_capability_parity": critical_capability_parity,
         "critical_parity_mismatches": critical_parity_mismatches,
         **_parity_counts(list(payload.get("capability_parity", []))),
+        **_critical_parity_counts(critical_capability_parity),
     }
     _write_json_artifact(result, acceptance_json_out)
     print(json.dumps(result, indent=2, ensure_ascii=False))

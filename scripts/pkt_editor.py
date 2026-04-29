@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -189,6 +190,86 @@ def inventory_iot(root: ET.Element) -> dict[str, dict[str, object]]:
     return result
 
 
+def _script_language(app_name: str, file_name: str, content: str) -> str:
+    lowered = " ".join([app_name.lower(), file_name.lower(), content[:500].lower()])
+    if file_name.lower().endswith(".py") or "python" in lowered:
+        return "python"
+    if file_name.lower().endswith(".js") or "javascript" in lowered:
+        return "javascript"
+    if file_name.lower().endswith(".visual") or "<xml" in lowered or "blockly" in lowered:
+        return "visual"
+    return "unknown"
+
+
+def _script_feature_tags(app_name: str, file_name: str, content: str) -> list[str]:
+    lowered = " ".join([app_name.lower(), file_name.lower(), content.lower()])
+    tags: set[str] = set()
+    if "mqtt" in lowered:
+        tags.add("mqtt")
+    if "realhttp" in lowered or "real http" in lowered:
+        tags.add("real_http")
+    if "realws" in lowered or "websocket" in lowered:
+        tags.add("real_websocket")
+    language = _script_language(app_name, file_name, content)
+    if language == "python":
+        tags.add("python_programming")
+    if language == "javascript":
+        tags.add("javascript_programming")
+    if language == "visual":
+        tags.add("blockly_programming")
+    return sorted(tags)
+
+
+def _file_text(file_node: ET.Element) -> str:
+    return file_node.findtext("./FILE_CONTENT/TEXT", default="")
+
+
+def inventory_programming(root: ET.Element) -> dict[str, dict[str, object]]:
+    result: dict[str, dict[str, object]] = {}
+    for device in root.findall(".//DEVICES/DEVICE"):
+        device_name = device.findtext("./ENGINE/NAME", default="")
+        apps: list[dict[str, object]] = []
+        for directory in device.findall(".//FILE[@class='CDirectory']"):
+            app_name = directory.findtext("NAME", default="").strip()
+            if not app_name:
+                continue
+            files: list[dict[str, object]] = []
+            app_tags: set[str] = set()
+            for file_node in directory.findall(".//FILE[@class='CFile']"):
+                file_name = file_node.findtext("NAME", default="").strip()
+                content = _file_text(file_node)
+                if not file_name or not content:
+                    continue
+                language = _script_language(app_name, file_name, content)
+                feature_tags = _script_feature_tags(app_name, file_name, content)
+                app_tags.update(feature_tags)
+                files.append(
+                    {
+                        "name": file_name,
+                        "language": language,
+                        "content_length": len(content),
+                        "content_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+                        "feature_tags": feature_tags,
+                    }
+                )
+            if files:
+                apps.append(
+                    {
+                        "app_name": app_name,
+                        "file_count": len(files),
+                        "feature_tags": sorted(app_tags),
+                        "files": files,
+                    }
+                )
+        if apps:
+            result[device_name] = {
+                "app_count": len(apps),
+                "feature_tags": sorted({tag for app in apps for tag in list(app.get("feature_tags", []))}),
+                "apps": apps,
+            }
+    return result
+
+
 def inventory_vlans(root: ET.Element) -> dict[str, list[dict[str, str]]]:
     result: dict[str, list[dict[str, str]]] = {}
     for device in root.findall(".//DEVICES/DEVICE"):
@@ -371,6 +452,7 @@ def inventory_root(root: ET.Element) -> dict[str, object]:
         "management": inventory_management(root),
         "routing": inventory_routing(root),
         "l2_security_monitoring": inventory_l2_security_monitoring(root),
+        "programming": inventory_programming(root),
         "topology_summary": inventory_topology_summary(root),
     }
 
@@ -1203,6 +1285,39 @@ def _apply_iot_op(device: ET.Element, operation: dict[str, object]) -> None:
             return
 
 
+def _find_script_file(device: ET.Element, app_name: str, file_name: str) -> ET.Element:
+    app_matches = [
+        directory
+        for directory in device.findall(".//FILE[@class='CDirectory']")
+        if directory.findtext("NAME", default="").strip() == app_name
+    ]
+    if not app_matches:
+        device_name = device.findtext("./ENGINE/NAME", default="")
+        raise ValueError(f"Script app {app_name!r} was not found on device {device_name!r}.")
+    file_matches: list[ET.Element] = []
+    for directory in app_matches:
+        file_matches.extend(
+            file_node
+            for file_node in directory.findall(".//FILE[@class='CFile']")
+            if file_node.findtext("NAME", default="").strip() == file_name
+        )
+    if not file_matches:
+        raise ValueError(f"Script file {file_name!r} was not found in app {app_name!r}.")
+    if len(file_matches) > 1:
+        raise ValueError(f"Script file {file_name!r} in app {app_name!r} is ambiguous.")
+    return file_matches[0]
+
+
+def _apply_programming_op(device: ET.Element, operation: dict[str, object]) -> None:
+    if operation["op"] != "set_script_file_content":
+        return
+    file_node = _find_script_file(device, str(operation["app_name"]), str(operation["file_name"]))
+    content_node = file_node.find("FILE_CONTENT")
+    if content_node is None:
+        content_node = ET.SubElement(file_node, "FILE_CONTENT", {"class": "CTextFileContent"})
+    _ensure_text(content_node, "TEXT", str(operation["content"]))
+
+
 def apply_plan_operations(root: ET.Element, plan: IntentPlan) -> ET.Element:
     updated = copy.deepcopy(root)
     port_mem_map = _link_port_mem_map(updated)
@@ -1251,6 +1366,7 @@ def apply_plan_operations(root: ET.Element, plan: IntentPlan) -> ET.Element:
         (plan.end_device_ops, _apply_end_device_op),
         (plan.management_ops, _apply_management_op),
         (plan.iot_ops, _apply_iot_op),
+        (plan.programming_ops, _apply_programming_op),
     ]:
         for operation in bucket:
             device = _find_device(updated, str(operation["device"]))
