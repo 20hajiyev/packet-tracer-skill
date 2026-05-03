@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass, field
 from functools import lru_cache
 import json
@@ -37,7 +38,13 @@ from pkt_builder import build_packet_tracer_xml
 from pkt_codec import decode_pkt_file, decode_pkt_modern, encode_pkt_modern
 from pkt_editor import apply_plan_operations, decode_pkt_to_root, edit_pkt_file, inventory_devices, inventory_links, inventory_root
 from pkt_transformer import transform_from_blueprint
-from remote_search import asdict_list as remote_asdict_list, auto_import_remote_candidates, search_remote_candidates
+from remote_search import (
+    asdict_list as remote_asdict_list,
+    auto_import_remote_candidates,
+    candidate_is_curated_eligible,
+    search_remote_candidates,
+    write_remote_sample_audit,
+)
 from sample_catalog import ReferencePattern, SampleCandidate, SampleDescriptor, load_catalog, load_curated_donor_catalog, load_reference_catalog, summarize_pkt_descriptor
 from sample_selector import rank_curated_donor_samples, rank_reference_samples, rank_samples, select_best_sample
 from workspace_repair import inspect_donor_coherence, inspect_workspace_integrity, validate_donor_coherence, validate_workspace_integrity
@@ -83,6 +90,9 @@ DEVICE_FAMILY_MAP = {
     "Tablet": "end devices",
     "Smartphone": "end devices",
     "Printer": "end devices",
+    "IpPhone": "end devices",
+    "HomeVoip": "end devices",
+    "AnalogPhone": "end devices",
     "LightWeightAccessPoint": "access points",
     "WirelessRouter": "home/wireless routers",
     "WirelessRouterNewGeneration": "home/wireless routers",
@@ -251,6 +261,8 @@ def _resolve_remote_sources(
     remote_provider: str = "github",
     import_cache_root: Path | None = None,
     max_remote_results: int = 10,
+    remote_dry_run: bool = False,
+    remote_audit_out: Path | None = None,
 ) -> tuple[list[Path], list[Path], list[dict[str, object]]]:
     resolved_reference_roots = list(reference_roots or [])
     resolved_donor_roots = list(donor_roots or [])
@@ -258,13 +270,19 @@ def _resolve_remote_sources(
         return resolved_reference_roots, resolved_donor_roots, []
     remote_candidates = search_remote_candidates(plan, provider=remote_provider, max_results=max_remote_results)
     cache_root = import_cache_root or _default_import_cache_root()
-    imported_candidates = auto_import_remote_candidates(remote_candidates, cache_root, max_results=max_remote_results)
+    imported_candidates = auto_import_remote_candidates(
+        remote_candidates,
+        cache_root,
+        max_results=max_remote_results,
+        dry_run=remote_dry_run,
+    )
+    write_remote_sample_audit(imported_candidates, cache_root, remote_audit_out)
     for candidate in imported_candidates:
         if candidate.path:
             imported_root = Path(candidate.path)
             if imported_root not in resolved_reference_roots:
                 resolved_reference_roots.append(imported_root)
-            if imported_root not in resolved_donor_roots:
+            if candidate_is_curated_eligible(candidate) and imported_root not in resolved_donor_roots:
                 resolved_donor_roots.append(imported_root)
     return resolved_reference_roots, resolved_donor_roots, remote_asdict_list(imported_candidates)
 
@@ -364,6 +382,7 @@ def _preferred_donor_archetypes_for_plan(plan: IntentPlan, topology_tags: list[s
         or bool(capabilities & {"vpn", "ipsec", "gre", "ppp", "multilayer_switching", "security_edge"})
     )
     ipv6_routing_signal = plan.network_style == "ipv6_routing" or bool(capabilities & {"ipv6_slaac", "dhcpv6_stateful", "dhcpv6_stateless", "ipv6_prefix_delegation", "ipv6_dns_aaaa", "ipv6_tunneling", "isatap", "ospfv3", "eigrp_ipv6", "ripng", "hsrp"})
+    ipv4_routing_management_signal = plan.network_style == "ipv4_routing_management" or bool(capabilities & {"ospfv2", "eigrp_ipv4", "ripv2", "static_route", "default_route", "dhcp_relay", "nat_static", "nat_dynamic", "pat", "ssh_ios", "ntp_ios", "syslog_ios"})
     l2_security_monitoring_signal = plan.network_style == "l2_security_monitoring" or bool(capabilities & {"dhcp_snooping", "dai", "dot1x", "lldp", "rep", "snmp", "netflow", "span", "qos", "port_security"})
     wireless_advanced_signal = plan.network_style == "wireless_advanced" or bool(capabilities & {"wlc", "wpa_enterprise", "wep", "guest_wifi", "beamforming", "meraki", "cellular_5g", "bluetooth"})
     automation_controller_signal = plan.network_style == "automation_controller" or bool(capabilities & {"network_controller", "python_programming", "javascript_programming", "blockly_programming", "tcp_udp_app", "vm_iox"})
@@ -393,6 +412,8 @@ def _preferred_donor_archetypes_for_plan(plan: IntentPlan, topology_tags: list[s
         family_hints.append("L2 security/monitoring")
     elif ipv6_routing_signal:
         family_hints.append("IPv6/routing")
+    elif ipv4_routing_management_signal:
+        family_hints.append("IPv4 routing/management")
     elif wan_signal:
         family_hints.append("WAN/security edge")
         if campus_signal and not bool(capabilities & {"vpn", "ipsec", "gre", "ppp", "security_edge"}):
@@ -447,6 +468,8 @@ def _required_runtime_features_for_plan(plan: IntentPlan) -> list[str]:
         features.add("multilayer_runtime")
     if capabilities & {"ipv6_slaac", "dhcpv6_stateful", "dhcpv6_stateless", "ospfv3", "eigrp_ipv6", "ripng", "hsrp"}:
         features.add("ipv6_runtime")
+    if capabilities & {"ospfv2", "eigrp_ipv4", "ripv2", "static_route", "default_route", "dhcp_relay", "nat_static", "nat_dynamic", "pat", "ssh_ios", "ntp_ios", "syslog_ios"}:
+        features.add("ipv4_routing_management_runtime")
     return sorted(features)
 
 
@@ -789,6 +812,7 @@ def _critical_capability_parity(coverage_gap: dict[str, object]) -> tuple[list[d
 def _parity_counts(parity_entries: list[dict[str, object]]) -> dict[str, int]:
     return {
         "parity_supported_count": sum(1 for entry in parity_entries if bool(entry.get("inventory_supported"))),
+        "parity_donor_backed_ready_count": sum(1 for entry in parity_entries if bool(entry.get("donor_backed_ready"))),
         "parity_generate_ready_count": sum(1 for entry in parity_entries if bool(entry.get("generate_supported"))),
         "parity_acceptance_verified_count": sum(1 for entry in parity_entries if bool(entry.get("acceptance_verified"))),
         "parity_mismatch_count": sum(1 for entry in parity_entries if entry.get("generate_mismatch_reason")),
@@ -798,6 +822,7 @@ def _parity_counts(parity_entries: list[dict[str, object]]) -> dict[str, int]:
 def _critical_parity_counts(critical_entries: list[dict[str, object]]) -> dict[str, int]:
     return {
         "critical_parity_supported_count": sum(1 for entry in critical_entries if bool(entry.get("inventory_supported"))),
+        "critical_parity_donor_backed_ready_count": sum(1 for entry in critical_entries if bool(entry.get("donor_backed_ready"))),
         "critical_parity_generate_ready_count": sum(1 for entry in critical_entries if bool(entry.get("generate_supported"))),
         "critical_parity_acceptance_verified_count": sum(1 for entry in critical_entries if bool(entry.get("acceptance_verified"))),
         "critical_parity_mismatch_count": sum(1 for entry in critical_entries if entry.get("generate_mismatch_reason")),
@@ -3226,6 +3251,8 @@ def generate_from_prompt(
     remote_provider: str = "github",
     import_cache_root: Path | None = None,
     max_remote_results: int = 10,
+    remote_dry_run: bool = False,
+    remote_audit_out: Path | None = None,
     blueprint_out_path: Path | None = None,
 ) -> None:
     raw_plan = parse_intent(prompt)
@@ -3237,6 +3264,8 @@ def generate_from_prompt(
         remote_provider=remote_provider,
         import_cache_root=import_cache_root,
         max_remote_results=max_remote_results,
+        remote_dry_run=remote_dry_run,
+        remote_audit_out=remote_audit_out,
     )
     raw_plan.remote_search_results = remote_results
     if raw_plan.goal == "edit" and raw_plan.pkt_path:
@@ -3353,6 +3382,8 @@ def _explain_plan_payload(
     remote_provider: str = "github",
     import_cache_root: Path | None = None,
     max_remote_results: int = 10,
+    remote_dry_run: bool = False,
+    remote_audit_out: Path | None = None,
 ) -> dict[str, object]:
     raw_plan = parse_intent(prompt)
     resolved_reference_roots, resolved_donor_roots, remote_results = _resolve_remote_sources(
@@ -3363,6 +3394,8 @@ def _explain_plan_payload(
         remote_provider=remote_provider,
         import_cache_root=import_cache_root,
         max_remote_results=max_remote_results,
+        remote_dry_run=remote_dry_run,
+        remote_audit_out=remote_audit_out,
     )
     plan = _apply_prompt_compatibility_requirements(raw_plan, resolved_donor_roots)
     plan.remote_search_results = remote_results
@@ -3655,6 +3688,8 @@ def explain_plan(
     remote_provider: str = "github",
     import_cache_root: Path | None = None,
     max_remote_results: int = 10,
+    remote_dry_run: bool = False,
+    remote_audit_out: Path | None = None,
     acceptance_json_out: Path | None = None,
 ) -> None:
     result = _explain_plan_payload(
@@ -3665,6 +3700,8 @@ def explain_plan(
         remote_provider=remote_provider,
         import_cache_root=import_cache_root,
         max_remote_results=max_remote_results,
+        remote_dry_run=remote_dry_run,
+        remote_audit_out=remote_audit_out,
     )
     _write_json_artifact(result, acceptance_json_out)
     print(json.dumps(result, indent=2, ensure_ascii=False))
@@ -3855,6 +3892,8 @@ def parity_report(
     remote_provider: str = "github",
     import_cache_root: Path | None = None,
     max_remote_results: int = 10,
+    remote_dry_run: bool = False,
+    remote_audit_out: Path | None = None,
     acceptance_json_out: Path | None = None,
 ) -> None:
     payload = _explain_plan_payload(
@@ -3865,6 +3904,8 @@ def parity_report(
         remote_provider=remote_provider,
         import_cache_root=import_cache_root,
         max_remote_results=max_remote_results,
+        remote_dry_run=remote_dry_run,
+        remote_audit_out=remote_audit_out,
     )
     coverage_gap = dict(payload.get("coverage_gaps") or {})
     if "capability_parity" not in coverage_gap:
@@ -3892,6 +3933,8 @@ def compare_scenarios(
     remote_provider: str = "github",
     import_cache_root: Path | None = None,
     max_remote_results: int = 10,
+    remote_dry_run: bool = False,
+    remote_audit_out: Path | None = None,
     matrix_out: Path | None = None,
     acceptance_json_out: Path | None = None,
 ) -> None:
@@ -3906,6 +3949,8 @@ def compare_scenarios(
             remote_provider=remote_provider,
             import_cache_root=import_cache_root,
             max_remote_results=max_remote_results,
+            remote_dry_run=remote_dry_run,
+            remote_audit_out=remote_audit_out,
         )
         fixture_status, fixture_gaps = _fixture_expectation_status(payload)
         payloads.append(
@@ -3943,6 +3988,90 @@ def feature_gap_report() -> None:
     print(json.dumps(build_feature_gap_report(), indent=2, ensure_ascii=False))
 
 
+LOCAL_AUDIT_PATTERNS = {
+    "ospfv2": r"(?mi)^\s*router\s+ospf\s+\d+",
+    "eigrp_ipv4": r"(?mi)^\s*router\s+eigrp\s+\d+",
+    "ripv2": r"(?mi)^\s*router\s+rip\s*$",
+    "static_route": r"(?mi)^\s*ip\s+route\s+\S+\s+\S+\s+\S+",
+    "default_route": r"(?mi)^\s*ip\s+route\s+0\.0\.0\.0\s+0\.0\.0\.0\s+\S+",
+    "dhcp_relay": r"(?mi)^\s*ip\s+helper-address\s+\d+\.\d+\.\d+\.\d+",
+    "nat_static": r"(?mi)^\s*ip\s+nat\s+inside\s+source\s+static\b",
+    "nat_dynamic": r"(?mi)^\s*ip\s+nat\s+inside\s+source\s+(?:list|route-map)\b",
+    "pat": r"(?mi)^\s*ip\s+nat\s+inside\s+source\s+list\s+\S+\s+interface\s+\S+\s+overload\b",
+    "ssh_ios": r"(?mi)^\s*(?:ip\s+ssh|crypto\s+key\s+generate|ip\s+domain-name)\b",
+    "ntp_ios": r"(?mi)^\s*ntp\s+server\s+\d+\.\d+\.\d+\.\d+",
+    "syslog_ios": r"(?mi)^\s*logging\s+host\s+\d+\.\d+\.\d+\.\d+",
+    "bgp": r"(?mi)^\s*router\s+bgp\s+\d+",
+    "stp": r"(?mi)^\s*spanning-tree\b",
+    "etherchannel": r"(?mi)^\s*(?:channel-group\s+\d+|interface\s+Port-channel)",
+    "hsrp": r"(?mi)^\s*standby\s+\d+",
+    "acl": r"(?mi)^\s*(?:access-list\s+\d+|ip\s+access-list\s+(?:standard|extended))\b",
+    "dhcp_pool": r"(?mi)^\s*ip\s+dhcp\s+pool\b",
+}
+
+
+def build_local_sample_audit(root: Path) -> dict[str, object]:
+    files = sorted([*root.rglob("*.pkt"), *root.rglob("*.pka")])
+    capability_counts: Counter[str] = Counter()
+    capability_examples: dict[str, list[str]] = defaultdict(list)
+    device_counts: Counter[str] = Counter()
+    decode_failures: list[dict[str, str]] = []
+    for pkt_path in files:
+        rel = str(pkt_path.relative_to(root))
+        try:
+            pkt_root = decode_pkt_to_root(pkt_path)
+        except Exception as exc:
+            decode_failures.append({"path": rel, "error_type": type(exc).__name__, "message": str(exc)[:200]})
+            continue
+        try:
+            inventory = inventory_root(pkt_root)
+            for device_type, count in inventory.get("topology_summary", {}).get("device_counts", {}).items():
+                device_counts[str(device_type)] += int(count)
+        except Exception:
+            pass
+        running = "\n".join(line.text or "" for line in pkt_root.findall(".//ENGINE/RUNNINGCONFIG/LINE"))
+        for capability, pattern in LOCAL_AUDIT_PATTERNS.items():
+            if re.search(pattern, running):
+                capability_counts[capability] += 1
+                if len(capability_examples[capability]) < 5:
+                    capability_examples[capability].append(rel)
+    promotion_candidates = [
+        {
+            "capability": capability,
+            "sample_count": count,
+            "candidate_status": "local_evidence_only",
+            "next_safe_action": "Add parser/inventory/editor roundtrip proof before public readiness promotion.",
+        }
+        for capability, count in capability_counts.most_common()
+    ]
+    return {
+        "audit_version": "1.0",
+        "source_root": str(root),
+        "policy": "Local user-supplied Packet Tracer files are evidence inputs only; raw .pkt/.pka files are not public package content.",
+        "total_files": len(files),
+        "decode_success_count": len(files) - len(decode_failures),
+        "decode_fail_count": len(decode_failures),
+        "decode_failures": decode_failures[:20],
+        "detected_config_capabilities": {
+            capability: {
+                "sample_count": count,
+                "examples": capability_examples.get(capability, []),
+            }
+            for capability, count in capability_counts.most_common()
+        },
+        "top_device_types": [{"device_type": device_type, "count": count} for device_type, count in device_counts.most_common(30)],
+        "promotion_candidates": promotion_candidates,
+    }
+
+
+def local_sample_audit(root: Path, audit_out: Path | None = None) -> None:
+    payload = build_local_sample_audit(root)
+    target = audit_out or (Path("output") / "local-sample-audit.json")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate or inspect Cisco Packet Tracer 9.0 .pkt files")
     parser.add_argument("--blueprint", help="Path to the topology blueprint JSON")
@@ -3964,9 +4093,13 @@ def main() -> None:
     parser.add_argument("--remote-provider", default="github", help="Remote search provider name (default: github)")
     parser.add_argument("--import-cache-root", help="Local cache folder used for remote search auto-imports")
     parser.add_argument("--max-remote-results", type=int, default=10, help="Maximum number of remote search results to fetch/import")
+    parser.add_argument("--remote-dry-run", action="store_true", help="Preview remote GitHub sample candidates and write an audit without downloading archives")
+    parser.add_argument("--remote-audit-out", help="Optional JSON path for the local-only remote sample audit report")
     parser.add_argument("--blueprint-out", help="Optional JSON output path for the generated blueprint plan or refusal blueprint")
     parser.add_argument("--coverage-report", action="store_true", help="Print the aggregated capability coverage matrix")
     parser.add_argument("--feature-gap-report", action="store_true", help="Print the Packet Tracer feature gap atlas report")
+    parser.add_argument("--local-sample-audit-root", help="Local user-supplied Packet Tracer sample folder to audit without importing raw files")
+    parser.add_argument("--local-sample-audit-out", help="Optional JSON path for --local-sample-audit-root output")
     parser.add_argument("--inventory-capabilities", action="store_true", help="Include inferred capability inventory when using --inventory")
     parser.add_argument("--inventory-out", help="Optional JSON output path when using --inventory")
     parser.add_argument("--matrix-out", help="Optional JSON output path when using --compare-scenarios")
@@ -3978,6 +4111,7 @@ def main() -> None:
     reference_roots = [Path(path) for path in (args.reference_root or [])]
     donor_roots = [Path(path) for path in (args.donor_root or [])]
     import_cache_root = Path(args.import_cache_root) if args.import_cache_root else None
+    remote_audit_out = Path(args.remote_audit_out) if args.remote_audit_out else None
 
     if args.explain_plan:
         explain_plan(
@@ -3988,6 +4122,8 @@ def main() -> None:
             remote_provider=args.remote_provider,
             import_cache_root=import_cache_root,
             max_remote_results=args.max_remote_results,
+            remote_dry_run=args.remote_dry_run,
+            remote_audit_out=remote_audit_out,
             acceptance_json_out=Path(args.acceptance_json_out) if args.acceptance_json_out else None,
         )
         return
@@ -4000,6 +4136,8 @@ def main() -> None:
             remote_provider=args.remote_provider,
             import_cache_root=import_cache_root,
             max_remote_results=args.max_remote_results,
+            remote_dry_run=args.remote_dry_run,
+            remote_audit_out=remote_audit_out,
             matrix_out=Path(args.matrix_out) if args.matrix_out else None,
             acceptance_json_out=Path(args.acceptance_json_out) if args.acceptance_json_out else None,
         )
@@ -4013,6 +4151,8 @@ def main() -> None:
             remote_provider=args.remote_provider,
             import_cache_root=import_cache_root,
             max_remote_results=args.max_remote_results,
+            remote_dry_run=args.remote_dry_run,
+            remote_audit_out=remote_audit_out,
             acceptance_json_out=Path(args.acceptance_json_out) if args.acceptance_json_out else None,
         )
         return
@@ -4036,6 +4176,9 @@ def main() -> None:
         return
     if args.feature_gap_report:
         feature_gap_report()
+        return
+    if args.local_sample_audit_root:
+        local_sample_audit(Path(args.local_sample_audit_root), Path(args.local_sample_audit_out) if args.local_sample_audit_out else None)
         return
     if args.decode:
         if not args.xml_out:
@@ -4068,6 +4211,8 @@ def main() -> None:
                 remote_provider=args.remote_provider,
                 import_cache_root=import_cache_root,
                 max_remote_results=args.max_remote_results,
+                remote_dry_run=args.remote_dry_run,
+                remote_audit_out=remote_audit_out,
                 blueprint_out_path=Path(args.blueprint_out) if args.blueprint_out else None,
             )
         except PlanningError as exc:

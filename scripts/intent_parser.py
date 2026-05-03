@@ -38,6 +38,18 @@ CAPABILITY_PATTERNS = {
     "ospf": [r"\bospf\b"],
     "eigrp": [r"\beigrp\b"],
     "rip": [r"\brip\b"],
+    "ospfv2": [r"\bospfv2\b", r"\bospf v2\b", r"\bsingle-area ospf\b", r"\brouter ospf\b"],
+    "eigrp_ipv4": [r"\beigrp ipv4\b", r"\bipv4 eigrp\b", r"\brouter eigrp\b"],
+    "ripv2": [r"\bripv2\b", r"\brip v2\b", r"\brip version 2\b", r"\brouter rip\b"],
+    "static_route": [r"\bstatic route\b", r"\bstatic-route\b", r"\bip route\b"],
+    "default_route": [r"\bdefault route\b", r"\bdefault-route\b", r"\b0\.0\.0\.0/0\b"],
+    "dhcp_relay": [r"\bdhcp relay\b", r"\bdhcp-relay\b", r"\bhelper-address\b", r"\bip helper\b"],
+    "nat_static": [r"\bstatic nat\b", r"\bnat static\b"],
+    "nat_dynamic": [r"\bdynamic nat\b", r"\bnat dynamic\b"],
+    "pat": [r"\bpat\b", r"\boverload\b"],
+    "ssh_ios": [r"\bssh\b", r"\bip ssh\b", r"\bcrypto key\b"],
+    "ntp_ios": [r"\bntp\b", r"\bntp server\b"],
+    "syslog_ios": [r"\bsyslog\b", r"\blogging host\b"],
     "ipv6_slaac": [r"\bslaac\b", r"\bipv6\s+slaac\b"],
     "dhcpv6_stateful": [r"\bdhcpv6\b", r"\bstateful dhcpv6\b", r"\bipv6 stateful\b"],
     "dhcpv6_stateless": [r"\bstateless dhcpv6\b", r"\bipv6 stateless\b"],
@@ -58,9 +70,17 @@ CAPABILITY_PATTERNS = {
     "rep": [r"\brep\b"],
     "snmp": [r"\bsnmp\b"],
     "netflow": [r"\bnetflow\b"],
-    "span": [r"\bspan\b", r"\brspan\b"],
+    "span": [r"\bmonitor\s+session\b", r"\bspan\b", r"\brspan\b"],
     "qos": [r"\bqos policy\b", r"\bqos class\b", r"\bclass-map\b", r"\bpolicy-map\b", r"\bquality of service\b"],
     "port_security": [r"\bport security\b", r"\bport-security\b"],
+    "bgp": [r"\bbgp\b", r"\brouter bgp\b", r"\bremote-as\b"],
+    "stp": [r"\bstp\b", r"\bspanning tree\b", r"\bspanning-tree\b", r"\bpvst\b"],
+    "rstp": [r"\brstp\b", r"\brapid-pvst\b", r"\brapid pvst\b", r"\brapid spanning\b"],
+    "etherchannel": [r"\betherchannel\b", r"\bport-channel\b", r"\bchannel-group\b"],
+    "lacp": [r"\blacp\b"],
+    "pagp": [r"\bpagp\b"],
+    "vtp": [r"\bvtp\b"],
+    "dtp": [r"\bdtp\b", r"\bdynamic desirable\b", r"\bdynamic auto\b"],
     "vpn": [r"\bvpn\b", r"\bsite-to-site\b", r"\bipsec\b", r"\btunnel\b"],
     "ipsec": [r"\bipsec\b", r"\bike\b", r"\bphase 1\b", r"\bphase 2\b"],
     "gre": [r"\bgre\b", r"\bgre tunnel\b"],
@@ -160,7 +180,9 @@ NETWORK_STYLE_PATTERNS = {
     "campus": [r"\bcampus\b", r"\bkampus\b", r"\bsobeli\b", r"\bdepart", r"\bdepartment\b"],
     "branch": [r"\bbranch\b", r"\bfilial\b"],
     "ipv6_routing": [r"\bipv6\b", r"\bslaac\b", r"\bdhcpv6\b", r"\bospfv3\b", r"\bhsrp\b"],
+    "ipv4_routing_management": [r"\bospfv2\b", r"\bospf v2\b", r"\beigrp ipv4\b", r"\bripv2\b", r"\brip version 2\b", r"\bstatic route\b", r"\bdefault route\b", r"\bdhcp relay\b", r"\bnat\b", r"\bpat\b", r"\bip ssh\b", r"\bntp server\b", r"\blogging host\b"],
     "l2_security_monitoring": [r"\bdhcp snooping\b", r"\bdai\b", r"\bdot1x\b", r"\b802\.1x\b", r"\bsnmp\b", r"\bnetflow\b", r"\bspan\b", r"\brspan\b", r"\bquality of service\b", r"\blldp\b", r"\brep\b", r"\bport security\b", r"\bport-security\b"],
+    "l2_resiliency_routing": [r"\bbgp\b", r"\bstp\b", r"\brstp\b", r"\bspanning tree\b", r"\bspanning-tree\b", r"\betherchannel\b", r"\bport-channel\b", r"\bchannel-group\b", r"\blacp\b", r"\bpagp\b", r"\bvtp\b", r"\bdtp\b"],
     "wireless_advanced": [r"\bwlc\b", r"\bwireless lan controller\b", r"\bmeraki\b", r"\bbluetooth\b", r"\b5g\b", r"\bcellular\b", r"\bwpa enterprise\b", r"\bwpa2 enterprise\b", r"\bwep\b", r"\bguest wifi\b", r"\bguest wlan\b", r"\bbeamforming\b"],
     "automation_controller": [r"\bnetwork controller\b", r"\bnetcon\b", r"\bblockly\b", r"\bjavascript\b", r"\bpython programming\b", r"\biox\b"],
     "voice_collaboration": [r"\bvoip\b", r"\bip phone\b", r"\bcall manager\b", r"\btelephony\b"],
@@ -592,6 +614,32 @@ def _extract_switch_ops(prompt: str) -> list[dict[str, object]]:
         r"set\s+([A-Za-z0-9_-]+)\s+(?:r?span)\s+(\d+)\s+source\s+([A-Za-z0-9/._-]+)\s+destination\s+([A-Za-z0-9/._-]+)",
         flags=re.IGNORECASE,
     )
+    dot1x_pattern = re.compile(
+        r"set\s+([A-Za-z0-9_-]+)\s+dot1x\s+interface\s+([A-Za-z0-9/._-]+)\s+mode\s+(auto|force-authorized|force-unauthorized)"
+        r"(?:\s+radius\s+(\d+\.\d+\.\d+\.\d+)\s+key\s+([A-Za-z0-9._-]+))?",
+        flags=re.IGNORECASE,
+    )
+    qos_pattern = re.compile(
+        r"set\s+([A-Za-z0-9_-]+)\s+qos\s+class-map\s+([A-Za-z0-9_-]+)\s+match\s+(.+?)\s+policy-map\s+([A-Za-z0-9_-]+)\s+class\s+\2\s+(priority|bandwidth\s+\d+|police\s+\d+)"
+        r"\s+service-policy\s+(input|output)\s+([A-Za-z0-9/._-]+)(?=\s+set\s+|$)",
+        flags=re.IGNORECASE,
+    )
+    stp_pattern = re.compile(
+        r"set\s+([A-Za-z0-9_-]+)\s+stp\s+mode\s+([A-Za-z0-9_-]+)(?:\s+vlan\s+(\d+)\s+root\s+(primary|secondary))?",
+        flags=re.IGNORECASE,
+    )
+    etherchannel_pattern = re.compile(
+        r"set\s+([A-Za-z0-9_-]+)\s+etherchannel\s+(\d+)\s+mode\s+(active|passive|desirable|auto|on)\s+interfaces\s+(.+?)(?=\s+set\s+|$)",
+        flags=re.IGNORECASE,
+    )
+    vtp_pattern = re.compile(
+        r"set\s+([A-Za-z0-9_-]+)\s+vtp\s+domain\s+([A-Za-z0-9_.-]+)\s+mode\s+(server|client|transparent)(?:\s+version\s+(\d+))?",
+        flags=re.IGNORECASE,
+    )
+    dtp_pattern = re.compile(
+        r"set\s+([A-Za-z0-9_-]+)\s+dtp\s+interface\s+([A-Za-z0-9/._-]+)\s+mode\s+(dynamic\s+desirable|dynamic\s+auto|trunk|access)",
+        flags=re.IGNORECASE,
+    )
     for segment in _command_segments(prompt):
         for device, vlan_id, trust_port in dhcp_snooping_pattern.findall(segment):
             ops.append({"op": "set_dhcp_snooping", "device": device, "vlan": int(vlan_id), "trust_port": trust_port or None})
@@ -613,6 +661,63 @@ def _extract_switch_ops(prompt: str) -> list[dict[str, object]]:
             ops.append({"op": "set_rep", "device": device, "segment": int(segment_id), "interface": interface_name})
         for device, session, source, destination in span_pattern.findall(segment):
             ops.append({"op": "set_span", "device": device, "session": int(session), "source": source, "destination": destination})
+        for device, interface_name, mode, radius_host, radius_key in dot1x_pattern.findall(segment):
+            ops.append(
+                {
+                    "op": "set_dot1x",
+                    "device": device,
+                    "interface": interface_name,
+                    "mode": mode.lower(),
+                    "radius_host": radius_host or None,
+                    "radius_key": radius_key or None,
+                }
+            )
+        for device, class_map, match_expr, policy_map, action, direction, interface_name in qos_pattern.findall(segment):
+            ops.append(
+                {
+                    "op": "set_qos_policy",
+                    "device": device,
+                    "class_map": class_map,
+                    "match": match_expr.strip(),
+                    "policy_map": policy_map,
+                    "action": action.lower(),
+                    "direction": direction.lower(),
+                    "interface": interface_name,
+                }
+            )
+        for device, mode, vlan_id, root_priority in stp_pattern.findall(segment):
+            ops.append(
+                {
+                    "op": "set_stp",
+                    "device": device,
+                    "mode": mode.lower(),
+                    "vlan": int(vlan_id) if vlan_id else None,
+                    "root": root_priority.lower() if root_priority else None,
+                }
+            )
+        for device, channel, mode, interfaces_text in etherchannel_pattern.findall(segment):
+            interfaces = [value for value in re.findall(r"[A-Za-z]+[A-Za-z]*[0-9/._-]+", interfaces_text) if value.lower() != "set"]
+            ops.append(
+                {
+                    "op": "set_etherchannel",
+                    "device": device,
+                    "channel": int(channel),
+                    "mode": mode.lower(),
+                    "interfaces": interfaces,
+                }
+            )
+        for device, domain, mode, version in vtp_pattern.findall(segment):
+            ops.append(
+                {
+                    "op": "set_vtp",
+                    "device": device,
+                    "domain": domain,
+                    "mode": mode.lower(),
+                    "version": int(version) if version else None,
+                }
+            )
+        for device, interface_name, mode in dtp_pattern.findall(segment):
+            ops.append({"op": "set_dtp", "device": device, "interface": interface_name, "mode": mode.lower()})
     return ops
 
 
@@ -701,6 +806,49 @@ def _extract_router_ops(prompt: str) -> list[dict[str, object]]:
         r"set\s+([A-Za-z0-9_-]+)\s+hsrp\s+(\d+)\s+ipv6\s+([0-9A-Fa-f:]+)\s+interface\s+([A-Za-z0-9/._-]+)(?:\s+priority\s+(\d+))?",
         flags=re.IGNORECASE,
     )
+    ospfv2_pattern = re.compile(
+        r"set\s+([A-Za-z0-9_-]+)\s+ospfv2\s+(\d+)\s+network\s+(\d+\.\d+\.\d+\.\d+)\s+wildcard\s+(\d+\.\d+\.\d+\.\d+)\s+area\s+(\d+)",
+        flags=re.IGNORECASE,
+    )
+    eigrp_ipv4_pattern = re.compile(
+        r"set\s+([A-Za-z0-9_-]+)\s+eigrp\s+ipv4\s+(\d+)\s+network\s+(\d+\.\d+\.\d+\.\d+)\s+wildcard\s+(\d+\.\d+\.\d+\.\d+)(?:\s+(no-auto-summary))?",
+        flags=re.IGNORECASE,
+    )
+    ripv2_pattern = re.compile(
+        r"set\s+([A-Za-z0-9_-]+)\s+rip\s+version\s+2\s+network\s+(\d+\.\d+\.\d+\.\d+)(?:\s+(no-auto-summary))?",
+        flags=re.IGNORECASE,
+    )
+    static_route_pattern = re.compile(
+        r"set\s+([A-Za-z0-9_-]+)\s+static-route\s+(\d+\.\d+\.\d+\.\d+)/(\d+)\s+via\s+(\d+\.\d+\.\d+\.\d+)",
+        flags=re.IGNORECASE,
+    )
+    dhcp_relay_pattern = re.compile(
+        r"set\s+([A-Za-z0-9_-]+)\s+dhcp-relay\s+interface\s+([A-Za-z0-9/._-]+)\s+helper\s+(\d+\.\d+\.\d+\.\d+)",
+        flags=re.IGNORECASE,
+    )
+    nat_inside_outside_pattern = re.compile(
+        r"set\s+([A-Za-z0-9_-]+)\s+nat\s+(inside|outside)\s+interface\s+([A-Za-z0-9/._-]+)",
+        flags=re.IGNORECASE,
+    )
+    nat_static_pattern = re.compile(
+        r"set\s+([A-Za-z0-9_-]+)\s+nat\s+static\s+(\d+\.\d+\.\d+\.\d+)\s+(\d+\.\d+\.\d+\.\d+)",
+        flags=re.IGNORECASE,
+    )
+    pat_pattern = re.compile(
+        r"set\s+([A-Za-z0-9_-]+)\s+pat\s+acl\s+([A-Za-z0-9_-]+)\s+interface\s+([A-Za-z0-9/._-]+)(?:\s+(overload))?",
+        flags=re.IGNORECASE,
+    )
+    ssh_ios_pattern = re.compile(
+        r"set\s+([A-Za-z0-9_-]+)\s+ssh\s+domain\s+([A-Za-z0-9._-]+)\s+username\s+([A-Za-z0-9._-]+)\s+password\s+([A-Za-z0-9._-]+)(?:\s+modulus\s+(\d+))?",
+        flags=re.IGNORECASE,
+    )
+    ntp_ios_pattern = re.compile(r"set\s+([A-Za-z0-9_-]+)\s+ntp\s+server\s+(\d+\.\d+\.\d+\.\d+)", flags=re.IGNORECASE)
+    syslog_ios_pattern = re.compile(r"set\s+([A-Za-z0-9_-]+)\s+syslog\s+server\s+(\d+\.\d+\.\d+\.\d+)", flags=re.IGNORECASE)
+    bgp_pattern = re.compile(
+        r"set\s+([A-Za-z0-9_-]+)\s+bgp\s+(\d+)\s+neighbor\s+(\d+\.\d+\.\d+\.\d+)\s+remote-as\s+(\d+)"
+        r"(?:\s+network\s+(\d+\.\d+\.\d+\.\d+)\s+mask\s+(\d+\.\d+\.\d+\.\d+))?",
+        flags=re.IGNORECASE,
+    )
     snmp_pattern = re.compile(r"set\s+([A-Za-z0-9_-]+)\s+snmp\s+community\s+([A-Za-z0-9_-]+)\s+(ro|rw)", flags=re.IGNORECASE)
     netflow_pattern = re.compile(
         r"set\s+([A-Za-z0-9_-]+)\s+netflow\s+destination\s+(\d+\.\d+\.\d+\.\d+)\s+(\d+)(?:\s+version\s+(\d+))?(?:\s+interface\s+([A-Za-z0-9/._-]+)\s+(ingress|egress))?",
@@ -721,6 +869,36 @@ def _extract_router_ops(prompt: str) -> list[dict[str, object]]:
     )
     crypto_map_pattern = re.compile(
         r"set\s+([A-Za-z0-9_-]+)\s+crypto\s+map\s+([A-Za-z0-9_-]+)\s+(\d+)\s+peer\s+(\d+\.\d+\.\d+\.\d+)\s+transform-set\s+([A-Za-z0-9_-]+)\s+match\s+([A-Za-z0-9_-]+)(?:\s+interface\s+([A-Za-z0-9/._-]+))?",
+        flags=re.IGNORECASE,
+    )
+    cbac_pattern = re.compile(
+        r"set\s+([A-Za-z0-9_-]+)\s+cbac\s+inspect\s+([A-Za-z0-9_-]+)\s+protocol\s+([A-Za-z0-9_-]+)\s+interface\s+([A-Za-z0-9/._-]+)\s+direction\s+(in|out)",
+        flags=re.IGNORECASE,
+    )
+    zfw_zone_interface_pattern = re.compile(
+        r"set\s+([A-Za-z0-9_-]+)\s+zfw\s+zone\s+([A-Za-z0-9_-]+)\s+interface\s+([A-Za-z0-9/._-]+)",
+        flags=re.IGNORECASE,
+    )
+    zfw_zone_pair_pattern = re.compile(
+        r"set\s+([A-Za-z0-9_-]+)\s+zfw\s+zone-pair\s+([A-Za-z0-9_-]+)\s+source\s+([A-Za-z0-9_-]+)\s+destination\s+([A-Za-z0-9_-]+)\s+policy\s+([A-Za-z0-9_-]+)",
+        flags=re.IGNORECASE,
+    )
+    zfw_policy_pattern = re.compile(
+        r"set\s+([A-Za-z0-9_-]+)\s+zfw\s+class-map\s+([A-Za-z0-9_-]+)\s+match\s+protocol\s+([A-Za-z0-9_-]+)\s+policy-map\s+([A-Za-z0-9_-]+)\s+action\s+(inspect|pass|drop)",
+        flags=re.IGNORECASE,
+    )
+    telephony_service_pattern = re.compile(
+        r'set\s+"?([^"]+?)"?\s+telephony\s+service\s+source-address\s+(\d+\.\d+\.\d+\.\d+)\s+port\s+(\d+)'
+        r"(?:\s+max-ephones\s+(\d+))?(?:\s+max-dn\s+(\d+))?",
+        flags=re.IGNORECASE,
+    )
+    ephone_dn_pattern = re.compile(r'set\s+"?([^"]+?)"?\s+ephone-dn\s+(\d+)\s+number\s+([A-Za-z0-9*+#.-]+)', flags=re.IGNORECASE)
+    ephone_pattern = re.compile(
+        r'set\s+"?([^"]+?)"?\s+ephone\s+(\d+)\s+mac\s+([0-9A-Fa-f.:-]+)\s+button\s+([0-9:]+)',
+        flags=re.IGNORECASE,
+    )
+    dial_peer_pattern = re.compile(
+        r'set\s+"?([^"]+?)"?\s+dial-peer\s+voice\s+(\d+)\s+destination-pattern\s+(\S+)\s+session-target\s+ipv4:(\d+\.\d+\.\d+\.\d+)',
         flags=re.IGNORECASE,
     )
     for segment in _command_segments(prompt):
@@ -766,6 +944,40 @@ def _extract_router_ops(prompt: str) -> list[dict[str, object]]:
                     "virtual_ipv6": virtual_ipv6,
                     "interface": interface_name,
                     "priority": int(priority) if priority else None,
+                }
+            )
+        for device, process_id, network, wildcard, area in ospfv2_pattern.findall(segment):
+            ops.append({"op": "set_ospfv2_network", "device": device, "process_id": int(process_id), "network": network, "wildcard": wildcard, "area": int(area)})
+        for device, asn, network, wildcard, no_auto in eigrp_ipv4_pattern.findall(segment):
+            ops.append({"op": "set_eigrp_ipv4_network", "device": device, "asn": int(asn), "network": network, "wildcard": wildcard, "no_auto_summary": bool(no_auto)})
+        for device, network, no_auto in ripv2_pattern.findall(segment):
+            ops.append({"op": "set_ripv2_network", "device": device, "network": network, "no_auto_summary": bool(no_auto)})
+        for device, network, prefix, next_hop in static_route_pattern.findall(segment):
+            ops.append({"op": "set_static_route", "device": device, "network": network, "prefix": int(prefix), "next_hop": next_hop})
+        for device, interface_name, helper in dhcp_relay_pattern.findall(segment):
+            ops.append({"op": "set_dhcp_relay", "device": device, "interface": interface_name, "helper": helper})
+        for device, role, interface_name in nat_inside_outside_pattern.findall(segment):
+            ops.append({"op": "set_nat_interface", "device": device, "role": role.lower(), "interface": interface_name})
+        for device, inside_local, inside_global in nat_static_pattern.findall(segment):
+            ops.append({"op": "set_nat_static", "device": device, "inside_local": inside_local, "inside_global": inside_global})
+        for device, acl, interface_name, overload in pat_pattern.findall(segment):
+            ops.append({"op": "set_pat_overload", "device": device, "acl": acl, "interface": interface_name, "overload": bool(overload)})
+        for device, domain, username, password, modulus in ssh_ios_pattern.findall(segment):
+            ops.append({"op": "set_ssh_ios", "device": device, "domain": domain, "username": username, "password": password, "modulus": int(modulus) if modulus else 1024})
+        for device, server in ntp_ios_pattern.findall(segment):
+            ops.append({"op": "set_ntp_server", "device": device, "server": server})
+        for device, server in syslog_ios_pattern.findall(segment):
+            ops.append({"op": "set_syslog_server", "device": device, "server": server})
+        for device, asn, neighbor, remote_as, network, mask in bgp_pattern.findall(segment):
+            ops.append(
+                {
+                    "op": "set_bgp_neighbor",
+                    "device": device,
+                    "asn": int(asn),
+                    "neighbor": neighbor,
+                    "remote_as": int(remote_as),
+                    "network": network or None,
+                    "mask": mask or None,
                 }
             )
         for device, community, mode in snmp_pattern.findall(segment):
@@ -824,6 +1036,66 @@ def _extract_router_ops(prompt: str) -> list[dict[str, object]]:
                     "transform_set": transform_set,
                     "acl_name": acl_name,
                     "interface": interface_name or None,
+                }
+            )
+        for device, name, protocol, interface_name, direction in cbac_pattern.findall(segment):
+            ops.append(
+                {
+                    "op": "set_cbac_inspect",
+                    "device": device,
+                    "name": name,
+                    "protocol": protocol.lower(),
+                    "interface": interface_name,
+                    "direction": direction.lower(),
+                }
+            )
+        for device, zone, interface_name in zfw_zone_interface_pattern.findall(segment):
+            ops.append({"op": "set_zfw_zone_interface", "device": device, "zone": zone, "interface": interface_name})
+        for device, pair_name, source, destination, policy in zfw_zone_pair_pattern.findall(segment):
+            ops.append(
+                {
+                    "op": "set_zfw_zone_pair",
+                    "device": device,
+                    "pair_name": pair_name,
+                    "source": source,
+                    "destination": destination,
+                    "policy": policy,
+                }
+            )
+        for device, class_map, protocol, policy_map, action in zfw_policy_pattern.findall(segment):
+            ops.append(
+                {
+                    "op": "set_zfw_policy",
+                    "device": device,
+                    "class_map": class_map,
+                    "protocol": protocol.lower(),
+                    "policy_map": policy_map,
+                    "action": action.lower(),
+                }
+            )
+        for device, source_address, port, max_ephones, max_dn in telephony_service_pattern.findall(segment):
+            ops.append(
+                {
+                    "op": "set_telephony_service",
+                    "device": device.strip(),
+                    "source_address": source_address,
+                    "port": int(port),
+                    "max_ephones": int(max_ephones) if max_ephones else None,
+                    "max_dn": int(max_dn) if max_dn else None,
+                }
+            )
+        for device, dn_id, number in ephone_dn_pattern.findall(segment):
+            ops.append({"op": "set_ephone_dn", "device": device.strip(), "dn_id": int(dn_id), "number": number})
+        for device, ephone_id, mac, button in ephone_pattern.findall(segment):
+            ops.append({"op": "set_ephone", "device": device.strip(), "ephone_id": int(ephone_id), "mac": mac.upper(), "button": button})
+        for device, peer_id, destination_pattern, session_target in dial_peer_pattern.findall(segment):
+            ops.append(
+                {
+                    "op": "set_dial_peer_voice",
+                    "device": device.strip(),
+                    "peer_id": int(peer_id),
+                    "destination_pattern": destination_pattern,
+                    "session_target": session_target,
                 }
             )
     return ops
@@ -1054,6 +1326,48 @@ def parse_intent(prompt: str) -> IntentPlan:
         or network_style == "l2_security_monitoring"
     ):
         capability_set.add("qos")
+    if network_style == "automation_controller" or re.search(r"\b(?:network controller|netcon|blockly|iox)\b", lowered):
+        if re.search(r"\bpython\b", lowered):
+            capability_set.add("python_programming")
+        if re.search(r"\b(?:tcp|udp)\b", lowered) and re.search(r"\b(?:app|application|test app)\b", lowered):
+            capability_set.add("tcp_udp_app")
+    if "ospf" in capability_set and not re.search(r"\b(?:ipv6|ospfv3)\b", lowered):
+        capability_set.add("ospfv2")
+    if "eigrp" in capability_set and not re.search(r"\bipv6\b", lowered):
+        capability_set.add("eigrp_ipv4")
+    if "rip" in capability_set and not re.search(r"\b(?:ipv6|ripng)\b", lowered):
+        capability_set.add("ripv2")
+    if "nat" in capability_set:
+        if re.search(r"\bpat\b|\boverload\b", lowered):
+            capability_set.add("pat")
+        if re.search(r"\bstatic\s+nat\b|\bnat\s+static\b", lowered):
+            capability_set.add("nat_static")
+        if re.search(r"\bdynamic\s+nat\b|\bnat\s+dynamic\b", lowered):
+            capability_set.add("nat_dynamic")
+        if network_style == "ipv4_routing_management" and not {"nat_static", "nat_dynamic"} & capability_set:
+            capability_set.update({"nat_static", "nat_dynamic"})
+    if "ssh" in capability_set:
+        capability_set.add("ssh_ios")
+    if "ntp" in capability_set:
+        capability_set.add("ntp_ios")
+    if (
+        "server_syslog" in capability_set
+        and re.search(r"\b(?:server|ftp|email|aaa|dns)\b", lowered)
+        and not re.search(r"\b(?:logging\s+host|set\s+\S+\s+syslog\s+server)\b", lowered)
+    ):
+        capability_set.discard("syslog_ios")
+    if re.search(r"\blogging\s+host\b", lowered):
+        capability_set.add("syslog_ios")
+    if re.search(r"\bdefault\s+route\b|\b0\.0\.0\.0/0\b", lowered):
+        capability_set.update({"static_route", "default_route"})
+    elif re.search(r"\bstatic\s+route\b|\bip\s+route\b", lowered):
+        capability_set.add("static_route")
+    if re.search(r"\bdhcp\s+relay\b|\bdhcp-relay\b|\bhelper-address\b|\bip\s+helper\b", lowered):
+        capability_set.add("dhcp_relay")
+        if not re.search(r"\b(?:dhcp\s+pool|server\s+dhcp|dhcp\s+server|default-router)\b", lowered):
+            capability_set.discard("dhcp_pool")
+            capability_set.discard("router_dhcp")
+            capability_set.discard("server_dhcp")
     if "dhcp_snooping" in capability_set and not re.search(r"\b(?:dhcp\s+pool|server\s+dhcp|dhcp\s+server|default-router)\b", lowered):
         capability_set.discard("dhcp_pool")
         capability_set.discard("router_dhcp")
@@ -1140,12 +1454,16 @@ def parse_intent(prompt: str) -> IntentPlan:
             capability_set.add("javascript_programming")
         if file_name.endswith(".visual") or "visual" in app_name or "<xml" in content:
             capability_set.add("blockly_programming")
+        if "tcp" in " ".join([file_name, app_name, content]) or "udp" in " ".join([file_name, app_name, content]):
+            capability_set.add("tcp_udp_app")
         if "realhttp" in content or "real http" in app_name:
             capability_set.add("real_http")
         if "realws" in content or "websocket" in content or "websocket" in app_name:
             capability_set.add("real_websocket")
         if "mqtt" in content or "mqtt" in app_name:
             capability_set.add("mqtt")
+    if programming_ops and capability_set & {"python_programming", "javascript_programming", "blockly_programming"} and not capability_set & {"real_http", "real_websocket", "mqtt"}:
+        network_style = network_style or "automation_controller"
     switch_op_names = {str(op.get("op")) for op in switch_ops}
     if "set_dhcp_snooping" in switch_op_names:
         capability_set.add("dhcp_snooping")
@@ -1159,7 +1477,32 @@ def parse_intent(prompt: str) -> IntentPlan:
         capability_set.add("span")
     if "set_port_security" in switch_op_names:
         capability_set.add("port_security")
+    if "set_dot1x" in switch_op_names:
+        capability_set.add("dot1x")
+    if "set_qos_policy" in switch_op_names:
+        capability_set.add("qos")
+    if "set_stp" in switch_op_names:
+        capability_set.add("stp")
+        for op in switch_ops:
+            if op.get("op") == "set_stp" and re.search(r"(?:rapid|rstp)", str(op.get("mode") or ""), flags=re.IGNORECASE):
+                capability_set.add("rstp")
+    if "set_etherchannel" in switch_op_names:
+        capability_set.add("etherchannel")
+        for op in switch_ops:
+            if op.get("op") != "set_etherchannel":
+                continue
+            mode = str(op.get("mode") or "").lower()
+            if mode in {"active", "passive"}:
+                capability_set.add("lacp")
+            if mode in {"desirable", "auto"}:
+                capability_set.add("pagp")
+    if "set_vtp" in switch_op_names:
+        capability_set.add("vtp")
+    if "set_dtp" in switch_op_names:
+        capability_set.add("dtp")
     router_op_names = {str(op.get("op")) for op in router_ops}
+    if "set_bgp_neighbor" in router_op_names:
+        capability_set.add("bgp")
     if "set_snmp_community" in router_op_names:
         capability_set.add("snmp")
     if "set_netflow" in router_op_names:
@@ -1170,6 +1513,14 @@ def parse_intent(prompt: str) -> IntentPlan:
         capability_set.add("ppp")
     if router_op_names & {"set_ipsec_transform_set", "set_crypto_map"}:
         capability_set.update({"ipsec", "vpn"})
+    if "set_cbac_inspect" in router_op_names:
+        capability_set.update({"cbac", "security_edge"})
+    if router_op_names & {"set_zfw_zone_interface", "set_zfw_zone_pair", "set_zfw_policy"}:
+        capability_set.update({"zfw", "security_edge"})
+        if "set_qos_policy" not in switch_op_names:
+            capability_set.discard("qos")
+        capability_set.discard("server_http")
+        capability_set.discard("server_https")
     if router_op_names & {"enable_ipv6_unicast_routing", "set_ipv6_address", "set_ipv6_slaac"}:
         capability_set.add("ipv6_slaac")
     if "set_dhcpv6_pool" in router_op_names:
@@ -1182,14 +1533,48 @@ def parse_intent(prompt: str) -> IntentPlan:
         capability_set.add("ripng")
     if "set_hsrp_ipv6" in router_op_names:
         capability_set.add("hsrp")
+    if "set_ospfv2_network" in router_op_names:
+        capability_set.add("ospfv2")
+    if "set_eigrp_ipv4_network" in router_op_names:
+        capability_set.add("eigrp_ipv4")
+    if "set_ripv2_network" in router_op_names:
+        capability_set.add("ripv2")
+    if "set_static_route" in router_op_names:
+        capability_set.add("static_route")
+        if any(op.get("op") == "set_static_route" and op.get("network") == "0.0.0.0" and op.get("prefix") == 0 for op in router_ops):
+            capability_set.add("default_route")
+    if "set_dhcp_relay" in router_op_names:
+        capability_set.add("dhcp_relay")
+    if "set_nat_interface" in router_op_names:
+        capability_set.add("nat")
+    if "set_nat_static" in router_op_names:
+        capability_set.update({"nat", "nat_static"})
+    if "set_pat_overload" in router_op_names:
+        capability_set.update({"nat", "pat"})
+    if "set_ssh_ios" in router_op_names:
+        capability_set.update({"ssh", "ssh_ios"})
+    if "set_ntp_server" in router_op_names:
+        capability_set.update({"ntp", "ntp_ios"})
+    if "set_syslog_server" in router_op_names:
+        capability_set.update({"syslog_ios"})
+    if router_op_names & {"set_telephony_service", "set_ephone_dn", "set_ephone", "set_dial_peer_voice"}:
+        capability_set.update({"voip", "call_manager"})
+    if router_op_names & {"set_ephone_dn", "set_ephone"}:
+        capability_set.add("ip_phone")
     if capability_set & {"vpn", "ipsec", "gre", "ppp", "security_edge"}:
         network_style = network_style or "wan_security"
     if capability_set & {"ipv6_slaac", "dhcpv6_stateful", "dhcpv6_stateless", "ospfv3", "eigrp_ipv6", "ripng", "hsrp"}:
         network_style = network_style or "ipv6_routing"
+    if capability_set & {"ospfv2", "eigrp_ipv4", "ripv2", "static_route", "default_route", "dhcp_relay", "nat_static", "nat_dynamic", "pat", "ssh_ios", "ntp_ios", "syslog_ios"}:
+        network_style = network_style or "ipv4_routing_management"
     if capability_set & {"dhcp_snooping", "dai", "dot1x", "lldp", "rep", "snmp", "netflow", "span", "qos", "port_security"}:
         network_style = network_style or "l2_security_monitoring"
+    if capability_set & {"bgp", "stp", "rstp", "etherchannel", "lacp", "pagp", "vtp", "dtp"}:
+        network_style = "l2_resiliency_routing"
     if capability_set & {"wlc", "wpa_enterprise", "wep", "guest_wifi", "beamforming", "meraki", "cellular_5g", "bluetooth"}:
         network_style = "wireless_advanced"
+    if capability_set & {"coaxial", "cable_dsl", "central_office", "cell_tower", "power_distribution", "hot_swappable", "ios_license"}:
+        network_style = "physical_media_device"
     if capability_set & {"mqtt", "real_http", "real_websocket", "visual_scripting", "ptp", "profinet", "l2nat", "cyberobserver", "industrial_firewall"}:
         network_style = "industrial_iot"
         if capability_set & {"real_http", "real_websocket"}:
@@ -1201,6 +1586,8 @@ def parse_intent(prompt: str) -> IntentPlan:
             or re.search(r"\bregister\s+.+\s+to\b", lowered)
         ):
             capability_set.discard("iot")
+    if capability_set & {"voip", "ip_phone", "call_manager", "linksys_voice"}:
+        network_style = "voice_collaboration"
 
     capabilities = sorted(capability_set)
 

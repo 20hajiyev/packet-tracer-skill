@@ -59,6 +59,17 @@ Those are related, but they are not the same claim.
 - registry-backed metadata overrides inferred metadata where the registry is more explicit
 - validation can still demote a registry entry if the actual donor is blocked or incompatible
 
+## Remote Sample Promotion Rules
+
+GitHub sample ingestion is a local developer workflow, not a direct registry promotion path.
+
+- remote `.pkt` and `.pka` files are imported only into `output/remote-import-cache`
+- unknown, missing, or non-permissive license metadata stays `reference_only`
+- permissive-license metadata can only create a `validated_curated` candidate after decode and inventory validation
+- decode-fail samples can be recorded in `remote-sample-audit.json`, but they cannot create donor eligibility
+- no remote sample becomes `acceptance_verified_curated` without checked acceptance fixtures and proof notes
+- raw remote `.pkt` files are not committed and are not packed into npm artifacts
+
 ## Evidence Sources
 
 Selected donor summaries distinguish:

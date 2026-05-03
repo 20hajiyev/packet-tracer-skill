@@ -1,6 +1,6 @@
 # Release Checklist
 
-Target release surface: `0.2.2` conservative public preview.
+Target release surface: `0.2.3` capability proof/readiness release.
 
 ## Product Contract
 
@@ -30,10 +30,14 @@ python .\scripts\runtime_doctor.py
 ## Public Artifacts
 
 - raw `.pkt` binaries are not committed
+- remote GitHub imports, if used, stay under `output/remote-import-cache`
+- `output/remote-import-cache/remote-sample-audit.json` is reviewed for license, decode, and promotion status before any claim changes
+- user-supplied local audits, if used, stay under `output/local-sample-audit.json` or another ignored `output/` path
+- local `pkt_examples` files remain local evidence only; no raw `.pkt`, `.pka`, local audit cache, or user-supplied corpus files are packaged
 - examples index and gallery were rebuilt
 - screenshots are intentional and non-sensitive
-- changelog entry is updated for `0.2.2`
-- release notes source exists: `docs/release-notes-0.2.2.md`
+- changelog entry is updated for `0.2.3`
+- release notes source exists: `docs/release-notes-0.2.3.md`
 - hero demo plan exists: `docs/hero-demo-plan.md`
 - GitHub launch ops runbook exists: `docs/github-launch-ops-0.2.2.md`
 - canonical donor proof exists: `docs/campus-donor-proof.md`
@@ -60,6 +64,7 @@ Only publish when:
 - `package.json` version is final for the publish-preview batch
 - doctor wording matches current runtime reality
 - no accidental local paths leaked into tracked files
+- no raw `.pkt`, `.pka`, or remote cache files appear in `npm pack --dry-run --json`
 - GitHub metadata doc is final and matches README wording
 - hero visual and release notes are ready for direct reuse
 

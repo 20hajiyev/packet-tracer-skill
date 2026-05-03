@@ -28,16 +28,62 @@ EDITOR_TEST_ALIASES = {
     "netflow": ["set_netflow", "netflow destination"],
     "span": ["set_span", "monitor session"],
     "port_security": ["set_port_security", "port-security"],
+    "dot1x": ["set_dot1x", "dot1x system-auth-control", "authentication port-control"],
+    "qos": ["set_qos_policy", "class-map", "policy-map", "service-policy"],
+    "bgp": ["set_bgp_neighbor", "router bgp", "remote-as"],
+    "stp": ["set_stp", "spanning-tree mode"],
+    "rstp": ["set_stp", "rapid-pvst"],
+    "etherchannel": ["set_etherchannel", "channel-group", "Port-channel"],
+    "lacp": ["set_etherchannel", "mode active"],
+    "pagp": ["set_etherchannel", "mode desirable"],
+    "vtp": ["set_vtp", "vtp domain"],
+    "dtp": ["set_dtp", "dynamic desirable"],
     "wep": ["security wep", "WEP_KEY"],
     "wpa_enterprise": ["wpa-enterprise", "wpa2-enterprise", "802.1x", "radius_server"],
     "gre": ["set_gre_tunnel", "gre tunnel", "tunnel mode gre ip"],
     "ppp": ["set_ppp_interface", "encapsulation ppp"],
     "ipsec": ["set_ipsec_transform_set", "crypto ipsec transform-set", "set_crypto_map"],
     "vpn": ["set_crypto_map", "crypto map"],
+    "cbac": ["set_cbac_inspect", "ip inspect name"],
+    "zfw": ["set_zfw_zone_interface", "set_zfw_zone_pair", "set_zfw_policy", "zone-pair security", "policy-map type inspect"],
+    "voip": ["set_telephony_service", "set_dial_peer_voice", "telephony-service", "dial-peer voice"],
+    "ip_phone": ["set_ephone_dn", "set_ephone", "ephone-dn", "ephone"],
+    "call_manager": ["set_telephony_service", "set_ephone_dn", "telephony-service"],
     "real_http": ["set_script_file_content", "realhttp", "real http"],
     "real_websocket": ["set_script_file_content", "realws", "websocket"],
     "python_programming": ["set_script_file_content", "main.py", "python"],
     "javascript_programming": ["set_script_file_content", "main.js", "javascript"],
+    "tcp_udp_app": ["set_script_file_content", "tcpServer.js", "udpSend.js", "tcp_udp_app"],
+    "ospfv2": ["set_ospfv2_network", "router ospf"],
+    "eigrp_ipv4": ["set_eigrp_ipv4_network", "router eigrp"],
+    "ripv2": ["set_ripv2_network", "router rip"],
+    "static_route": ["set_static_route", "ip route"],
+    "default_route": ["set_static_route", "0.0.0.0"],
+    "dhcp_relay": ["set_dhcp_relay", "ip helper-address"],
+    "nat_static": ["set_nat_static", "ip nat inside source static"],
+    "nat_dynamic": ["set_nat_interface", "ip nat inside"],
+    "pat": ["set_pat_overload", "overload"],
+    "ssh_ios": ["set_ssh_ios", "ip ssh"],
+    "ntp_ios": ["set_ntp_server", "ntp server"],
+    "syslog_ios": ["set_syslog_server", "logging host"],
+}
+DONOR_BACKED_READY_PROOF_CAPABILITIES = {
+    "ospfv3",
+    "eigrp_ipv6",
+    "ripng",
+    "hsrp",
+    "dot1x",
+    "qos",
+    "zfw",
+    "cbac",
+    "voip",
+    "ip_phone",
+    "call_manager",
+    "real_http",
+    "real_websocket",
+    "python_programming",
+    "javascript_programming",
+    "tcp_udp_app",
 }
 
 STATUS_ORDER = [
@@ -119,7 +165,9 @@ def _editor_test_mentions(capability: str) -> bool:
 def _feature_status(feature: dict[str, Any], evidence: dict[str, Any]) -> str:
     capability = str(feature.get("capability") or feature.get("id") or "")
     ceiling = str(feature.get("support_ceiling") or "report_supported")
-    if evidence["editor_roundtrip_test"]:
+    if evidence.get("donor_backed_proof_ready"):
+        raw_status = "donor_backed_ready"
+    elif evidence["editor_roundtrip_test"]:
         raw_status = "edit_proven"
     elif evidence["parser_pattern"] and (evidence["sample_count"] or evidence["catalog_keyword"] or evidence["coverage_provider"]):
         raw_status = "report_supported"
@@ -172,12 +220,20 @@ def build_feature_gap_report(
                 "catalog_keyword": capability in CAPABILITY_KEYWORDS,
                 "coverage_provider": capability in CAPABILITY_PROVIDER_FAMILIES,
                 "editor_roundtrip_test": _editor_test_mentions(capability),
+                "donor_backed_proof": bool(feature.get("donor_backed_proof"))
+                and capability in DONOR_BACKED_READY_PROOF_CAPABILITIES,
                 "sample_count": len(hits),
                 "sample_examples": hits[:5],
                 "sample_path_count": len(hits),
                 "decode_verified_sample_count": len(decoded_hits),
                 "decode_verified_examples": decoded_hits[:5],
             }
+            evidence["donor_backed_proof_ready"] = bool(
+                evidence["donor_backed_proof"]
+                and evidence["editor_roundtrip_test"]
+                and evidence["sample_count"]
+                and evidence["decode_verified_sample_count"]
+            )
             status = _feature_status(feature, evidence)
             if status != "not_mapped":
                 mapped_features += 1

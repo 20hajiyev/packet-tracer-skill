@@ -218,6 +218,20 @@ def test_build_inventory_capability_report_derives_programming_capabilities() ->
     assert {"real_websocket", "python_programming"} <= set(report["capabilities"])
 
 
+def test_build_inventory_capability_report_derives_voice_capabilities() -> None:
+    report = build_inventory_capability_report(
+        {
+            "topology_summary": {"device_counts": {"Router": 1, "IpPhone": 1}},
+            "voice": {
+                "Router0": {"capabilities": ["voip", "call_manager", "ip_phone"]},
+                "IP Phone0": {"capabilities": ["voip", "ip_phone"]},
+            },
+        }
+    )
+
+    assert {"voip", "call_manager", "ip_phone"} <= set(report["capabilities"])
+
+
 def test_build_coverage_gap_report_promotes_explicit_programming_edits_to_edit_only() -> None:
     plan = parse_intent(
         'set "Py: real http server 2" script app "New Project (Python)" file "main.py" '
@@ -228,9 +242,60 @@ def test_build_coverage_gap_report_promotes_explicit_programming_edits_to_edit_o
     parity_by_capability = {entry["capability"]: entry for entry in report.capability_parity}
 
     assert report.scenario_family == "industrial_iot"
+    assert parity_by_capability["real_http"]["donor_backed_ready"] is True
+    assert parity_by_capability["python_programming"]["donor_backed_ready"] is True
     for capability in ["real_http", "python_programming"]:
         assert parity_by_capability[capability]["edit_supported"] is True
         assert parity_by_capability[capability]["generate_supported"] is False
+        assert parity_by_capability[capability]["generate_mismatch_reason"] == "supported_in_edit_only"
+
+
+def test_build_coverage_gap_report_promotes_explicit_automation_script_edits_to_edit_only() -> None:
+    plan = parse_intent(
+        'set "PC0" script app "tcpServer" file "tcpServer.js" '
+        'content "console.log(\\"tcp automation\\")"'
+    )
+
+    report = build_coverage_gap_report(plan, [])
+    parity_by_capability = {entry["capability"]: entry for entry in report.capability_parity}
+
+    assert report.scenario_family == "automation_controller"
+    for capability in ["javascript_programming", "tcp_udp_app"]:
+        assert parity_by_capability[capability]["edit_supported"] is True
+        assert parity_by_capability[capability]["generate_supported"] is False
+        assert parity_by_capability[capability]["donor_backed_ready"] is True
+        assert parity_by_capability[capability]["generate_mismatch_reason"] == "supported_in_edit_only"
+
+
+def test_build_coverage_gap_report_keeps_physical_media_family_report_only() -> None:
+    plan = parse_intent("coaxial cable dsl central office cell tower power distribution hot swappable ios license")
+
+    report = build_coverage_gap_report(plan, [])
+    parity_by_capability = {entry["capability"]: entry for entry in report.capability_parity}
+
+    assert report.scenario_family == "physical_media_device"
+    assert "cellular_5g" not in report.scenario_generate_readiness["critical_capabilities"]
+    for capability in ["coaxial", "cable_dsl", "central_office", "cell_tower", "power_distribution", "hot_swappable", "ios_license"]:
+        assert parity_by_capability[capability]["edit_supported"] is False
+        assert parity_by_capability[capability]["generate_supported"] is False
+        assert parity_by_capability[capability]["generate_mismatch_reason"] == "report_only"
+
+
+def test_build_coverage_gap_report_promotes_explicit_voice_edits_to_edit_only() -> None:
+    plan = parse_intent(
+        'set "Router0" telephony service source-address 192.168.10.1 port 2000 max-ephones 4 max-dn 4 '
+        'set "Router0" ephone-dn 1 number 1001 '
+        'set "Router0" ephone 1 mac 0001.42AA.BBCC button 1:1'
+    )
+
+    report = build_coverage_gap_report(plan, [])
+    parity_by_capability = {entry["capability"]: entry for entry in report.capability_parity}
+
+    assert report.scenario_family == "voice_collaboration"
+    for capability in ["voip", "ip_phone", "call_manager"]:
+        assert parity_by_capability[capability]["edit_supported"] is True
+        assert parity_by_capability[capability]["generate_supported"] is False
+        assert parity_by_capability[capability]["donor_backed_ready"] is True
         assert parity_by_capability[capability]["generate_mismatch_reason"] == "supported_in_edit_only"
 
 
@@ -904,6 +969,25 @@ def test_build_coverage_gap_report_keeps_l2_security_monitoring_generate_gated()
         assert parity_by_capability[capability]["generate_mismatch_reason"] == "report_only"
 
 
+def test_build_coverage_gap_report_promotes_explicit_dot1x_and_qos_to_edit_only() -> None:
+    plan = parse_intent(
+        "set SW1 dot1x interface FastEthernet0/1 mode auto radius 192.168.1.10 key radius123 "
+        "set SW1 qos class-map VOICE match dscp ef policy-map QOS_POLICY class VOICE priority service-policy output FastEthernet0/1"
+    )
+
+    report = build_coverage_gap_report(plan, [])
+    parity_by_capability = {entry["capability"]: entry for entry in report.capability_parity}
+
+    assert report.scenario_family == "l2_security_monitoring"
+    for capability in ["dot1x", "qos"]:
+        assert parity_by_capability[capability]["edit_supported"] is True
+        assert parity_by_capability[capability]["generate_supported"] is False
+        assert parity_by_capability[capability]["acceptance_verified"] is False
+        assert parity_by_capability[capability]["generate_mismatch_reason"] == "supported_in_edit_only"
+    assert parity_by_capability["dot1x"]["donor_backed_ready"] is True
+    assert parity_by_capability["qos"]["donor_backed_ready"] is False
+
+
 def test_build_coverage_gap_report_keeps_advanced_wireless_broad_prompt_report_only() -> None:
     plan = parse_intent("wlc radius wpa enterprise guest wifi bluetooth cellular")
     sample = SampleDescriptor(
@@ -987,7 +1071,11 @@ def test_build_coverage_gap_report_promotes_explicit_wan_security_edits_to_edit_
         "set R1 gre tunnel Tunnel0 source 10.0.0.1 destination 10.0.0.2 ip 172.16.0.1/30 "
         "set R1 ppp interface Serial0/0/0 authentication chap "
         "set R1 ipsec transform-set TS esp-aes esp-sha-hmac "
-        "set R1 crypto map VPNMAP 10 peer 203.0.113.2 transform-set TS match ACL_VPN interface Serial0/0/0"
+        "set R1 crypto map VPNMAP 10 peer 203.0.113.2 transform-set TS match ACL_VPN interface Serial0/0/0 "
+        "set R1 cbac inspect FIREWALL protocol tcp interface FastEthernet0/0 direction in "
+        "set R1 zfw zone inside interface FastEthernet0/0 "
+        "set R1 zfw zone-pair INSIDE_OUT source inside destination outside policy POLICY1 "
+        "set R1 zfw class-map CM_WEB match protocol http policy-map POLICY1 action inspect"
     )
     sample = SampleDescriptor(
         path="wan_security.pkt",
@@ -1001,7 +1089,7 @@ def test_build_coverage_gap_report_promotes_explicit_wan_security_edits_to_edit_
             {"name": "Cloud0", "type": "Cloud", "model": "Cloud-PT"},
         ],
         links=[],
-        capability_tags=["vpn", "ipsec", "gre", "ppp"],
+        capability_tags=["vpn", "ipsec", "gre", "ppp", "cbac", "zfw"],
         topology_tags=["wan_security_edge"],
         preferred_roles=["preferred_wan_security"],
         trust_level="trusted",
@@ -1018,11 +1106,26 @@ def test_build_coverage_gap_report_promotes_explicit_wan_security_edits_to_edit_
     parity_by_capability = {entry["capability"]: entry for entry in report.capability_parity}
 
     assert report.scenario_family == "wan_security_edge"
-    for capability in ["gre", "ppp", "ipsec", "vpn"]:
+    for capability in ["gre", "ppp", "ipsec", "vpn", "cbac", "zfw"]:
         assert parity_by_capability[capability]["edit_supported"] is True
         assert parity_by_capability[capability]["generate_supported"] is False
         assert parity_by_capability[capability]["acceptance_verified"] is False
         assert parity_by_capability[capability]["generate_mismatch_reason"] == "supported_in_edit_only"
+    assert parity_by_capability["zfw"]["donor_backed_ready"] is True
+    assert parity_by_capability["cbac"]["donor_backed_ready"] is False
+
+
+def test_build_coverage_gap_report_keeps_asa_deep_security_report_only() -> None:
+    plan = parse_intent("asa service policy clientless vpn asa acl nat sniffer")
+
+    report = build_coverage_gap_report(plan, [])
+    parity_by_capability = {entry["capability"]: entry for entry in report.capability_parity}
+
+    assert report.scenario_family == "wan_security_edge"
+    for capability in ["asa_acl_nat", "asa_service_policy", "clientless_vpn", "sniffer"]:
+        assert parity_by_capability[capability]["edit_supported"] is False
+        assert parity_by_capability[capability]["generate_supported"] is False
+        assert parity_by_capability[capability]["generate_mismatch_reason"] == "report_only"
 
 
 def test_build_coverage_gap_report_keeps_broad_wan_security_generate_donor_limited() -> None:
@@ -1112,6 +1215,25 @@ def test_build_coverage_gap_report_promotes_explicit_ipv6_selected_donor() -> No
         assert parity_by_capability[capability]["generate_mismatch_reason"] is None
 
 
+def test_build_coverage_gap_report_promotes_ipv6_routing_proof_subset_without_generate() -> None:
+    plan = parse_intent("ipv6 ospf dhcpv6 slaac hsrp")
+    report = build_coverage_gap_report(plan, [])
+    parity_by_capability = {entry["capability"]: entry for entry in report.capability_parity}
+
+    assert report.scenario_family == "ipv6_routing"
+    for capability in ["ospfv3", "hsrp"]:
+        assert parity_by_capability[capability]["edit_supported"] is True
+        assert parity_by_capability[capability]["donor_backed_ready"] is True
+        assert parity_by_capability[capability]["generate_supported"] is False
+        assert parity_by_capability[capability]["generate_mismatch_reason"] == "supported_in_edit_only"
+    for capability in ["ipv6_slaac", "dhcpv6_stateful"]:
+        assert parity_by_capability[capability]["edit_supported"] is True
+        assert parity_by_capability[capability]["donor_backed_ready"] is False
+        assert parity_by_capability[capability]["generate_supported"] is False
+    assert report.scenario_generate_readiness["family"] == "ipv6_routing"
+    assert report.scenario_generate_readiness["status"] != "ready"
+
+
 def test_build_coverage_gap_report_keeps_ipv6_edit_proven_without_selected_donor() -> None:
     plan = parse_intent(
         "set Router0 ipv6 unicast-routing "
@@ -1148,6 +1270,111 @@ def test_build_coverage_gap_report_keeps_ipv6_edit_proven_without_selected_donor
         assert parity_by_capability[capability]["generate_supported"] is False
         assert parity_by_capability[capability]["acceptance_verified"] is False
         assert parity_by_capability[capability]["generate_mismatch_reason"] == "supported_in_edit_only"
+
+
+def test_build_coverage_gap_report_treats_l2_resiliency_bgp_as_edit_only() -> None:
+    plan = parse_intent(
+        "set R1 bgp 65001 neighbor 10.0.0.2 remote-as 65002 network 192.168.1.0 mask 255.255.255.0 "
+        "set SW1 stp mode rapid-pvst vlan 10 root primary "
+        "set SW1 etherchannel 1 mode active interfaces FastEthernet0/1 FastEthernet0/2 "
+        "set SW1 etherchannel 2 mode desirable interfaces FastEthernet0/3 FastEthernet0/4 "
+        "set SW1 vtp domain CAMPUS mode server version 2 "
+        "set SW1 dtp interface FastEthernet0/1 mode dynamic desirable"
+    )
+    sample = SampleDescriptor(
+        path="l2_resiliency_bgp.pkt",
+        relative_path="BGP STP EtherChannel VTP DTP/lab.pkt",
+        version="9.0.0.0810",
+        device_count=2,
+        link_count=1,
+        devices=[
+            {"name": "R1", "type": "Router", "model": "ISR4331"},
+            {"name": "SW1", "type": "Switch", "model": "2960-24TT"},
+        ],
+        links=[],
+        capability_tags=["bgp", "stp", "rstp", "etherchannel", "lacp", "pagp", "vtp", "dtp"],
+        topology_tags=["l2_resiliency_routing"],
+        preferred_roles=["preferred_routing", "preferred_l2_resiliency"],
+        trust_level="trusted",
+        origin="cisco-local",
+        role="primary",
+        prototype_eligible=True,
+        donor_eligible=True,
+        device_families=["routers", "switches"],
+        archetype_tags=["L2 resiliency/routing"],
+        runtime_features=["workspace_validated", "l2_resiliency_runtime"],
+    )
+
+    report = build_coverage_gap_report(plan, [sample])
+    parity_by_capability = {entry["capability"]: entry for entry in report.capability_parity}
+
+    assert report.scenario_family == "l2_resiliency_routing"
+    for capability in ["bgp", "stp", "rstp", "etherchannel", "lacp", "pagp", "vtp", "dtp"]:
+        assert parity_by_capability[capability]["edit_supported"] is True
+        assert parity_by_capability[capability]["donor_backed_ready"] is False
+        assert parity_by_capability[capability]["generate_supported"] is False
+        assert parity_by_capability[capability]["acceptance_verified"] is False
+        assert parity_by_capability[capability]["generate_mismatch_reason"] == "supported_in_edit_only"
+    assert report.critical_parity_generate_ready_count == 0
+
+
+def test_build_coverage_gap_report_treats_ipv4_routing_management_as_edit_only() -> None:
+    plan = parse_intent(
+        "set R1 ospfv2 1 network 10.0.0.0 wildcard 0.0.0.255 area 0 "
+        "set R1 eigrp ipv4 100 network 10.0.0.0 wildcard 0.0.0.255 no-auto-summary "
+        "set R1 rip version 2 network 10.0.0.0 no-auto-summary "
+        "set R1 static-route 0.0.0.0/0 via 10.0.0.1 "
+        "set R1 dhcp-relay interface GigabitEthernet0/0 helper 192.168.1.10 "
+        "set R1 nat static 192.168.1.10 203.0.113.10 "
+        "set R1 pat acl 1 interface Serial0/0/0 overload "
+        "set R1 ssh domain lab.local username admin password cisco123 modulus 1024 "
+        "set R1 ntp server 192.168.1.20 "
+        "set R1 syslog server 192.168.1.30"
+    )
+
+    report = build_coverage_gap_report(plan, [])
+    parity_by_capability = {entry["capability"]: entry for entry in report.capability_parity}
+
+    assert report.scenario_family == "ipv4_routing_management"
+    assert report.critical_parity_generate_ready_count == 0
+    for capability in [
+        "ospfv2",
+        "eigrp_ipv4",
+        "ripv2",
+        "default_route",
+        "dhcp_relay",
+        "nat_static",
+        "pat",
+        "ssh_ios",
+        "ntp_ios",
+        "syslog_ios",
+    ]:
+        assert parity_by_capability[capability]["edit_supported"] is True
+        assert parity_by_capability[capability]["donor_backed_ready"] is False
+        assert parity_by_capability[capability]["generate_supported"] is False
+        assert parity_by_capability[capability]["generate_mismatch_reason"] == "supported_in_edit_only"
+
+
+def test_build_coverage_gap_report_keeps_broad_ipv4_routing_management_not_generate_ready() -> None:
+    plan = parse_intent("ospf eigrp rip static default route dhcp relay nat pat ssh ntp syslog")
+    report = build_coverage_gap_report(plan, [])
+    parity_by_capability = {entry["capability"]: entry for entry in report.capability_parity}
+
+    assert report.scenario_family == "ipv4_routing_management"
+    assert report.critical_parity_generate_ready_count == 0
+    for capability in report.scenario_generate_readiness["critical_capabilities"]:
+        assert parity_by_capability[capability]["generate_supported"] is False
+
+
+def test_build_coverage_gap_report_keeps_broad_l2_resiliency_bgp_not_generate_ready() -> None:
+    plan = parse_intent("bgp stp rstp etherchannel lacp pagp vtp dtp")
+    report = build_coverage_gap_report(plan, [])
+    parity_by_capability = {entry["capability"]: entry for entry in report.capability_parity}
+
+    assert report.scenario_family == "l2_resiliency_routing"
+    assert report.critical_parity_generate_ready_count == 0
+    for capability in ["bgp", "stp", "rstp", "etherchannel", "lacp", "pagp", "vtp", "dtp"]:
+        assert parity_by_capability[capability]["generate_supported"] is False
 
 
 def test_build_coverage_gap_report_supports_phase_a_switching_capabilities() -> None:
@@ -1360,3 +1587,44 @@ def test_build_inventory_capability_report_infers_l2_security_monitoring_feature
     report = build_inventory_capability_report(payload)
     assert {"routers", "switches"} <= set(report["device_families"])
     assert {"dhcp_snooping", "dai", "lldp", "rep", "span", "port_security", "snmp", "netflow"} <= set(report["capabilities"])
+
+
+def test_build_inventory_capability_report_infers_ipv4_routing_management_features() -> None:
+    payload = {
+        "topology_summary": {"device_counts": {"Router": 1}},
+        "ipv4_routing_management": {
+            "R1": {
+                "capabilities": [
+                    "ospfv2",
+                    "eigrp_ipv4",
+                    "ripv2",
+                    "static_route",
+                    "default_route",
+                    "dhcp_relay",
+                    "nat_static",
+                    "nat_dynamic",
+                    "pat",
+                    "ssh_ios",
+                    "ntp_ios",
+                    "syslog_ios",
+                ]
+            }
+        },
+    }
+    report = build_inventory_capability_report(payload)
+
+    assert "routers" in report["device_families"]
+    assert {
+        "ospfv2",
+        "eigrp_ipv4",
+        "ripv2",
+        "static_route",
+        "default_route",
+        "dhcp_relay",
+        "nat_static",
+        "nat_dynamic",
+        "pat",
+        "ssh_ios",
+        "ntp_ios",
+        "syslog_ios",
+    } <= set(report["capabilities"])

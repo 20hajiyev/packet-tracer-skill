@@ -1,6 +1,6 @@
 {
   "name": "packet-tracer-skill",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": false,
   "description": "Donor-backed Cisco Packet Tracer 9.x skill for natural-language planning, safe-open generation, editing, parity reporting, and runtime diagnostics across coding hosts.",
   "keywords": [
@@ -86,6 +86,13 @@
     "docs/wan-security-donor-proof.md",
     "docs/wireless-advanced-proof.md",
     "docs/industrial-programming-proof.md",
+    "docs/automation-controller-proof.md",
+    "docs/voice-collaboration-proof.md",
+    "docs/l2-resiliency-bgp-proof.md",
+    "docs/ipv4-routing-management-proof.md",
+    "docs/l2-security-qos-proof.md",
+    "docs/security-edge-deepening-proof.md",
+    "docs/generate-ready-pilot-design.md",
     "docs/packet-tracer-feature-gap-atlas.md",
     "docs/discovery-keywords.md",
     "docs/github-discussions-setup.md",
@@ -100,6 +107,7 @@
     "docs/release-checklist.md",
     "docs/release-notes-0.2.1.md",
     "docs/release-notes-0.2.2.md",
+    "docs/release-notes-0.2.3.md",
     "docs/runtime-truth.md"
   ],
   "engines": {

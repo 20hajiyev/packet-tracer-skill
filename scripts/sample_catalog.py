@@ -33,13 +33,25 @@ CAPABILITY_KEYWORDS = {
     "isatap": ["isatap"],
     "dhcp_snooping": ["dhcp snooping", "option_82", "trusted_untrusted"],
     "ospf": ["ospf"],
+    "ospfv2": ["ospf", "ospfv2", "single-area ospf"],
     "ospfv3": ["ospfv3", "ipv6_ospf"],
     "eigrp": ["eigrp"],
+    "eigrp_ipv4": ["eigrp", "ipv4 eigrp"],
     "eigrp_ipv6": ["ipv6_eigrp"],
     "rip": ["rip"],
+    "ripv2": ["ripv2", "rip"],
     "ripng": ["ripng", "ipv6 rip"],
     "hsrp": ["hsrp"],
     "nat": ["nat"],
+    "nat_static": ["static nat"],
+    "nat_dynamic": ["dynamic nat"],
+    "pat": ["pat", "overload"],
+    "static_route": ["static route", "ip route"],
+    "default_route": ["default route"],
+    "dhcp_relay": ["dhcp relay", "helper-address"],
+    "ssh_ios": ["ssh"],
+    "ntp_ios": ["ntp"],
+    "syslog_ios": ["syslog"],
     "acl": ["acl", "access-list"],
     "dai": ["dai", "dynamic arp inspection"],
     "dot1x": ["dot1x", "802.1x", "port-based nac"],
@@ -47,9 +59,17 @@ CAPABILITY_KEYWORDS = {
     "rep": ["rep_"],
     "snmp": ["snmp"],
     "netflow": ["netflow"],
-    "span": ["span", "rspan"],
+    "span": ["rspan", "monitor session", "span session"],
     "qos": ["qos"],
     "port_security": ["port security", "port-security"],
+    "bgp": ["bgp"],
+    "stp": ["stp", "spanning tree", "spanning-tree"],
+    "rstp": ["rstp", "rapid-pvst"],
+    "etherchannel": ["etherchannel", "port-channel", "channel-group"],
+    "lacp": ["lacp"],
+    "pagp": ["pagp"],
+    "vtp": ["vtp"],
+    "dtp": ["dtp"],
     "vpn": ["vpn", "ipsec", "gre"],
     "ipsec": ["ipsec", "ike"],
     "gre": ["gre"],
@@ -138,6 +158,26 @@ REPORT_ONLY_CAPABILITIES = {
     "span",
     "qos",
     "port_security",
+    "bgp",
+    "stp",
+    "rstp",
+    "etherchannel",
+    "lacp",
+    "pagp",
+    "vtp",
+    "dtp",
+    "ospfv2",
+    "eigrp_ipv4",
+    "ripv2",
+    "static_route",
+    "default_route",
+    "dhcp_relay",
+    "nat_static",
+    "nat_dynamic",
+    "pat",
+    "ssh_ios",
+    "ntp_ios",
+    "syslog_ios",
     "asa_acl_nat",
     "asa_service_policy",
     "clientless_vpn",
@@ -422,8 +462,12 @@ def infer_preferred_roles(item: dict[str, Any]) -> list[str]:
         roles.append("preferred_vlan")
     if "dhcp_pool" in tags:
         roles.append("preferred_dhcp")
-    if {"ospf", "eigrp", "rip"} & tags:
+    if {"ospf", "eigrp", "rip", "bgp", "ospfv2", "eigrp_ipv4", "ripv2", "static_route", "default_route"} & tags:
         roles.append("preferred_routing")
+    if {"dhcp_relay", "nat_static", "nat_dynamic", "pat", "ssh_ios", "ntp_ios", "syslog_ios"} & tags:
+        roles.append("preferred_ipv4_management")
+    if {"stp", "rstp", "etherchannel", "lacp", "pagp", "vtp", "dtp"} & tags:
+        roles.append("preferred_l2_resiliency")
     if {"nat", "acl", "vpn"} & tags:
         roles.append("preferred_security")
     if {"vpn", "ipsec", "gre", "ppp", "multilayer_switching"} & tags:
@@ -481,6 +525,9 @@ def infer_device_families(item: dict[str, Any]) -> list[str]:
         "Tablet": "end devices",
         "Smartphone": "end devices",
         "Printer": "end devices",
+        "IpPhone": "end devices",
+        "HomeVoip": "end devices",
+        "AnalogPhone": "end devices",
         "LightWeightAccessPoint": "access points",
         "WirelessRouter": "home/wireless routers",
         "WirelessRouterNewGeneration": "home/wireless routers",
@@ -572,6 +619,10 @@ def infer_runtime_features(item: dict[str, Any]) -> list[str]:
         features.add("tunnel_runtime")
     if tags & {"ipv6_slaac", "dhcpv6_stateful", "dhcpv6_stateless", "ospfv3", "eigrp_ipv6", "ripng", "hsrp"}:
         features.add("ipv6_runtime")
+    if tags & {"bgp", "stp", "rstp", "etherchannel", "lacp", "pagp", "vtp", "dtp"}:
+        features.add("l2_resiliency_runtime")
+    if tags & {"ospfv2", "eigrp_ipv4", "ripv2", "static_route", "default_route", "dhcp_relay", "nat_static", "nat_dynamic", "pat", "ssh_ios", "ntp_ios", "syslog_ios"}:
+        features.add("ipv4_routing_management_runtime")
     if families & {"multilayer switches"} or tags & {"multilayer_switching"}:
         features.add("multilayer_runtime")
     if item.get("workspace_validation"):
@@ -617,6 +668,10 @@ def infer_archetype_tags(item: dict[str, Any]) -> list[str]:
         tags.add("IPv6/routing")
     if capability_tags & {"dhcp_snooping", "dai", "dot1x", "lldp", "rep", "snmp", "netflow", "span", "qos", "port_security"}:
         tags.add("L2 security/monitoring")
+    if capability_tags & {"bgp", "stp", "rstp", "etherchannel", "lacp", "pagp", "vtp", "dtp"}:
+        tags.add("L2 resiliency/routing")
+    if capability_tags & {"ospfv2", "eigrp_ipv4", "ripv2", "static_route", "default_route", "dhcp_relay", "nat_static", "nat_dynamic", "pat", "ssh_ios", "ntp_ios", "syslog_ios"}:
+        tags.add("IPv4 routing/management")
     if capability_tags & {"wlc", "wpa_enterprise", "wep", "guest_wifi", "beamforming", "meraki", "cellular_5g", "bluetooth"}:
         tags.add("advanced wireless")
     if capability_tags & {"network_controller", "python_programming", "javascript_programming", "blockly_programming", "tcp_udp_app", "vm_iox"} or "network controllers" in families:

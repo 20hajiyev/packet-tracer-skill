@@ -77,6 +77,30 @@ def test_inventory_root_lists_programming_apps_without_source_dump() -> None:
     assert "content_sha256" in main_py
     assert "content" not in main_py
 
+    tcp_root = decode_pkt_to_root(_require_saves_root() / r"01 Networking\Cisco Application Management\tcp_test_app.pkt")
+    tcp_inventory = inventory_root(tcp_root)
+    assert "tcp_udp_app" in tcp_inventory["programming"]["PC0"]["feature_tags"]
+    tcp_server = next(
+        file
+        for app in tcp_inventory["programming"]["PC0"]["apps"]
+        for file in app["files"]
+        if app["app_name"] == "tcpServer" and file["name"] == "tcpServer.js"
+    )
+    assert {"javascript_programming", "tcp_udp_app"} <= set(tcp_server["feature_tags"])
+
+
+def test_inventory_root_lists_voice_devices_and_telephony_config() -> None:
+    root = decode_pkt_to_root(_require_saves_root() / r"01 Networking\VoIP\voip_local_all_phone_devices.pkt")
+    inventory = inventory_root(root)
+    voice = inventory["voice"]
+
+    assert "ip_phone" in voice["IP Phone0"]["capabilities"]
+    assert "voip" in voice["Home VoIP0"]["capabilities"]
+    assert "voip" in voice["Analog Phone0"]["capabilities"]
+    assert {"voip", "call_manager", "ip_phone"} <= set(voice["Router0"]["capabilities"])
+    assert "1234" in voice["Router0"]["extensions"]
+    assert voice["Router0"]["source_address"] == "1.1.1.1"
+
 
 def test_apply_plan_operations_updates_server_and_wireless_fields() -> None:
     root = decode_pkt_to_root(_require_saves_root() / r"01 Networking\DHCP\dhcp_reservation.pkt")
@@ -140,6 +164,66 @@ def test_edit_pkt_file_roundtrip_preserves_real_websocket_script_mutation(tmp_pa
     assert "real_websocket" in inventory["programming"]["WebSockets Client"]["feature_tags"]
     device = next(device for device in updated.findall(".//DEVICES/DEVICE") if device.findtext("./ENGINE/NAME", default="") == "WebSockets Client")
     assert device.findtext('.//FILE[@class="CDirectory"][NAME="ws client (Python)"]//FILE[@class="CFile"][NAME="main.py"]/FILE_CONTENT/TEXT') == new_content
+
+
+def test_edit_pkt_file_roundtrip_preserves_automation_script_mutation(tmp_path: Path) -> None:
+    source = _require_saves_root() / r"02 Infrastructure Automation\Network Controller\programming.pkt"
+    output = tmp_path / "automation_python_roundtrip.pkt"
+    xml_out = tmp_path / "automation_python_roundtrip.xml"
+    new_content = 'print("codex-automation")'
+    plan = parse_intent(
+        'set "python" script app "New Project (Python)" file "main.py" '
+        'content "print(\\"codex-automation\\")"'
+    )
+    edit_pkt_file(source, plan, output, xml_out)
+
+    updated = decode_pkt_to_root(output)
+    inventory = inventory_root(updated)
+    assert "python_programming" in inventory["programming"]["python"]["feature_tags"]
+    device = next(device for device in updated.findall(".//DEVICES/DEVICE") if device.findtext("./ENGINE/NAME", default="") == "python")
+    assert device.findtext('.//FILE[@class="CDirectory"][NAME="New Project (Python)"]//FILE[@class="CFile"][NAME="main.py"]/FILE_CONTENT/TEXT') == new_content
+
+
+def test_edit_pkt_file_roundtrip_preserves_tcp_udp_script_mutation(tmp_path: Path) -> None:
+    source = _require_saves_root() / r"01 Networking\Cisco Application Management\tcp_test_app.pkt"
+    output = tmp_path / "tcp_app_roundtrip.pkt"
+    xml_out = tmp_path / "tcp_app_roundtrip.xml"
+    new_content = 'console.log("codex-tcp")'
+    plan = parse_intent(
+        'set "PC0" script app "tcpServer" file "tcpServer.js" '
+        'content "console.log(\\"codex-tcp\\")"'
+    )
+    edit_pkt_file(source, plan, output, xml_out)
+
+    updated = decode_pkt_to_root(output)
+    inventory = inventory_root(updated)
+    assert "tcp_udp_app" in inventory["programming"]["PC0"]["feature_tags"]
+    device = next(device for device in updated.findall(".//DEVICES/DEVICE") if device.findtext("./ENGINE/NAME", default="") == "PC0")
+    assert device.findtext('.//FILE[@class="CDirectory"][NAME="tcpServer"]//FILE[@class="CFile"][NAME="tcpServer.js"]/FILE_CONTENT/TEXT') == new_content
+
+
+def test_edit_pkt_file_roundtrip_preserves_voice_ios_mutation(tmp_path: Path) -> None:
+    source = _require_saves_root() / r"01 Networking\VoIP\voip_local_all_phone_devices.pkt"
+    output = tmp_path / "voice_edit_roundtrip.pkt"
+    xml_out = tmp_path / "voice_edit_roundtrip.xml"
+    plan = parse_intent(
+        'set "Router0" telephony service source-address 192.168.10.1 port 2000 max-ephones 4 max-dn 4 '
+        'set "Router0" ephone-dn 9 number 9001 '
+        'set "Router0" ephone 9 mac 0001.42AA.BBCC button 1:9 '
+        'set "Router0" dial-peer voice 10 destination-pattern 2... session-target ipv4:10.0.0.2'
+    )
+    edit_pkt_file(source, plan, output, xml_out)
+
+    updated = decode_pkt_to_root(output)
+    inventory = inventory_root(updated)
+    assert {"voip", "call_manager", "ip_phone"} <= set(inventory["voice"]["Router0"]["capabilities"])
+    assert "9001" in inventory["voice"]["Router0"]["extensions"]
+    router = next(device for device in updated.findall(".//DEVICES/DEVICE") if device.findtext("./ENGINE/NAME", default="") == "Router0")
+    router_text = "\n".join(line.text or "" for line in router.findall("./ENGINE/RUNNINGCONFIG/LINE"))
+    assert "ip source-address 192.168.10.1 port 2000" in router_text
+    assert "ephone-dn 9" in router_text
+    assert "mac-address 0001.42AA.BBCC" in router_text
+    assert "dial-peer voice 10 voip" in router_text
 
 
 def test_edit_pkt_file_roundtrip_preserves_wireless_mutation_and_association(tmp_path: Path) -> None:
@@ -521,6 +605,8 @@ def test_edit_pkt_file_roundtrip_preserves_l2_security_monitoring_mutations(tmp_
         "set Switch0 lldp enable "
         "set Switch0 rep segment 1 interface FastEthernet0/3 "
         "set Switch0 span 1 source FastEthernet0/10 destination FastEthernet0/5 "
+        "set Switch0 dot1x interface FastEthernet0/1 mode auto radius 192.168.1.10 key radius123 "
+        "set Switch0 qos class-map VOICE match dscp ef policy-map QOS_POLICY class VOICE priority service-policy output FastEthernet0/1 "
         "set Router0 snmp community public ro "
         "set Router0 netflow destination 13.1.1.2 9996 version 9 interface FastEthernet0/0 ingress"
     )
@@ -534,8 +620,10 @@ def test_edit_pkt_file_roundtrip_preserves_l2_security_monitoring_mutations(tmp_
     assert inventory["l2_security_monitoring"]["Switch0"]["capabilities"] == [
         "dai",
         "dhcp_snooping",
+        "dot1x",
         "lldp",
         "port_security",
+        "qos",
         "rep",
         "span",
     ]
@@ -562,10 +650,139 @@ def test_edit_pkt_file_roundtrip_preserves_l2_security_monitoring_mutations(tmp_
     assert "rep segment 1" in switch_text
     assert "monitor session 1 source interface FastEthernet0/10" in switch_text
     assert "monitor session 1 destination interface FastEthernet0/5" in switch_text
+    assert "aaa new-model" in switch_text
+    assert "dot1x system-auth-control" in switch_text
+    assert "radius-server host 192.168.1.10 key radius123" in switch_text
+    assert "authentication port-control auto" in switch_text
+    assert "dot1x pae authenticator" in switch_text
+    assert "mls qos" in switch_text
+    assert "class-map match-any VOICE" in switch_text
+    assert "match dscp ef" in switch_text
+    assert "policy-map QOS_POLICY" in switch_text
+    assert "service-policy output QOS_POLICY" in switch_text
     assert "snmp-server community public ro" in router_text
     assert "ip flow-export destination 13.1.1.2 9996" in router_text
     assert "ip flow-export version 9" in router_text
     assert "ip flow ingress" in router_text
+
+
+def test_edit_pkt_file_roundtrip_preserves_bgp_and_l2_resiliency_mutations(tmp_path: Path) -> None:
+    source = _require_saves_root() / r"01 Networking\FTP\FTP.pkt"
+    output = tmp_path / "l2_resiliency_bgp_roundtrip.pkt"
+    xml_out = tmp_path / "l2_resiliency_bgp_roundtrip.xml"
+    plan = parse_intent(
+        "set Router0 bgp 65001 neighbor 10.0.0.2 remote-as 65002 network 192.168.1.0 mask 255.255.255.0 "
+        "set Switch0 stp mode rapid-pvst vlan 10 root primary "
+        "set Switch0 etherchannel 1 mode active interfaces FastEthernet0/1 FastEthernet0/2 "
+        "set Switch0 etherchannel 2 mode desirable interfaces FastEthernet0/3 FastEthernet0/4 "
+        "set Switch0 vtp domain CAMPUS mode server version 2 "
+        "set Switch0 dtp interface FastEthernet0/1 mode dynamic desirable"
+    )
+    edit_pkt_file(source, plan, output, xml_out)
+
+    updated = decode_pkt_to_root(output)
+    inventory = inventory_root(updated)
+    assert inventory["l2_resiliency_routing"]["Router0"]["capabilities"] == ["bgp"]
+    assert inventory["l2_resiliency_routing"]["Switch0"]["capabilities"] == [
+        "dtp",
+        "etherchannel",
+        "lacp",
+        "pagp",
+        "rstp",
+        "stp",
+        "vtp",
+    ]
+    assert "span" not in inventory["l2_security_monitoring"].get("Switch0", {}).get("capabilities", [])
+
+    router = next(
+        device
+        for device in updated.findall(".//DEVICES/DEVICE")
+        if device.findtext("./ENGINE/NAME", default="") == "Router0"
+    )
+    switch = next(
+        device
+        for device in updated.findall(".//DEVICES/DEVICE")
+        if device.findtext("./ENGINE/NAME", default="") == "Switch0"
+    )
+    router_text = "\n".join(line.text or "" for line in router.findall("./ENGINE/RUNNINGCONFIG/LINE"))
+    switch_text = "\n".join(line.text or "" for line in switch.findall("./ENGINE/RUNNINGCONFIG/LINE"))
+    assert "router bgp 65001" in router_text
+    assert "neighbor 10.0.0.2 remote-as 65002" in router_text
+    assert "network 192.168.1.0 mask 255.255.255.0" in router_text
+    assert "spanning-tree mode rapid-pvst" in switch_text
+    assert "spanning-tree vlan 10 root primary" in switch_text
+    assert "channel-group 1 mode active" in switch_text
+    assert "interface Port-channel1" in switch_text
+    assert "channel-group 2 mode desirable" in switch_text
+    assert "interface Port-channel2" in switch_text
+    assert "vtp domain CAMPUS" in switch_text
+    assert "vtp mode server" in switch_text
+    assert "vtp version 2" in switch_text
+    assert "switchport mode dynamic desirable" in switch_text
+
+
+def test_edit_pkt_file_roundtrip_preserves_ipv4_routing_management_mutations(tmp_path: Path) -> None:
+    source = _require_saves_root() / r"01 Networking\FTP\FTP.pkt"
+    output = tmp_path / "ipv4_routing_management_roundtrip.pkt"
+    xml_out = tmp_path / "ipv4_routing_management_roundtrip.xml"
+    plan = parse_intent(
+        "set Router0 ospfv2 1 network 10.0.0.0 wildcard 0.0.0.255 area 0 "
+        "set Router0 eigrp ipv4 100 network 10.0.0.0 wildcard 0.0.0.255 no-auto-summary "
+        "set Router0 rip version 2 network 10.0.0.0 no-auto-summary "
+        "set Router0 static-route 0.0.0.0/0 via 10.0.0.1 "
+        "set Router0 dhcp-relay interface FastEthernet0/0 helper 192.168.1.10 "
+        "set Router0 nat inside interface FastEthernet0/0 "
+        "set Router0 nat outside interface Serial0/0/0 "
+        "set Router0 nat static 192.168.1.10 203.0.113.10 "
+        "set Router0 pat acl 1 interface Serial0/0/0 overload "
+        "set Router0 ssh domain lab.local username admin password cisco123 modulus 1024 "
+        "set Router0 ntp server 192.168.1.20 "
+        "set Router0 syslog server 192.168.1.30"
+    )
+    edit_pkt_file(source, plan, output, xml_out)
+
+    updated = decode_pkt_to_root(output)
+    inventory = inventory_root(updated)
+    assert inventory["ipv4_routing_management"]["Router0"]["capabilities"] == [
+        "default_route",
+        "dhcp_relay",
+        "eigrp_ipv4",
+        "nat",
+        "nat_dynamic",
+        "nat_static",
+        "ntp_ios",
+        "ospfv2",
+        "pat",
+        "ripv2",
+        "ssh_ios",
+        "static_route",
+        "syslog_ios",
+    ]
+
+    router = next(
+        device
+        for device in updated.findall(".//DEVICES/DEVICE")
+        if device.findtext("./ENGINE/NAME", default="") == "Router0"
+    )
+    router_text = "\n".join(line.text or "" for line in router.findall("./ENGINE/RUNNINGCONFIG/LINE"))
+    assert "router ospf 1" in router_text
+    assert "network 10.0.0.0 0.0.0.255 area 0" in router_text
+    assert "router eigrp 100" in router_text
+    assert "no auto-summary" in router_text
+    assert "router rip" in router_text
+    assert "version 2" in router_text
+    assert "ip route 0.0.0.0 0.0.0.0 10.0.0.1" in router_text
+    assert "ip helper-address 192.168.1.10" in router_text
+    assert "ip nat inside" in router_text
+    assert "ip nat outside" in router_text
+    assert "ip nat inside source static 192.168.1.10 203.0.113.10" in router_text
+    assert "ip nat inside source list 1 interface Serial0/0/0 overload" in router_text
+    assert "ip domain-name lab.local" in router_text
+    assert "username admin password cisco123" in router_text
+    assert "crypto key generate rsa modulus 1024" in router_text
+    assert "ip ssh version 2" in router_text
+    assert "ntp server 192.168.1.20" in router_text
+    assert "logging host 192.168.1.30" in router_text
 
 
 def test_edit_pkt_file_roundtrip_preserves_wan_security_mutations(tmp_path: Path) -> None:
@@ -576,7 +793,11 @@ def test_edit_pkt_file_roundtrip_preserves_wan_security_mutations(tmp_path: Path
         "set Router0 gre tunnel Tunnel0 source 10.0.0.1 destination 10.0.0.2 ip 172.16.0.1/30 "
         "set Router0 ppp interface Serial0/0/0 authentication chap "
         "set Router0 ipsec transform-set TS esp-aes esp-sha-hmac "
-        "set Router0 crypto map VPNMAP 10 peer 203.0.113.2 transform-set TS match ACL_VPN interface Serial0/0/0"
+        "set Router0 crypto map VPNMAP 10 peer 203.0.113.2 transform-set TS match ACL_VPN interface Serial0/0/0 "
+        "set Router0 cbac inspect FIREWALL protocol tcp interface FastEthernet0/0 direction in "
+        "set Router0 zfw zone inside interface FastEthernet0/0 "
+        "set Router0 zfw zone-pair INSIDE_OUT source inside destination outside policy POLICY1 "
+        "set Router0 zfw class-map CM_WEB match protocol http policy-map POLICY1 action inspect"
     )
     edit_pkt_file(source, plan, output, xml_out)
 
@@ -585,7 +806,7 @@ def test_edit_pkt_file_roundtrip_preserves_wan_security_mutations(tmp_path: Path
 
     updated = decode_pkt_to_root(output)
     inventory = inventory_root(updated)
-    assert inventory["routing"]["Router0"]["capabilities"] == ["gre", "ipsec", "ppp", "vpn"]
+    assert inventory["routing"]["Router0"]["capabilities"] == ["cbac", "gre", "ipsec", "ppp", "vpn", "zfw"]
     router = next(
         device
         for device in updated.findall(".//DEVICES/DEVICE")
@@ -606,6 +827,16 @@ def test_edit_pkt_file_roundtrip_preserves_wan_security_mutations(tmp_path: Path
     assert "set transform-set TS" in router_text
     assert "match address ACL_VPN" in router_text
     assert "crypto map VPNMAP" in router_text
+    assert "ip inspect name FIREWALL tcp" in router_text
+    assert "ip inspect FIREWALL in" in router_text
+    assert "zone security inside" in router_text
+    assert "zone-member security inside" in router_text
+    assert "zone-pair security INSIDE_OUT source inside destination outside" in router_text
+    assert "service-policy type inspect POLICY1" in router_text
+    assert "class-map type inspect match-any CM_WEB" in router_text
+    assert "match protocol http" in router_text
+    assert "policy-map type inspect POLICY1" in router_text
+    assert "class type inspect CM_WEB" in router_text
 
 
 def test_apply_plan_operations_updates_acl_and_dns() -> None:

@@ -164,6 +164,45 @@ def test_ipv6_routing_catalog_inference_marks_runtime_and_archetype() -> None:
     assert {"ipv6_runtime", "workspace_validated"} <= set(sample_catalog_module.infer_runtime_features(enriched))
 
 
+def test_l2_resiliency_catalog_inference_marks_bgp_stp_etherchannel_and_not_span() -> None:
+    item = {
+        "relative_path": "Cisco-networking-projects-main/BGP/STP EtherChannel VTP DTP Lab.pkt",
+        "version": "9.0.0.0810",
+        "devices": [
+            {"name": "Router0", "type": "Router", "model": "ISR4331"},
+            {"name": "Switch0", "type": "Switch", "model": "2960-24TT"},
+        ],
+        "links": [{"from": "Router0", "to": "Switch0", "media": "eStraightThrough"}],
+        "workspace_validation": "inventory_roundtrip_verified",
+        "apply_safety_level": "config-mutation-supported",
+    }
+
+    capability_tags = sample_catalog_module.infer_capability_tags(item)
+    enriched = {
+        **item,
+        "capability_tags": capability_tags,
+        "device_families": sample_catalog_module.infer_device_families(item),
+    }
+
+    assert {"bgp", "stp", "etherchannel", "vtp", "dtp"} <= set(capability_tags)
+    assert "span" not in capability_tags
+    assert "L2 resiliency/routing" in sample_catalog_module.infer_archetype_tags(enriched)
+    assert {"l2_resiliency_runtime", "workspace_validated"} <= set(sample_catalog_module.infer_runtime_features(enriched))
+
+
+def test_spanning_tree_sample_path_does_not_infer_span() -> None:
+    item = {
+        "relative_path": "Day 21 Lab - Configuring Spanning Tree.pkt",
+        "version": "9.0.0.0810",
+        "devices": [{"name": "Switch0", "type": "Switch", "model": "2960-24TT"}],
+        "links": [],
+    }
+    capability_tags = sample_catalog_module.infer_capability_tags(item)
+
+    assert "stp" in capability_tags
+    assert "span" not in capability_tags
+
+
 def test_reference_ranking_prefers_matching_external_patterns() -> None:
     external_vlan = SampleDescriptor(
         path="ext1.pkt",

@@ -14,6 +14,16 @@ import zipfile
 from intent_parser import IntentPlan
 
 GITHUB_SEARCH_API = "https://api.github.com/search/repositories"
+PERMISSIVE_LICENSES = {
+    "APACHE-2.0",
+    "BSD-2-CLAUSE",
+    "BSD-3-CLAUSE",
+    "CC0-1.0",
+    "ISC",
+    "MIT",
+    "UNLICENSE",
+}
+REMOTE_AUDIT_FILENAME = "remote-sample-audit.json"
 
 
 @dataclass
@@ -26,6 +36,25 @@ class RemoteSearchCandidate:
     import_status: str
     default_branch: str | None = None
     archive_url: str | None = None
+    candidate_promotion_status: str = "reference_only"
+    imported_file_count: int = 0
+    pkt_file_count: int = 0
+    pka_file_count: int = 0
+    readme_file_count: int = 0
+    license_file_count: int = 0
+
+
+def is_permissive_license(license_or_permission: str | None) -> bool:
+    value = (license_or_permission or "").strip().upper()
+    return value in PERMISSIVE_LICENSES
+
+
+def candidate_promotion_status(license_or_permission: str | None) -> str:
+    return "validated_curated" if is_permissive_license(license_or_permission) else "reference_only"
+
+
+def candidate_is_curated_eligible(candidate: RemoteSearchCandidate) -> bool:
+    return candidate.candidate_promotion_status == "validated_curated"
 
 
 def build_remote_search_queries(plan: IntentPlan) -> list[str]:
@@ -91,6 +120,9 @@ def search_remote_candidates(
                     import_status="discovered",
                     default_branch=item.get("default_branch"),
                     archive_url=item.get("archive_url"),
+                    candidate_promotion_status=candidate_promotion_status(
+                        str((item.get("license") or {}).get("spdx_id") or "unknown")
+                    ),
                 )
             )
             if len(candidates) >= max_results:
@@ -98,19 +130,66 @@ def search_remote_candidates(
     return candidates
 
 
+def _allowed_archive_member(filename: str) -> bool:
+    lower_name = filename.lower()
+    return (
+        lower_name.endswith(".pkt")
+        or lower_name.endswith(".pka")
+        or lower_name.endswith("readme.md")
+        or lower_name.endswith("license")
+        or lower_name.endswith("license.md")
+        or lower_name.endswith("license.txt")
+    )
+
+
+def _increment_file_counters(candidate: RemoteSearchCandidate, target: Path) -> None:
+    lower_name = target.name.lower()
+    candidate.imported_file_count += 1
+    if lower_name.endswith(".pkt"):
+        candidate.pkt_file_count += 1
+    elif lower_name.endswith(".pka"):
+        candidate.pka_file_count += 1
+    elif lower_name == "readme.md":
+        candidate.readme_file_count += 1
+    elif lower_name in {"license", "license.md", "license.txt"}:
+        candidate.license_file_count += 1
+
+
+def _clear_import_destination(dest_root: Path) -> None:
+    if not dest_root.exists():
+        return
+    for child in dest_root.iterdir():
+        if child.is_dir():
+            for nested in child.rglob("*"):
+                if nested.is_file():
+                    nested.unlink()
+            for nested_dir in sorted([item for item in child.rglob("*") if item.is_dir()], reverse=True):
+                nested_dir.rmdir()
+            child.rmdir()
+        else:
+            child.unlink()
+
+
 def auto_import_remote_candidates(
     candidates: list[RemoteSearchCandidate],
     import_cache_root: Path,
     *,
     max_results: int = 3,
+    dry_run: bool = False,
 ) -> list[RemoteSearchCandidate]:
     imported: list[RemoteSearchCandidate] = []
-    import_cache_root.mkdir(parents=True, exist_ok=True)
+    if not dry_run:
+        import_cache_root.mkdir(parents=True, exist_ok=True)
     for candidate in candidates[:max_results]:
+        candidate.candidate_promotion_status = candidate_promotion_status(candidate.license_or_permission)
         repo_name = candidate.repo_url.rstrip("/").split("/")[-1]
         owner_name = candidate.repo_url.rstrip("/").split("/")[-2] if "/" in candidate.repo_url.rstrip("/") else "repo"
         dest_root = import_cache_root / f"{owner_name}_{repo_name}"
         archive_url = candidate.archive_url
+        if dry_run:
+            candidate.import_status = "dry_run"
+            imported.append(candidate)
+            continue
         if not archive_url:
             imported.append(candidate)
             continue
@@ -124,45 +203,142 @@ def auto_import_remote_candidates(
             continue
         try:
             with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
-                if dest_root.exists():
-                    for child in dest_root.iterdir():
-                        if child.is_dir():
-                            for nested in child.rglob("*"):
-                                if nested.is_file():
-                                    nested.unlink()
-                            for nested_dir in sorted([item for item in child.rglob("*") if item.is_dir()], reverse=True):
-                                nested_dir.rmdir()
-                            child.rmdir()
-                        else:
-                            child.unlink()
+                _clear_import_destination(dest_root)
                 dest_root.mkdir(parents=True, exist_ok=True)
                 for member in archive.infolist():
-                    lower_name = member.filename.lower()
-                    if not (
-                        lower_name.endswith(".pkt")
-                        or lower_name.endswith(".pka")
-                        or lower_name.endswith("readme.md")
-                        or lower_name.endswith("license")
-                        or lower_name.endswith("license.md")
-                        or lower_name.endswith("license.txt")
-                    ):
+                    if not _allowed_archive_member(member.filename):
                         continue
                     cleaned = re.sub(r"^[^/]+/", "", member.filename).strip("/")
                     if not cleaned:
                         continue
                     target = dest_root / cleaned
+                    try:
+                        target.resolve().relative_to(dest_root.resolve())
+                    except ValueError:
+                        continue
                     target.parent.mkdir(parents=True, exist_ok=True)
                     if member.is_dir():
                         target.mkdir(parents=True, exist_ok=True)
                         continue
                     with archive.open(member) as source, target.open("wb") as sink:
                         sink.write(source.read())
+                    _increment_file_counters(candidate, target)
                 candidate.path = str(dest_root)
                 candidate.import_status = "imported"
         except zipfile.BadZipFile:
             pass
         imported.append(candidate)
     return imported
+
+
+def _decode_audit_for_root(root: Path, license_or_permission: str) -> dict[str, object]:
+    pkt_paths = sorted(root.rglob("*.pkt")) if root.exists() else []
+    decode_success_count = 0
+    decode_failure_count = 0
+    detected_features: set[str] = set()
+    detected_families: set[str] = set()
+    for pkt_path in pkt_paths:
+        try:
+            from sample_catalog import summarize_pkt_descriptor
+
+            descriptor = summarize_pkt_descriptor(
+                pkt_path,
+                str(pkt_path.relative_to(root)),
+                origin="external-reference",
+                prototype_eligible=False,
+                trust_level="reference-only",
+                role="reference",
+                license_or_permission=license_or_permission,
+                promotion_status="reference_only",
+                donor_eligible=False,
+            )
+        except Exception:
+            decode_failure_count += 1
+            continue
+        decode_success_count += 1
+        detected_features.update(descriptor.capability_tags)
+        detected_features.update(descriptor.validated_edit_capabilities)
+        detected_families.update(descriptor.archetype_tags)
+        detected_families.update(descriptor.device_families)
+        detected_families.update(descriptor.topology_tags)
+    return {
+        "decode_status": "not_run" if not pkt_paths else ("ok" if decode_failure_count == 0 else "partial_or_failed"),
+        "decode_success_count": decode_success_count,
+        "decode_failure_count": decode_failure_count,
+        "detected_feature_tags": sorted(detected_features),
+        "detected_feature_families": sorted(detected_families),
+    }
+
+
+def build_remote_sample_audit(
+    candidates: list[RemoteSearchCandidate],
+    import_cache_root: Path,
+) -> dict[str, object]:
+    entries: list[dict[str, object]] = []
+    license_counts: dict[str, int] = {}
+    for candidate in candidates:
+        license_value = candidate.license_or_permission or "unknown"
+        license_counts[license_value] = license_counts.get(license_value, 0) + 1
+        entry = asdict(candidate)
+        if candidate.path:
+            entry.update(_decode_audit_for_root(Path(candidate.path), candidate.license_or_permission))
+        else:
+            entry.update(
+                {
+                    "decode_status": "not_run",
+                    "decode_success_count": 0,
+                    "decode_failure_count": 0,
+                    "detected_feature_tags": [],
+                    "detected_feature_families": [],
+                }
+            )
+        if candidate.candidate_promotion_status == "validated_curated" and int(entry.get("decode_success_count", 0)) > 0:
+            entry["validation_promotion_status"] = "validated_curated"
+        else:
+            entry["validation_promotion_status"] = "reference_only"
+        entries.append(entry)
+    return {
+        "audit_version": "1.0",
+        "cache_root": str(import_cache_root),
+        "raw_pkt_policy": "remote Packet Tracer files stay local/cache-only and are not committed or packed",
+        "candidate_count": len(candidates),
+        "imported_repo_count": sum(1 for candidate in candidates if candidate.import_status == "imported"),
+        "dry_run_repo_count": sum(1 for candidate in candidates if candidate.import_status == "dry_run"),
+        "pkt_file_count": sum(candidate.pkt_file_count for candidate in candidates),
+        "pka_file_count": sum(candidate.pka_file_count for candidate in candidates),
+        "decode_success_count": sum(int(entry.get("decode_success_count", 0)) for entry in entries),
+        "decode_failure_count": sum(int(entry.get("decode_failure_count", 0)) for entry in entries),
+        "license_counts": license_counts,
+        "promotion_status_counts": {
+            status: sum(1 for candidate in candidates if candidate.candidate_promotion_status == status)
+            for status in sorted({candidate.candidate_promotion_status for candidate in candidates})
+        },
+        "validation_promotion_status_counts": {
+            status: sum(1 for entry in entries if entry.get("validation_promotion_status") == status)
+            for status in sorted({str(entry.get("validation_promotion_status")) for entry in entries})
+        },
+        "top_gaps_filled_by_imported_samples": sorted(
+            {
+                feature
+                for entry in entries
+                for feature in entry.get("detected_feature_tags", [])
+                if isinstance(feature, str)
+            }
+        )[:25],
+        "candidates": entries,
+    }
+
+
+def write_remote_sample_audit(
+    candidates: list[RemoteSearchCandidate],
+    import_cache_root: Path,
+    audit_path: Path | None = None,
+) -> dict[str, object]:
+    payload = build_remote_sample_audit(candidates, import_cache_root)
+    target = audit_path or (import_cache_root / REMOTE_AUDIT_FILENAME)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    return payload
 
 
 def asdict_list(candidates: list[RemoteSearchCandidate]) -> list[dict[str, object]]:

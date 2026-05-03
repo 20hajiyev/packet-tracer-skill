@@ -217,6 +217,8 @@ def _script_feature_tags(app_name: str, file_name: str, content: str) -> list[st
         tags.add("javascript_programming")
     if language == "visual":
         tags.add("blockly_programming")
+    if "tcp" in lowered or "udp" in lowered:
+        tags.add("tcp_udp_app")
     return sorted(tags)
 
 
@@ -386,6 +388,52 @@ def inventory_routing(root: ET.Element) -> dict[str, dict[str, object]]:
             capabilities.add("ipsec")
         if re.search(r"(?mi)^\s*crypto\s+map\b", running):
             capabilities.add("vpn")
+        if re.search(r"(?mi)^\s*ip\s+inspect\s+name\b", running):
+            capabilities.add("cbac")
+        if (
+            re.search(r"(?mi)^zone\s+security\b", running)
+            or re.search(r"(?mi)^zone-pair\s+security\b", running)
+            or re.search(r"(?mi)^class-map\s+type\s+inspect\b", running)
+            or re.search(r"(?mi)^policy-map\s+type\s+inspect\b", running)
+        ):
+            capabilities.add("zfw")
+        if capabilities:
+            result[name] = {"capabilities": sorted(capabilities)}
+    return result
+
+
+def inventory_ipv4_routing_management(root: ET.Element) -> dict[str, dict[str, object]]:
+    result: dict[str, dict[str, object]] = {}
+    for device in root.findall(".//DEVICES/DEVICE"):
+        name = device.findtext("./ENGINE/NAME", default="")
+        running = "\n".join(line.text or "" for line in device.findall("./ENGINE/RUNNINGCONFIG/LINE"))
+        if not running:
+            continue
+        capabilities: set[str] = set()
+        if re.search(r"(?mi)^\s*router\s+ospf\s+\d+\s*$", running):
+            capabilities.add("ospfv2")
+        if re.search(r"(?mi)^\s*router\s+eigrp\s+\d+\s*$", running):
+            capabilities.add("eigrp_ipv4")
+        if re.search(r"(?mi)^\s*router\s+rip\s*$", running):
+            capabilities.add("ripv2")
+        if re.search(r"(?mi)^\s*ip\s+route\s+\S+\s+\S+\s+\S+", running):
+            capabilities.add("static_route")
+        if re.search(r"(?mi)^\s*ip\s+route\s+0\.0\.0\.0\s+0\.0\.0\.0\s+\S+", running):
+            capabilities.add("default_route")
+        if re.search(r"(?mi)^\s*ip\s+helper-address\s+\d+\.\d+\.\d+\.\d+\s*$", running):
+            capabilities.add("dhcp_relay")
+        if re.search(r"(?mi)^\s*ip\s+nat\s+inside\s+source\s+static\b", running):
+            capabilities.update({"nat_static", "nat"})
+        if re.search(r"(?mi)^\s*ip\s+nat\s+inside\s+source\s+(?:list|route-map)\b", running):
+            capabilities.update({"nat_dynamic", "nat"})
+        if re.search(r"(?mi)^\s*ip\s+nat\s+inside\s+source\s+list\s+\S+\s+interface\s+\S+\s+overload\b", running):
+            capabilities.update({"pat", "nat"})
+        if re.search(r"(?mi)^\s*ip\s+ssh\b", running) or re.search(r"(?mi)^\s*crypto\s+key\s+generate\s+rsa\b", running):
+            capabilities.add("ssh_ios")
+        if re.search(r"(?mi)^\s*ntp\s+server\s+\d+\.\d+\.\d+\.\d+\s*$", running):
+            capabilities.add("ntp_ios")
+        if re.search(r"(?mi)^\s*logging\s+host\s+\d+\.\d+\.\d+\.\d+\s*$", running):
+            capabilities.add("syslog_ios")
         if capabilities:
             result[name] = {"capabilities": sorted(capabilities)}
     return result
@@ -424,6 +472,72 @@ def inventory_l2_security_monitoring(root: ET.Element) -> dict[str, dict[str, ob
     return result
 
 
+def inventory_l2_resiliency_routing(root: ET.Element) -> dict[str, dict[str, object]]:
+    result: dict[str, dict[str, object]] = {}
+    for device in root.findall(".//DEVICES/DEVICE"):
+        name = device.findtext("./ENGINE/NAME", default="")
+        running = "\n".join(line.text or "" for line in device.findall("./ENGINE/RUNNINGCONFIG/LINE"))
+        if not running:
+            continue
+        capabilities: set[str] = set()
+        if re.search(r"(?mi)^\s*router\s+bgp\s+\d+\s*$", running) or re.search(r"(?mi)^\s*neighbor\s+\S+\s+remote-as\s+\d+\s*$", running):
+            capabilities.add("bgp")
+        if re.search(r"(?mi)^\s*spanning-tree\b", running):
+            capabilities.add("stp")
+        if re.search(r"(?mi)^\s*spanning-tree\s+mode\s+(?:rapid-pvst|rstp)\b", running) or re.search(r"(?mi)\brapid-pvst\b", running):
+            capabilities.add("rstp")
+        if re.search(r"(?mi)^\s*interface\s+Port-channel\d+\b", running) or re.search(r"(?mi)^\s*channel-group\s+\d+\s+mode\b", running):
+            capabilities.add("etherchannel")
+        if re.search(r"(?mi)^\s*channel-group\s+\d+\s+mode\s+(?:active|passive)\b", running):
+            capabilities.add("lacp")
+        if re.search(r"(?mi)^\s*channel-group\s+\d+\s+mode\s+(?:desirable|auto)\b", running):
+            capabilities.add("pagp")
+        if re.search(r"(?mi)^\s*vtp\s+(?:domain|mode|version)\b", running):
+            capabilities.add("vtp")
+        if re.search(r"(?mi)^\s*switchport\s+mode\s+dynamic\s+(?:desirable|auto)\b", running) or re.search(r"(?mi)^\s*switchport\s+nonegotiate\b", running):
+            capabilities.add("dtp")
+        if capabilities:
+            result[name] = {"capabilities": sorted(capabilities)}
+    return result
+
+
+def inventory_voice(root: ET.Element) -> dict[str, dict[str, object]]:
+    result: dict[str, dict[str, object]] = {}
+    for device in root.findall(".//DEVICES/DEVICE"):
+        name = device.findtext("./ENGINE/NAME", default="")
+        device_type = _device_type(device)
+        model = device.find("./ENGINE/TYPE").get("model", "") if device.find("./ENGINE/TYPE") is not None else ""
+        running = "\n".join(line.text or "" for line in device.findall("./ENGINE/RUNNINGCONFIG/LINE"))
+        capabilities: set[str] = set()
+        details: dict[str, object] = {"device_type": device_type, "model": model}
+        if device_type in {"IpPhone", "HomeVoip", "AnalogPhone"}:
+            capabilities.add("voip")
+            if device_type == "IpPhone":
+                capabilities.add("ip_phone")
+        if running:
+            extensions = sorted(dict.fromkeys(re.findall(r"(?mi)^\s*number\s+([A-Za-z0-9*+#.-]+)\s*$", running)))
+            ephones = sorted(dict.fromkeys(re.findall(r"(?mi)^ephone\s+(\d+)\s*$", running)), key=int)
+            dial_peers = sorted(dict.fromkeys(re.findall(r"(?mi)^dial-peer\s+voice\s+(\d+)\b", running)), key=int)
+            source_match = re.search(r"(?mi)^\s*ip\s+source-address\s+(\d+\.\d+\.\d+\.\d+)\s+port\s+(\d+)\s*$", running)
+            if re.search(r"(?mi)^telephony-service\s*$", running) or extensions or ephones:
+                capabilities.update({"voip", "call_manager", "ip_phone"})
+            if dial_peers:
+                capabilities.add("voip")
+            if extensions:
+                details["extensions"] = extensions
+            if ephones:
+                details["ephones"] = ephones
+            if dial_peers:
+                details["dial_peers"] = dial_peers
+            if source_match:
+                details["source_address"] = source_match.group(1)
+                details["source_port"] = int(source_match.group(2))
+        if capabilities:
+            details["capabilities"] = sorted(capabilities)
+            result[name] = details
+    return result
+
+
 def inventory_topology_summary(root: ET.Element) -> dict[str, object]:
     devices = inventory_devices(root)
     counts: dict[str, int] = {}
@@ -451,7 +565,10 @@ def inventory_root(root: ET.Element) -> dict[str, object]:
         "acl_names": inventory_acl_names(root),
         "management": inventory_management(root),
         "routing": inventory_routing(root),
+        "ipv4_routing_management": inventory_ipv4_routing_management(root),
         "l2_security_monitoring": inventory_l2_security_monitoring(root),
+        "l2_resiliency_routing": inventory_l2_resiliency_routing(root),
+        "voice": inventory_voice(root),
         "programming": inventory_programming(root),
         "topology_summary": inventory_topology_summary(root),
     }
@@ -891,6 +1008,66 @@ def _apply_switch_op(device: ET.Element, operation: dict[str, object]) -> None:
                 ],
             )
         return
+    elif operation["op"] == "set_dot1x":
+        global_lines = ["aaa new-model", "dot1x system-auth-control"]
+        if operation.get("radius_host") and operation.get("radius_key"):
+            global_lines.append(f"radius-server host {operation['radius_host']} key {operation['radius_key']}")
+        mode = str(operation.get("mode") or "auto")
+        for target in _config_targets(device):
+            _append_unique_config_lines(target, global_lines)
+            _append_config_block(
+                target,
+                f"interface {operation['interface']}",
+                [f" authentication port-control {mode}", " dot1x pae authenticator"],
+            )
+        return
+    elif operation["op"] == "set_qos_policy":
+        action = str(operation.get("action") or "priority")
+        for target in _config_targets(device):
+            _append_unique_config_lines(target, ["mls qos"])
+            _append_config_block(
+                target,
+                f"class-map match-any {operation['class_map']}",
+                [f" match {operation['match']}"],
+            )
+            _append_config_block(
+                target,
+                f"policy-map {operation['policy_map']}",
+                [f" class {operation['class_map']}", f"  {action}"],
+            )
+            _append_config_block(
+                target,
+                f"interface {operation['interface']}",
+                [f" service-policy {operation['direction']} {operation['policy_map']}"],
+            )
+        return
+    elif operation["op"] == "set_stp":
+        lines = [f"spanning-tree mode {operation['mode']}"]
+        if operation.get("vlan") and operation.get("root"):
+            lines.append(f"spanning-tree vlan {operation['vlan']} root {operation['root']}")
+        for target in _config_targets(device):
+            _append_unique_config_lines(target, lines)
+        return
+    elif operation["op"] == "set_etherchannel":
+        channel = int(operation["channel"])
+        mode = str(operation.get("mode") or "active")
+        interfaces = [str(interface) for interface in operation.get("interfaces", []) if str(interface).strip()]
+        for target in _config_targets(device):
+            for interface_name in interfaces:
+                _append_config_block(target, f"interface {interface_name}", [f" channel-group {channel} mode {mode}"])
+            _append_config_block(target, f"interface Port-channel{channel}", [" no shutdown"])
+        return
+    elif operation["op"] == "set_vtp":
+        lines = [f"vtp domain {operation['domain']}", f"vtp mode {operation['mode']}"]
+        if operation.get("version"):
+            lines.append(f"vtp version {operation['version']}")
+        for target in _config_targets(device):
+            _append_unique_config_lines(target, lines)
+        return
+    elif operation["op"] == "set_dtp":
+        for target in _config_targets(device):
+            _append_config_block(target, f"interface {operation['interface']}", [f" switchport mode {operation['mode']}"])
+        return
     else:
         return
 
@@ -992,6 +1169,74 @@ def _apply_router_op(device: ET.Element, operation: dict[str, object]) -> None:
             _append_unique_config_lines(target, ["ipv6 unicast-routing"])
             _append_config_block(target, f"interface {operation['interface']}", body)
         return
+    elif operation["op"] == "set_ospfv2_network":
+        for target in _config_targets(device):
+            _append_config_block(
+                target,
+                f"router ospf {operation['process_id']}",
+                [f" network {operation['network']} {operation['wildcard']} area {operation['area']}"],
+            )
+        return
+    elif operation["op"] == "set_eigrp_ipv4_network":
+        body = [f" network {operation['network']} {operation['wildcard']}"]
+        if operation.get("no_auto_summary"):
+            body.append(" no auto-summary")
+        for target in _config_targets(device):
+            _append_config_block(target, f"router eigrp {operation['asn']}", body)
+        return
+    elif operation["op"] == "set_ripv2_network":
+        body = [" version 2", f" network {operation['network']}"]
+        if operation.get("no_auto_summary"):
+            body.append(" no auto-summary")
+        for target in _config_targets(device):
+            _append_config_block(target, "router rip", body)
+        return
+    elif operation["op"] == "set_static_route":
+        for target in _config_targets(device):
+            _append_unique_config_lines(target, [f"ip route {operation['network']} {_prefix_to_mask(int(operation['prefix']))} {operation['next_hop']}"])
+        return
+    elif operation["op"] == "set_dhcp_relay":
+        for target in _config_targets(device):
+            _append_config_block(target, f"interface {operation['interface']}", [f" ip helper-address {operation['helper']}"])
+        return
+    elif operation["op"] == "set_nat_interface":
+        for target in _config_targets(device):
+            _append_config_block(target, f"interface {operation['interface']}", [f" ip nat {operation['role']}"])
+        return
+    elif operation["op"] == "set_nat_static":
+        for target in _config_targets(device):
+            _append_unique_config_lines(target, [f"ip nat inside source static {operation['inside_local']} {operation['inside_global']}"])
+        return
+    elif operation["op"] == "set_pat_overload":
+        suffix = " overload" if operation.get("overload") else ""
+        for target in _config_targets(device):
+            _append_unique_config_lines(target, [f"ip nat inside source list {operation['acl']} interface {operation['interface']}{suffix}"])
+        return
+    elif operation["op"] == "set_ssh_ios":
+        lines = [
+            f"ip domain-name {operation['domain']}",
+            f"username {operation['username']} password {operation['password']}",
+            f"crypto key generate rsa modulus {operation['modulus']}",
+            "ip ssh version 2",
+        ]
+        for target in _config_targets(device):
+            _append_unique_config_lines(target, lines)
+        return
+    elif operation["op"] == "set_ntp_server":
+        for target in _config_targets(device):
+            _append_unique_config_lines(target, [f"ntp server {operation['server']}"])
+        return
+    elif operation["op"] == "set_syslog_server":
+        for target in _config_targets(device):
+            _append_unique_config_lines(target, [f"logging host {operation['server']}"])
+        return
+    elif operation["op"] == "set_bgp_neighbor":
+        body = [f" neighbor {operation['neighbor']} remote-as {operation['remote_as']}"]
+        if operation.get("network") and operation.get("mask"):
+            body.append(f" network {operation['network']} mask {operation['mask']}")
+        for target in _config_targets(device):
+            _append_config_block(target, f"router bgp {operation['asn']}", body)
+        return
     elif operation["op"] == "set_snmp_community":
         for target in _config_targets(device):
             _append_unique_config_lines(target, [f"snmp-server community {operation['community']} {operation['mode']}"])
@@ -1049,6 +1294,70 @@ def _apply_router_op(device: ET.Element, operation: dict[str, object]) -> None:
             )
             if operation.get("interface"):
                 _append_config_block(target, f"interface {operation['interface']}", [f" crypto map {operation['map_name']}"])
+        return
+    elif operation["op"] == "set_cbac_inspect":
+        for target in _config_targets(device):
+            _append_unique_config_lines(target, [f"ip inspect name {operation['name']} {operation['protocol']}"])
+            _append_config_block(target, f"interface {operation['interface']}", [f" ip inspect {operation['name']} {operation['direction']}"])
+        return
+    elif operation["op"] == "set_zfw_zone_interface":
+        for target in _config_targets(device):
+            _append_config_block(target, f"zone security {operation['zone']}", [])
+            _append_config_block(target, f"interface {operation['interface']}", [f" zone-member security {operation['zone']}"])
+        return
+    elif operation["op"] == "set_zfw_zone_pair":
+        for target in _config_targets(device):
+            _append_config_block(
+                target,
+                f"zone-pair security {operation['pair_name']} source {operation['source']} destination {operation['destination']}",
+                [f" service-policy type inspect {operation['policy']}"],
+            )
+        return
+    elif operation["op"] == "set_zfw_policy":
+        for target in _config_targets(device):
+            _append_config_block(
+                target,
+                f"class-map type inspect match-any {operation['class_map']}",
+                [f" match protocol {operation['protocol']}"],
+            )
+            _append_config_block(
+                target,
+                f"policy-map type inspect {operation['policy_map']}",
+                [f" class type inspect {operation['class_map']}", f"  {operation['action']}"],
+            )
+        return
+    elif operation["op"] == "set_telephony_service":
+        body = [" no auto-reg-ephone"]
+        if operation.get("max_ephones"):
+            body.append(f" max-ephones {operation['max_ephones']}")
+        if operation.get("max_dn"):
+            body.append(f" max-dn {operation['max_dn']}")
+        body.append(f" ip source-address {operation['source_address']} port {operation['port']}")
+        for target in _config_targets(device):
+            _append_config_block(target, "telephony-service", body)
+        return
+    elif operation["op"] == "set_ephone_dn":
+        for target in _config_targets(device):
+            _append_config_block(target, f"ephone-dn {operation['dn_id']}", [f" number {operation['number']}"])
+        return
+    elif operation["op"] == "set_ephone":
+        for target in _config_targets(device):
+            _append_config_block(
+                target,
+                f"ephone {operation['ephone_id']}",
+                [f" mac-address {operation['mac']}", f" button {operation['button']}"],
+            )
+        return
+    elif operation["op"] == "set_dial_peer_voice":
+        for target in _config_targets(device):
+            _append_config_block(
+                target,
+                f"dial-peer voice {operation['peer_id']} voip",
+                [
+                    f" destination-pattern {operation['destination_pattern']}",
+                    f" session target ipv4:{operation['session_target']}",
+                ],
+            )
         return
     else:
         return

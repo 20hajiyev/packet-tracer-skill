@@ -41,7 +41,156 @@ from generate_pkt import (  # noqa: E402
     prepare_generation_plan,
 )
 from intent_parser import parse_intent  # noqa: E402
+from remote_search import RemoteSearchCandidate  # noqa: E402
 from sample_catalog import SampleCandidate, SampleDescriptor  # noqa: E402
+
+
+def test_resolve_remote_sources_routes_unknown_license_to_reference_root(monkeypatch, tmp_path: Path) -> None:
+    imported_root = tmp_path / "unknown_repo"
+    imported_root.mkdir()
+    candidate = RemoteSearchCandidate(
+        repo_url="https://github.com/example/unknown",
+        path=str(imported_root),
+        source="github",
+        search_reason="packet tracer",
+        license_or_permission="unknown",
+        import_status="imported",
+        candidate_promotion_status="reference_only",
+    )
+    audit_out = tmp_path / "remote-sample-audit.json"
+
+    monkeypatch.setattr(generate_pkt_module, "search_remote_candidates", lambda *args, **kwargs: [candidate])
+    monkeypatch.setattr(generate_pkt_module, "auto_import_remote_candidates", lambda *args, **kwargs: [candidate])
+
+    reference_roots, donor_roots, remote_results = generate_pkt_module._resolve_remote_sources(
+        parse_intent("ipv6 ospf hsrp lab"),
+        [],
+        [],
+        search_remote=True,
+        import_cache_root=tmp_path,
+        remote_audit_out=audit_out,
+    )
+
+    assert imported_root in reference_roots
+    assert imported_root not in donor_roots
+    assert remote_results[0]["candidate_promotion_status"] == "reference_only"
+    assert audit_out.exists()
+
+
+def test_build_local_sample_audit_keeps_user_pkt_corpus_as_evidence_only(monkeypatch, tmp_path: Path) -> None:
+    corpus_root = tmp_path / "pkt_examples"
+    corpus_root.mkdir()
+    good_pkt = corpus_root / "routing_nat.pkt"
+    bad_pka = corpus_root / "bad_lab.pka"
+    good_pkt.write_bytes(b"not-real-pkt")
+    bad_pka.write_bytes(b"not-real-pka")
+
+    root = ET.Element("PACKETTRACER5")
+    engine = ET.SubElement(ET.SubElement(root, "DEVICE"), "ENGINE")
+    running = ET.SubElement(engine, "RUNNINGCONFIG")
+    for line in [
+        "router ospf 1",
+        "router eigrp 100",
+        "router rip",
+        "ip route 0.0.0.0 0.0.0.0 10.0.0.1",
+        "ip helper-address 192.168.1.10",
+        "ip nat inside source static 192.168.1.10 203.0.113.10",
+        "ip nat inside source list 1 interface Serial0/0/0 overload",
+        "ip domain-name lab.local",
+        "crypto key generate rsa modulus 1024",
+        "ntp server 192.168.1.20",
+        "logging host 192.168.1.30",
+    ]:
+        ET.SubElement(running, "LINE").text = line
+
+    def fake_decode(path: Path):
+        if path.name == "bad_lab.pka":
+            raise ValueError("decode failed")
+        return root
+
+    monkeypatch.setattr(generate_pkt_module, "decode_pkt_to_root", fake_decode)
+    monkeypatch.setattr(
+        generate_pkt_module,
+        "inventory_root",
+        lambda _root: {"topology_summary": {"device_counts": {"Router": 2, "Switch": 1}}},
+    )
+
+    payload = generate_pkt_module.build_local_sample_audit(corpus_root)
+
+    assert payload["total_files"] == 2
+    assert payload["decode_success_count"] == 1
+    assert payload["decode_fail_count"] == 1
+    assert payload["decode_failures"][0]["path"] == "bad_lab.pka"
+    assert payload["policy"].startswith("Local user-supplied Packet Tracer files are evidence inputs only")
+    capabilities = payload["detected_config_capabilities"]
+    assert capabilities["ospfv2"]["sample_count"] == 1
+    assert capabilities["eigrp_ipv4"]["sample_count"] == 1
+    assert capabilities["ripv2"]["sample_count"] == 1
+    assert capabilities["default_route"]["sample_count"] == 1
+    assert capabilities["dhcp_relay"]["sample_count"] == 1
+    assert capabilities["nat_static"]["sample_count"] == 1
+    assert capabilities["pat"]["sample_count"] == 1
+    assert capabilities["ssh_ios"]["sample_count"] == 1
+    assert capabilities["ntp_ios"]["sample_count"] == 1
+    assert capabilities["syslog_ios"]["sample_count"] == 1
+    assert payload["promotion_candidates"][0]["candidate_status"] == "local_evidence_only"
+
+
+def test_resolve_remote_sources_routes_permissive_license_to_donor_candidate(monkeypatch, tmp_path: Path) -> None:
+    imported_root = tmp_path / "mit_repo"
+    imported_root.mkdir()
+    candidate = RemoteSearchCandidate(
+        repo_url="https://github.com/example/mit",
+        path=str(imported_root),
+        source="github",
+        search_reason="packet tracer",
+        license_or_permission="MIT",
+        import_status="imported",
+        candidate_promotion_status="validated_curated",
+    )
+
+    monkeypatch.setattr(generate_pkt_module, "search_remote_candidates", lambda *args, **kwargs: [candidate])
+    monkeypatch.setattr(generate_pkt_module, "auto_import_remote_candidates", lambda *args, **kwargs: [candidate])
+
+    reference_roots, donor_roots, remote_results = generate_pkt_module._resolve_remote_sources(
+        parse_intent("ipv6 ospf hsrp lab"),
+        [],
+        [],
+        search_remote=True,
+        import_cache_root=tmp_path,
+    )
+
+    assert imported_root in reference_roots
+    assert imported_root in donor_roots
+    assert remote_results[0]["candidate_promotion_status"] == "validated_curated"
+
+
+def test_resolve_remote_sources_dry_run_does_not_add_roots(monkeypatch, tmp_path: Path) -> None:
+    candidate = RemoteSearchCandidate(
+        repo_url="https://github.com/example/preview",
+        path="",
+        source="github",
+        search_reason="packet tracer",
+        license_or_permission="MIT",
+        import_status="dry_run",
+        candidate_promotion_status="validated_curated",
+    )
+
+    monkeypatch.setattr(generate_pkt_module, "search_remote_candidates", lambda *args, **kwargs: [candidate])
+    monkeypatch.setattr(generate_pkt_module, "auto_import_remote_candidates", lambda *args, **kwargs: [candidate])
+
+    reference_roots, donor_roots, remote_results = generate_pkt_module._resolve_remote_sources(
+        parse_intent("ipv6 ospf hsrp lab"),
+        [],
+        [],
+        search_remote=True,
+        import_cache_root=tmp_path,
+        remote_dry_run=True,
+    )
+
+    assert reference_roots == []
+    assert donor_roots == []
+    assert remote_results[0]["import_status"] == "dry_run"
 
 
 def _make_device(name: str, device_type: str, model: str = "") -> ET.Element:
@@ -1899,9 +2048,11 @@ def test_parity_report_writes_prompt_scoped_parity_payload(tmp_path: Path, monke
     payload = json.loads(capsys.readouterr().out)
     assert payload["scenario_family"] == "service_heavy"
     assert payload["parity_supported_count"] == 2
+    assert payload["parity_donor_backed_ready_count"] == 0
     assert payload["parity_generate_ready_count"] == 2
     assert payload["parity_acceptance_verified_count"] == 1
     assert payload["parity_mismatch_count"] == 1
+    assert payload["critical_parity_donor_backed_ready_count"] == 0
     assert len(payload["critical_capability_parity"]) == 2
     assert len(payload["critical_parity_mismatches"]) == 1
     assert out_path.exists()

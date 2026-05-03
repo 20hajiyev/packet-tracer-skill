@@ -215,6 +215,93 @@ def test_parse_explicit_wan_security_edit_operations() -> None:
     assert any(op["op"] == "set_crypto_map" and op["map_name"] == "VPNMAP" for op in plan.router_ops)
 
 
+def test_parse_l2_resiliency_routing_prompt_without_span_drift() -> None:
+    plan = parse_intent("bgp stp rstp etherchannel lacp pagp vtp dtp")
+
+    assert plan.network_style == "l2_resiliency_routing"
+    assert {"bgp", "stp", "rstp", "etherchannel", "lacp", "pagp", "vtp", "dtp"} <= set(plan.capabilities)
+    assert "span" not in plan.capabilities
+
+
+def test_parse_spanning_tree_does_not_create_span_capability() -> None:
+    plan = parse_intent("spanning tree rapid pvst")
+
+    assert plan.network_style == "l2_resiliency_routing"
+    assert {"stp", "rstp"} <= set(plan.capabilities)
+    assert "span" not in plan.capabilities
+
+
+def test_parse_explicit_bgp_and_l2_resiliency_edit_operations() -> None:
+    plan = parse_intent(
+        "set R1 bgp 65001 neighbor 10.0.0.2 remote-as 65002 network 192.168.1.0 mask 255.255.255.0 "
+        "set SW1 stp mode rapid-pvst vlan 10 root primary "
+        "set SW1 etherchannel 1 mode active interfaces FastEthernet0/1 FastEthernet0/2 "
+        "set SW1 etherchannel 2 mode desirable interfaces FastEthernet0/3 FastEthernet0/4 "
+        "set SW1 vtp domain CAMPUS mode server version 2 "
+        "set SW1 dtp interface FastEthernet0/1 mode dynamic desirable"
+    )
+
+    assert plan.network_style == "l2_resiliency_routing"
+    assert {"bgp", "stp", "rstp", "etherchannel", "lacp", "pagp", "vtp", "dtp"} <= set(plan.capabilities)
+    assert any(op["op"] == "set_bgp_neighbor" and op["asn"] == 65001 for op in plan.router_ops)
+    assert any(op["op"] == "set_stp" and op["mode"] == "rapid-pvst" for op in plan.switch_ops)
+    assert any(op["op"] == "set_etherchannel" and op["interfaces"] == ["FastEthernet0/1", "FastEthernet0/2"] for op in plan.switch_ops)
+    assert any(op["op"] == "set_etherchannel" and op["mode"] == "desirable" for op in plan.switch_ops)
+    assert any(op["op"] == "set_vtp" and op["domain"] == "CAMPUS" for op in plan.switch_ops)
+    assert any(op["op"] == "set_dtp" and op["mode"] == "dynamic desirable" for op in plan.switch_ops)
+
+
+def test_parse_ipv4_routing_management_prompt_without_service_heavy_drift() -> None:
+    plan = parse_intent("ospf eigrp rip static default route dhcp relay nat pat ssh ntp syslog")
+
+    assert plan.network_style == "ipv4_routing_management"
+    assert {
+        "ospfv2",
+        "eigrp_ipv4",
+        "ripv2",
+        "static_route",
+        "default_route",
+        "dhcp_relay",
+        "nat_static",
+        "nat_dynamic",
+        "pat",
+        "ssh_ios",
+        "ntp_ios",
+        "syslog_ios",
+    } <= set(plan.capabilities)
+    assert plan.network_style != "service_heavy"
+
+
+def test_parse_explicit_ipv4_routing_management_edit_operations() -> None:
+    plan = parse_intent(
+        "set R1 ospfv2 1 network 10.0.0.0 wildcard 0.0.0.255 area 0 "
+        "set R1 eigrp ipv4 100 network 10.0.0.0 wildcard 0.0.0.255 no-auto-summary "
+        "set R1 rip version 2 network 10.0.0.0 no-auto-summary "
+        "set R1 static-route 0.0.0.0/0 via 10.0.0.1 "
+        "set R1 dhcp-relay interface GigabitEthernet0/0 helper 192.168.1.10 "
+        "set R1 nat inside interface GigabitEthernet0/0 "
+        "set R1 nat outside interface Serial0/0/0 "
+        "set R1 nat static 192.168.1.10 203.0.113.10 "
+        "set R1 pat acl 1 interface Serial0/0/0 overload "
+        "set R1 ssh domain lab.local username admin password cisco123 modulus 1024 "
+        "set R1 ntp server 192.168.1.20 "
+        "set R1 syslog server 192.168.1.30"
+    )
+
+    assert plan.network_style == "ipv4_routing_management"
+    assert any(op["op"] == "set_ospfv2_network" and op["process_id"] == 1 for op in plan.router_ops)
+    assert any(op["op"] == "set_eigrp_ipv4_network" and op["asn"] == 100 for op in plan.router_ops)
+    assert any(op["op"] == "set_ripv2_network" and op["no_auto_summary"] is True for op in plan.router_ops)
+    assert any(op["op"] == "set_static_route" and op["prefix"] == 0 for op in plan.router_ops)
+    assert any(op["op"] == "set_dhcp_relay" and op["helper"] == "192.168.1.10" for op in plan.router_ops)
+    assert any(op["op"] == "set_nat_interface" and op["role"] == "inside" for op in plan.router_ops)
+    assert any(op["op"] == "set_nat_static" and op["inside_global"] == "203.0.113.10" for op in plan.router_ops)
+    assert any(op["op"] == "set_pat_overload" and op["overload"] is True for op in plan.router_ops)
+    assert any(op["op"] == "set_ssh_ios" and op["domain"] == "lab.local" for op in plan.router_ops)
+    assert any(op["op"] == "set_ntp_server" and op["server"] == "192.168.1.20" for op in plan.router_ops)
+    assert any(op["op"] == "set_syslog_server" and op["server"] == "192.168.1.30" for op in plan.router_ops)
+
+
 def test_parse_explicit_programming_script_edit_operation() -> None:
     plan = parse_intent(
         'set "Py: real http server 2" script app "New Project (Python)" file "main.py" '
@@ -234,6 +321,19 @@ def test_parse_explicit_programming_script_edit_operation() -> None:
     ]
 
 
+def test_parse_explicit_automation_script_edit_operation() -> None:
+    plan = parse_intent(
+        'set "python" script app "New Project (Python)" file "main.py" '
+        'content "print(\\"automation\\")"'
+    )
+
+    assert plan.network_style == "automation_controller"
+    assert {"python_programming"} <= set(plan.capabilities)
+    assert "real_http" not in plan.capabilities
+    assert "real_websocket" not in plan.capabilities
+    assert "mqtt" not in plan.capabilities
+
+
 def test_parse_feature_atlas_prompts_without_service_heavy_drift() -> None:
     cases = [
         ("ipv6 ospf dhcpv6 slaac hsrp", "ipv6_routing", {"ipv6_slaac", "dhcpv6_stateful", "hsrp"}),
@@ -243,7 +343,8 @@ def test_parse_feature_atlas_prompts_without_service_heavy_drift() -> None:
         ("mqtt iot with websocket", "industrial_iot", {"mqtt", "real_websocket"}),
         ("wlc bluetooth meraki 5g cellular wpa enterprise", "wireless_advanced", {"wlc", "bluetooth", "meraki", "cellular_5g", "wpa_enterprise"}),
         ("wep guest wifi beamforming", "wireless_advanced", {"wep", "guest_wifi", "beamforming"}),
-        ("network controller python programming blockly iox", "automation_controller", {"network_controller", "python_programming", "blockly_programming", "vm_iox"}),
+        ("network controller python javascript blockly tcp udp app vm iox", "automation_controller", {"network_controller", "python_programming", "javascript_programming", "blockly_programming", "tcp_udp_app", "vm_iox"}),
+        ("coaxial cable dsl central office cell tower power distribution hot swappable ios license", "physical_media_device", {"coaxial", "cable_dsl", "central_office", "cell_tower", "power_distribution", "hot_swappable", "ios_license"}),
     ]
     for prompt, family, capabilities in cases:
         plan = parse_intent(prompt)
@@ -257,6 +358,22 @@ def test_parse_industrial_real_http_does_not_drift_to_generic_http_generate_sign
 
     assert plan.network_style == "industrial_iot"
     assert {"mqtt", "real_http", "real_websocket"} <= set(plan.capabilities)
+
+
+def test_parse_explicit_voice_edit_commands() -> None:
+    plan = parse_intent(
+        'set "Router0" telephony service source-address 192.168.10.1 port 2000 max-ephones 4 max-dn 4 '
+        'set "Router0" ephone-dn 1 number 1001 '
+        'set "Router0" ephone 1 mac 0001.42AA.BBCC button 1:1 '
+        'set "Router0" dial-peer voice 10 destination-pattern 2... session-target ipv4:10.0.0.2'
+    )
+
+    assert plan.network_style == "voice_collaboration"
+    assert {"voip", "ip_phone", "call_manager"} <= set(plan.capabilities)
+    assert any(op["op"] == "set_telephony_service" and op["source_address"] == "192.168.10.1" for op in plan.router_ops)
+    assert any(op["op"] == "set_ephone_dn" and op["number"] == "1001" for op in plan.router_ops)
+    assert any(op["op"] == "set_ephone" and op["mac"] == "0001.42AA.BBCC" for op in plan.router_ops)
+    assert any(op["op"] == "set_dial_peer_voice" and op["session_target"] == "10.0.0.2" for op in plan.router_ops)
     assert "server_http" not in plan.capabilities
     assert "iot" not in plan.capabilities
 
@@ -307,6 +424,45 @@ def test_parse_explicit_l2_security_monitoring_operations() -> None:
     assert any(op["op"] == "set_span" and op["source"] == "FastEthernet0/10" for op in plan.switch_ops)
     assert any(op["op"] == "set_snmp_community" and op["community"] == "public" for op in plan.router_ops)
     assert any(op["op"] == "set_netflow" and op["destination"] == "13.1.1.2" for op in plan.router_ops)
+
+
+def test_parse_explicit_dot1x_and_qos_edit_operations() -> None:
+    plan = parse_intent(
+        "set SW1 dot1x interface FastEthernet0/1 mode auto radius 192.168.1.10 key radius123 "
+        "set SW1 qos class-map VOICE match dscp ef policy-map QOS_POLICY class VOICE priority service-policy output FastEthernet0/1"
+    )
+
+    assert plan.network_style == "l2_security_monitoring"
+    assert {"dot1x", "qos"} <= set(plan.capabilities)
+    assert any(
+        op["op"] == "set_dot1x"
+        and op["interface"] == "FastEthernet0/1"
+        and op["radius_host"] == "192.168.1.10"
+        for op in plan.switch_ops
+    )
+    assert any(
+        op["op"] == "set_qos_policy"
+        and op["class_map"] == "VOICE"
+        and op["policy_map"] == "QOS_POLICY"
+        and op["direction"] == "output"
+        for op in plan.switch_ops
+    )
+
+
+def test_parse_explicit_cbac_and_zfw_edit_operations() -> None:
+    plan = parse_intent(
+        "set R1 cbac inspect FIREWALL protocol tcp interface FastEthernet0/0 direction in "
+        "set R1 zfw zone inside interface FastEthernet0/0 "
+        "set R1 zfw zone-pair INSIDE_OUT source inside destination outside policy POLICY1 "
+        "set R1 zfw class-map CM_WEB match protocol http policy-map POLICY1 action inspect"
+    )
+
+    assert plan.network_style == "wan_security"
+    assert {"cbac", "zfw", "security_edge"} <= set(plan.capabilities)
+    assert any(op["op"] == "set_cbac_inspect" and op["name"] == "FIREWALL" for op in plan.router_ops)
+    assert any(op["op"] == "set_zfw_zone_interface" and op["zone"] == "inside" for op in plan.router_ops)
+    assert any(op["op"] == "set_zfw_zone_pair" and op["pair_name"] == "INSIDE_OUT" for op in plan.router_ops)
+    assert any(op["op"] == "set_zfw_policy" and op["policy_map"] == "POLICY1" for op in plan.router_ops)
 
 
 def test_parse_explicit_advanced_wireless_edit_operations() -> None:

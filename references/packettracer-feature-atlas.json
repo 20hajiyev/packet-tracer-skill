@@ -17,10 +17,46 @@
         {"id": "ipv6_dns_aaaa", "capability": "ipv6_dns_aaaa", "label": "IPv6 DNS AAAA records", "sample_path_keywords": ["dns-a-and-aaaa", "aaaa"], "support_ceiling": "report_supported"},
         {"id": "ipv6_tunneling", "capability": "ipv6_tunneling", "label": "IPv6 tunneling", "sample_path_keywords": ["ipv6ip tunneling", "ipv6ip_"], "support_ceiling": "report_supported"},
         {"id": "isatap", "capability": "isatap", "label": "ISATAP", "sample_path_keywords": ["isatap"], "support_ceiling": "report_supported"},
-        {"id": "ospfv3", "capability": "ospfv3", "label": "OSPFv3", "sample_path_keywords": ["ospfv3", "ipv6_ospf"], "support_ceiling": "edit_proven"},
-        {"id": "eigrp_ipv6", "capability": "eigrp_ipv6", "label": "EIGRP IPv6", "sample_path_keywords": ["ipv6_eigrp"], "support_ceiling": "edit_proven"},
-        {"id": "ripng", "capability": "ripng", "label": "RIPng", "sample_path_keywords": ["ipv6", "rip"], "support_ceiling": "edit_proven"},
-        {"id": "hsrp", "capability": "hsrp", "label": "HSRP", "sample_path_keywords": ["hsrp"], "support_ceiling": "edit_proven"}
+        {"id": "ospfv3", "capability": "ospfv3", "label": "OSPFv3", "sample_path_keywords": ["ospfv3", "ipv6_ospf"], "support_ceiling": "donor_backed_ready", "donor_backed_proof": true},
+        {"id": "eigrp_ipv6", "capability": "eigrp_ipv6", "label": "EIGRP IPv6", "sample_path_keywords": ["ipv6_eigrp"], "support_ceiling": "donor_backed_ready", "donor_backed_proof": true},
+        {"id": "ripng", "capability": "ripng", "label": "RIPng", "sample_path_keywords": ["ipv6", "rip"], "support_ceiling": "donor_backed_ready", "donor_backed_proof": true},
+        {"id": "hsrp", "capability": "hsrp", "label": "HSRP", "sample_path_keywords": ["hsrp"], "support_ceiling": "donor_backed_ready", "donor_backed_proof": true}
+      ]
+    },
+    {
+      "id": "ipv4_routing_management",
+      "label": "IPv4 Routing And IOS Management",
+      "scenario_family": "ipv4_routing_management",
+      "wave": 7,
+      "features": [
+        {"id": "ospfv2", "capability": "ospfv2", "label": "OSPFv2", "sample_path_keywords": ["ospf", "ospfv2", "single-area ospf"], "support_ceiling": "edit_proven"},
+        {"id": "eigrp_ipv4", "capability": "eigrp_ipv4", "label": "EIGRP IPv4", "sample_path_keywords": ["eigrp", "ipv4 eigrp"], "support_ceiling": "edit_proven"},
+        {"id": "ripv2", "capability": "ripv2", "label": "RIPv2", "sample_path_keywords": ["ripv2", "rip"], "support_ceiling": "edit_proven"},
+        {"id": "static_route", "capability": "static_route", "label": "Static IPv4 route", "sample_path_keywords": ["static route", "ip route"], "support_ceiling": "edit_proven"},
+        {"id": "default_route", "capability": "default_route", "label": "Default IPv4 route", "sample_path_keywords": ["default route"], "support_ceiling": "edit_proven"},
+        {"id": "dhcp_relay", "capability": "dhcp_relay", "label": "DHCP relay / helper address", "sample_path_keywords": ["dhcp relay", "dhcprelay", "helper-address"], "support_ceiling": "edit_proven"},
+        {"id": "nat_static", "capability": "nat_static", "label": "Static NAT", "sample_path_keywords": ["static nat"], "support_ceiling": "edit_proven"},
+        {"id": "nat_dynamic", "capability": "nat_dynamic", "label": "Dynamic NAT", "sample_path_keywords": ["dynamic nat"], "support_ceiling": "edit_proven"},
+        {"id": "pat", "capability": "pat", "label": "PAT overload", "sample_path_keywords": ["pat", "overload"], "support_ceiling": "edit_proven"},
+        {"id": "ssh_ios", "capability": "ssh_ios", "label": "IOS SSH management", "sample_path_keywords": ["ssh"], "support_ceiling": "edit_proven"},
+        {"id": "ntp_ios", "capability": "ntp_ios", "label": "IOS NTP client", "sample_path_keywords": ["ntp"], "support_ceiling": "edit_proven"},
+        {"id": "syslog_ios", "capability": "syslog_ios", "label": "IOS syslog client", "sample_path_keywords": ["syslog"], "support_ceiling": "edit_proven"}
+      ]
+    },
+    {
+      "id": "l2_resiliency_routing",
+      "label": "L2 Resiliency And BGP",
+      "scenario_family": "l2_resiliency_routing",
+      "wave": 6,
+      "features": [
+        {"id": "bgp", "capability": "bgp", "label": "BGP", "sample_path_keywords": ["bgp"], "support_ceiling": "edit_proven"},
+        {"id": "stp", "capability": "stp", "label": "Spanning Tree Protocol", "sample_path_keywords": ["stp", "spanning tree", "spanning-tree"], "support_ceiling": "edit_proven"},
+        {"id": "rstp", "capability": "rstp", "label": "Rapid STP / Rapid PVST", "sample_path_keywords": ["rstp", "rapid-pvst"], "support_ceiling": "edit_proven"},
+        {"id": "etherchannel", "capability": "etherchannel", "label": "EtherChannel / Port-channel", "sample_path_keywords": ["etherchannel", "port-channel", "channel-group"], "support_ceiling": "edit_proven"},
+        {"id": "lacp", "capability": "lacp", "label": "LACP", "sample_path_keywords": ["lacp"], "support_ceiling": "edit_proven"},
+        {"id": "pagp", "capability": "pagp", "label": "PAgP", "sample_path_keywords": ["pagp"], "support_ceiling": "edit_proven"},
+        {"id": "vtp", "capability": "vtp", "label": "VTP", "sample_path_keywords": ["vtp"], "support_ceiling": "edit_proven"},
+        {"id": "dtp", "capability": "dtp", "label": "DTP", "sample_path_keywords": ["dtp"], "support_ceiling": "edit_proven"}
       ]
     },
     {
@@ -31,13 +67,13 @@
       "features": [
         {"id": "dhcp_snooping", "capability": "dhcp_snooping", "label": "DHCP snooping", "sample_path_keywords": ["dhcp_snooping"], "support_ceiling": "edit_proven"},
         {"id": "dai", "capability": "dai", "label": "Dynamic ARP Inspection", "sample_path_keywords": ["dai"], "support_ceiling": "edit_proven"},
-        {"id": "dot1x", "capability": "dot1x", "label": "802.1X / NAC", "sample_path_keywords": ["dot1x", "port-based nac"], "support_ceiling": "report_supported"},
+        {"id": "dot1x", "capability": "dot1x", "label": "802.1X / NAC", "sample_path_keywords": ["dot1x", "port-based nac"], "support_ceiling": "donor_backed_ready", "donor_backed_proof": true},
         {"id": "lldp", "capability": "lldp", "label": "LLDP", "sample_path_keywords": ["lldp"], "support_ceiling": "edit_proven"},
         {"id": "rep", "capability": "rep", "label": "REP", "sample_path_keywords": ["rep_"], "support_ceiling": "edit_proven"},
         {"id": "snmp", "capability": "snmp", "label": "SNMP", "sample_path_keywords": ["snmp"], "support_ceiling": "edit_proven"},
         {"id": "netflow", "capability": "netflow", "label": "NetFlow", "sample_path_keywords": ["netflow"], "support_ceiling": "edit_proven"},
-        {"id": "span", "capability": "span", "label": "SPAN/RSPAN", "sample_path_keywords": ["span"], "support_ceiling": "edit_proven"},
-        {"id": "qos", "capability": "qos", "label": "QoS", "sample_path_keywords": ["qos"], "support_ceiling": "report_supported"},
+        {"id": "span", "capability": "span", "label": "SPAN/RSPAN", "sample_path_keywords": ["rspan", "monitor session", "span session"], "support_ceiling": "edit_proven"},
+        {"id": "qos", "capability": "qos", "label": "QoS", "sample_path_keywords": ["qos"], "support_ceiling": "donor_backed_ready", "donor_backed_proof": true},
         {"id": "port_security", "capability": "port_security", "label": "Port security", "sample_path_keywords": ["port security", "port-security"], "support_ceiling": "edit_proven"}
       ]
     },
@@ -64,8 +100,8 @@
         {"id": "asa_acl_nat", "capability": "asa_acl_nat", "label": "ASA ACL/NAT", "sample_path_keywords": ["asa_acl_nat"], "support_ceiling": "report_supported"},
         {"id": "asa_service_policy", "capability": "asa_service_policy", "label": "ASA service policy", "sample_path_keywords": ["asa_service_policy"], "support_ceiling": "report_supported"},
         {"id": "clientless_vpn", "capability": "clientless_vpn", "label": "Clientless VPN", "sample_path_keywords": ["clientless_vpn"], "support_ceiling": "report_supported"},
-        {"id": "cbac", "capability": "cbac", "label": "CBAC", "sample_path_keywords": ["cbac"], "support_ceiling": "report_supported"},
-        {"id": "zfw", "capability": "zfw", "label": "Zone Based Firewall", "sample_path_keywords": ["zfw", "zone based firewall"], "support_ceiling": "report_supported"},
+        {"id": "cbac", "capability": "cbac", "label": "CBAC", "sample_path_keywords": ["cbac"], "support_ceiling": "donor_backed_ready", "donor_backed_proof": true},
+        {"id": "zfw", "capability": "zfw", "label": "Zone Based Firewall", "sample_path_keywords": ["zfw", "zone based firewall"], "support_ceiling": "donor_backed_ready", "donor_backed_proof": true},
         {"id": "sniffer", "capability": "sniffer", "label": "Sniffer", "sample_path_keywords": ["sniffer"], "support_ceiling": "report_supported"}
       ]
     },
@@ -92,10 +128,10 @@
       "wave": 5,
       "features": [
         {"id": "network_controller", "capability": "network_controller", "label": "Network Controller", "sample_path_keywords": ["network controller", "netcon"], "support_ceiling": "report_supported"},
-        {"id": "python_programming", "capability": "python_programming", "label": "Python programming", "sample_path_keywords": ["python", "programming_with_python"], "support_ceiling": "report_supported"},
-        {"id": "javascript_programming", "capability": "javascript_programming", "label": "JavaScript programming", "sample_path_keywords": ["javascript"], "support_ceiling": "report_supported"},
+        {"id": "python_programming", "capability": "python_programming", "label": "Python programming", "sample_path_keywords": ["python", "programming_with_python"], "support_ceiling": "donor_backed_ready", "donor_backed_proof": true},
+        {"id": "javascript_programming", "capability": "javascript_programming", "label": "JavaScript programming", "sample_path_keywords": ["javascript"], "support_ceiling": "donor_backed_ready", "donor_backed_proof": true},
         {"id": "blockly_programming", "capability": "blockly_programming", "label": "Blockly programming", "sample_path_keywords": ["blockly"], "support_ceiling": "report_supported"},
-        {"id": "tcp_udp_app", "capability": "tcp_udp_app", "label": "TCP/UDP test apps", "sample_path_keywords": ["tcp_test_app", "udp_test_app"], "support_ceiling": "report_supported"},
+        {"id": "tcp_udp_app", "capability": "tcp_udp_app", "label": "TCP/UDP test apps", "sample_path_keywords": ["tcp_test_app", "udp_test_app"], "support_ceiling": "donor_backed_ready", "donor_backed_proof": true},
         {"id": "vm_iox", "capability": "vm_iox", "label": "VM / IOx", "sample_path_keywords": ["iox", "uploading_and_running_vm"], "support_ceiling": "report_supported"}
       ]
     },
@@ -105,9 +141,9 @@
       "scenario_family": "voice_collaboration",
       "wave": 5,
       "features": [
-        {"id": "voip", "capability": "voip", "label": "VoIP", "sample_path_keywords": ["voip"], "support_ceiling": "report_supported"},
-        {"id": "ip_phone", "capability": "ip_phone", "label": "IP phones", "sample_path_keywords": ["phone"], "support_ceiling": "report_supported"},
-        {"id": "call_manager", "capability": "call_manager", "label": "Call Manager / telephony service", "sample_path_keywords": ["call", "voip"], "support_ceiling": "report_supported"},
+        {"id": "voip", "capability": "voip", "label": "VoIP", "sample_path_keywords": ["voip"], "support_ceiling": "donor_backed_ready", "donor_backed_proof": true},
+        {"id": "ip_phone", "capability": "ip_phone", "label": "IP phones", "sample_path_keywords": ["phone"], "support_ceiling": "donor_backed_ready", "donor_backed_proof": true},
+        {"id": "call_manager", "capability": "call_manager", "label": "Call Manager / telephony service", "sample_path_keywords": ["call", "voip"], "support_ceiling": "donor_backed_ready", "donor_backed_proof": true},
         {"id": "linksys_voice", "capability": "linksys_voice", "label": "Linksys voice", "sample_path_keywords": ["voip linksys"], "support_ceiling": "report_supported"}
       ]
     },
@@ -118,8 +154,8 @@
       "wave": 5,
       "features": [
         {"id": "mqtt", "capability": "mqtt", "label": "MQTT", "sample_path_keywords": ["mqtt"], "support_ceiling": "report_supported"},
-        {"id": "real_http", "capability": "real_http", "label": "Real HTTP", "sample_path_keywords": ["real http", "real-http"], "support_ceiling": "edit_proven"},
-        {"id": "real_websocket", "capability": "real_websocket", "label": "Real WebSocket", "sample_path_keywords": ["real websocket", "real-websocket"], "support_ceiling": "edit_proven"},
+        {"id": "real_http", "capability": "real_http", "label": "Real HTTP", "sample_path_keywords": ["real http", "real-http"], "support_ceiling": "donor_backed_ready", "donor_backed_proof": true},
+        {"id": "real_websocket", "capability": "real_websocket", "label": "Real WebSocket", "sample_path_keywords": ["real websocket", "real-websocket"], "support_ceiling": "donor_backed_ready", "donor_backed_proof": true},
         {"id": "visual_scripting", "capability": "visual_scripting", "label": "Visual scripting", "sample_path_keywords": ["visual-scripting", "visual scripting"], "support_ceiling": "report_supported"},
         {"id": "ptp", "capability": "ptp", "label": "PTP", "sample_path_keywords": ["ptp"], "support_ceiling": "report_supported"},
         {"id": "profinet", "capability": "profinet", "label": "Profinet", "sample_path_keywords": ["profinet"], "support_ceiling": "report_supported"},

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -26,6 +27,9 @@ DEVICE_FAMILY_MAP = {
     "Tablet": "end devices",
     "Smartphone": "end devices",
     "Printer": "end devices",
+    "IpPhone": "end devices",
+    "HomeVoip": "end devices",
+    "AnalogPhone": "end devices",
     "LightWeightAccessPoint": "access points",
     "WirelessRouter": "home/wireless routers",
     "WirelessRouterNewGeneration": "home/wireless routers",
@@ -77,6 +81,26 @@ REPORT_ONLY_CAPABILITIES = {
     "span",
     "qos",
     "port_security",
+    "bgp",
+    "stp",
+    "rstp",
+    "etherchannel",
+    "lacp",
+    "pagp",
+    "vtp",
+    "dtp",
+    "ospfv2",
+    "eigrp_ipv4",
+    "ripv2",
+    "static_route",
+    "default_route",
+    "dhcp_relay",
+    "nat_static",
+    "nat_dynamic",
+    "pat",
+    "ssh_ios",
+    "ntp_ios",
+    "syslog_ios",
     "asa_acl_nat",
     "asa_service_policy",
     "clientless_vpn",
@@ -127,14 +151,22 @@ IPV6_DONOR_BACKED_CAPABILITIES = {
     "ripng",
     "hsrp",
 }
+IPV6_DONOR_BACKED_READY_EDIT_CAPABILITIES = {
+    "ospfv3",
+    "eigrp_ipv6",
+    "ripng",
+    "hsrp",
+}
 L2_SECURITY_MONITORING_EDIT_PROVEN_CAPABILITIES = {
     "dhcp_snooping",
     "dai",
+    "dot1x",
     "lldp",
     "rep",
     "snmp",
     "netflow",
     "span",
+    "qos",
     "port_security",
 }
 WIRELESS_ADVANCED_EDIT_PROVEN_CAPABILITIES = {
@@ -146,12 +178,67 @@ PROGRAMMING_EDIT_PROVEN_CAPABILITIES = {
     "real_websocket",
     "python_programming",
     "javascript_programming",
+    "tcp_udp_app",
+}
+AUTOMATION_CONTROLLER_EDIT_PROVEN_CAPABILITIES = {
+    "python_programming",
+    "javascript_programming",
+    "tcp_udp_app",
+}
+PROGRAMMING_DONOR_BACKED_READY_CAPABILITIES = {
+    "real_http",
+    "real_websocket",
+    "python_programming",
+    "javascript_programming",
+    "tcp_udp_app",
+}
+L2_SECURITY_MONITORING_DONOR_BACKED_READY_CAPABILITIES = {
+    "dot1x",
+}
+WAN_SECURITY_DONOR_BACKED_READY_EDIT_CAPABILITIES = {
+    "zfw",
+}
+VOICE_COLLABORATION_DONOR_BACKED_READY_CAPABILITIES = {
+    "voip",
+    "ip_phone",
+    "call_manager",
+}
+VOICE_COLLABORATION_EDIT_PROVEN_CAPABILITIES = {
+    "voip",
+    "ip_phone",
+    "call_manager",
 }
 WAN_SECURITY_EDIT_PROVEN_CAPABILITIES = {
     "gre",
     "ppp",
     "ipsec",
     "vpn",
+    "cbac",
+    "zfw",
+}
+L2_RESILIENCY_ROUTING_EDIT_PROVEN_CAPABILITIES = {
+    "bgp",
+    "stp",
+    "rstp",
+    "etherchannel",
+    "lacp",
+    "pagp",
+    "vtp",
+    "dtp",
+}
+IPV4_ROUTING_MANAGEMENT_EDIT_PROVEN_CAPABILITIES = {
+    "ospfv2",
+    "eigrp_ipv4",
+    "ripv2",
+    "static_route",
+    "default_route",
+    "dhcp_relay",
+    "nat_static",
+    "nat_dynamic",
+    "pat",
+    "ssh_ios",
+    "ntp_ios",
+    "syslog_ios",
 }
 
 WAN_SECURITY_DONOR_LIMITED_CAPABILITIES = {
@@ -162,7 +249,10 @@ WAN_SECURITY_DONOR_LIMITED_CAPABILITIES = {
     "security_edge",
     "multilayer_switching",
 }
-EDIT_PROVEN_REPORT_CAPABILITIES = IPV6_DONOR_BACKED_CAPABILITIES | L2_SECURITY_MONITORING_EDIT_PROVEN_CAPABILITIES
+ALWAYS_EDIT_PROVEN_REPORT_CAPABILITIES = IPV6_DONOR_BACKED_CAPABILITIES | (
+    L2_SECURITY_MONITORING_EDIT_PROVEN_CAPABILITIES - {"dot1x", "qos"}
+)
+EDIT_PROVEN_REPORT_CAPABILITIES = ALWAYS_EDIT_PROVEN_REPORT_CAPABILITIES
 
 CAPABILITY_PROVIDER_FAMILIES = {
     "access_port": {"switches", "multilayer switches"},
@@ -182,6 +272,25 @@ CAPABILITY_PROVIDER_FAMILIES = {
     "ipsec": {"routers", "security devices", "wan/cloud/dsl/cable devices"},
     "gre": {"routers", "wan/cloud/dsl/cable devices"},
     "ppp": {"routers", "wan/cloud/dsl/cable devices"},
+    "bgp": {"routers", "multilayer switches"},
+    "stp": {"switches", "multilayer switches"},
+    "rstp": {"switches", "multilayer switches"},
+    "etherchannel": {"switches", "multilayer switches"},
+    "lacp": {"switches", "multilayer switches"},
+    "pagp": {"switches", "multilayer switches"},
+    "vtp": {"switches", "multilayer switches"},
+    "dtp": {"switches", "multilayer switches"},
+    "ospfv2": {"routers", "multilayer switches"},
+    "eigrp_ipv4": {"routers", "multilayer switches"},
+    "ripv2": {"routers", "multilayer switches"},
+    "static_route": {"routers", "multilayer switches", "security devices"},
+    "default_route": {"routers", "multilayer switches", "security devices"},
+    "dhcp_relay": {"routers", "multilayer switches"},
+    "nat_static": {"routers", "security devices"},
+    "nat_dynamic": {"routers", "security devices"},
+    "ssh_ios": {"routers", "switches", "multilayer switches"},
+    "ntp_ios": {"routers", "switches", "multilayer switches"},
+    "syslog_ios": {"routers", "switches", "multilayer switches"},
     "multilayer_switching": {"multilayer switches"},
     "wan": {"wan/cloud/dsl/cable devices", "routers"},
     "security_edge": {"security devices", "routers"},
@@ -298,6 +407,33 @@ class CoverageGapReport:
     scenario_family: str | None = None
     scenario_generate_readiness: dict[str, object] = field(default_factory=dict)
     recommended_next_actions: list[str] = field(default_factory=list)
+
+    @property
+    def critical_capability_parity(self) -> list[dict[str, object]]:
+        critical = set(self.scenario_generate_readiness.get("critical_capabilities") or [])
+        if not critical:
+            return []
+        return [entry for entry in self.capability_parity if entry.get("capability") in critical]
+
+    @property
+    def critical_parity_supported_count(self) -> int:
+        return sum(1 for entry in self.critical_capability_parity if entry.get("inventory_supported") or entry.get("edit_supported"))
+
+    @property
+    def critical_parity_generate_ready_count(self) -> int:
+        return sum(1 for entry in self.critical_capability_parity if entry.get("generate_supported"))
+
+    @property
+    def critical_parity_acceptance_verified_count(self) -> int:
+        return sum(1 for entry in self.critical_capability_parity if entry.get("acceptance_verified"))
+
+    @property
+    def critical_parity_donor_backed_ready_count(self) -> int:
+        return sum(1 for entry in self.critical_capability_parity if entry.get("donor_backed_ready"))
+
+    @property
+    def critical_parity_mismatch_count(self) -> int:
+        return sum(1 for entry in self.critical_capability_parity if entry.get("generate_mismatch_reason"))
 
 
 @dataclass
@@ -478,10 +614,12 @@ def _scenario_family_for_plan(plan: IntentPlan, requested_families: list[str]) -
     )
     wan_signal = (
         plan.network_style == "wan_security"
-        or capabilities & {"vpn", "ipsec", "gre", "ppp", "multilayer_switching", "security_edge"}
+        or capabilities & {"vpn", "ipsec", "gre", "ppp", "multilayer_switching", "security_edge", "cbac", "zfw"}
         or {"wan/cloud/dsl/cable devices", "security devices"} & requested_family_set
     )
     ipv6_routing_signal = plan.network_style == "ipv6_routing" or capabilities & {"ipv6_slaac", "dhcpv6_stateful", "dhcpv6_stateless", "ipv6_prefix_delegation", "ipv6_dns_aaaa", "ipv6_tunneling", "isatap", "ospfv3", "eigrp_ipv6", "ripng", "hsrp"}
+    ipv4_routing_management_signal = plan.network_style == "ipv4_routing_management" or capabilities & {"ospfv2", "eigrp_ipv4", "ripv2", "static_route", "default_route", "dhcp_relay", "nat_static", "nat_dynamic", "pat", "ssh_ios", "ntp_ios", "syslog_ios"}
+    l2_resiliency_routing_signal = plan.network_style == "l2_resiliency_routing" or capabilities & {"bgp", "stp", "rstp", "etherchannel", "lacp", "pagp", "vtp", "dtp"}
     l2_security_monitoring_signal = plan.network_style == "l2_security_monitoring" or capabilities & {"dhcp_snooping", "dai", "dot1x", "lldp", "rep", "snmp", "netflow", "span", "qos", "port_security"}
     wireless_advanced_signal = plan.network_style == "wireless_advanced" or capabilities & {"wlc", "wpa_enterprise", "wep", "guest_wifi", "beamforming", "meraki", "cellular_5g", "bluetooth"}
     automation_controller_signal = plan.network_style == "automation_controller" or capabilities & {"network_controller", "python_programming", "javascript_programming", "blockly_programming", "tcp_udp_app", "vm_iox"}
@@ -500,18 +638,22 @@ def _scenario_family_for_plan(plan: IntentPlan, requested_families: list[str]) -
         return "automation_controller"
     if voice_collaboration_signal:
         return "voice_collaboration"
+    if physical_media_device_signal:
+        return "physical_media_device"
     if wireless_advanced_signal:
         return "wireless_advanced"
+    if wan_signal:
+        return "wan_security_edge"
+    if l2_resiliency_routing_signal:
+        return "l2_resiliency_routing"
+    if ipv4_routing_management_signal:
+        return "ipv4_routing_management"
     if l2_security_monitoring_signal:
         return "l2_security_monitoring"
     if ipv6_routing_signal:
         return "ipv6_routing"
-    if physical_media_device_signal:
-        return "physical_media_device"
     if home_iot_signal:
         return "home_iot"
-    if wan_signal:
-        return "wan_security_edge"
     if campus_signal:
         return "campus"
     if service_signal:
@@ -523,8 +665,10 @@ SCENARIO_CAPABILITY_SETS = {
     "campus": {"router_on_a_stick", "trunk", "access_port", "management_vlan", "telnet", "verification", "acl", "nat"},
     "service_heavy": {"server_dns", "server_dhcp", "server_http", "server_https", "server_ftp", "server_tftp", "server_email", "server_syslog", "server_aaa", "ntp"},
     "home_iot": {"iot", "iot_registration", "iot_control", "wireless_ap", "wireless_mutation"},
-    "wan_security_edge": {"vpn", "ipsec", "gre", "ppp", "acl", "nat"},
+    "wan_security_edge": {"vpn", "ipsec", "gre", "ppp", "acl", "nat", "cbac", "zfw"},
     "ipv6_routing": {"ipv6_slaac", "dhcpv6_stateful", "dhcpv6_stateless", "ipv6_prefix_delegation", "ipv6_dns_aaaa", "ipv6_tunneling", "isatap", "ospfv3", "eigrp_ipv6", "ripng", "hsrp"},
+    "l2_resiliency_routing": {"bgp", "stp", "rstp", "etherchannel", "lacp", "pagp", "vtp", "dtp"},
+    "ipv4_routing_management": {"ospfv2", "eigrp_ipv4", "ripv2", "static_route", "default_route", "dhcp_relay", "nat_static", "nat_dynamic", "pat", "ssh_ios", "ntp_ios", "syslog_ios"},
     "l2_security_monitoring": {"dhcp_snooping", "dai", "dot1x", "lldp", "rep", "snmp", "netflow", "span", "qos", "port_security"},
     "wireless_advanced": {"wlc", "wpa_enterprise", "wep", "guest_wifi", "beamforming", "meraki", "cellular_5g", "bluetooth"},
     "automation_controller": {"network_controller", "python_programming", "javascript_programming", "blockly_programming", "tcp_udp_app", "vm_iox"},
@@ -556,6 +700,8 @@ CAPABILITY_REQUIRED_ARCHETYPES = {
     "ppp": ["WAN/security edge"],
     "multilayer_switching": ["WAN/security edge", "campus/core"],
     "security_edge": ["WAN/security edge"],
+    "cbac": ["WAN/security edge"],
+    "zfw": ["WAN/security edge"],
     "ipv6_slaac": ["IPv6/routing"],
     "dhcpv6_stateful": ["IPv6/routing"],
     "dhcpv6_stateless": ["IPv6/routing"],
@@ -577,6 +723,26 @@ CAPABILITY_REQUIRED_ARCHETYPES = {
     "span": ["L2 security/monitoring"],
     "qos": ["L2 security/monitoring"],
     "port_security": ["L2 security/monitoring"],
+    "bgp": ["L2 resiliency/routing"],
+    "stp": ["L2 resiliency/routing"],
+    "rstp": ["L2 resiliency/routing"],
+    "etherchannel": ["L2 resiliency/routing"],
+    "lacp": ["L2 resiliency/routing"],
+    "pagp": ["L2 resiliency/routing"],
+    "vtp": ["L2 resiliency/routing"],
+    "dtp": ["L2 resiliency/routing"],
+    "ospfv2": ["IPv4 routing/management"],
+    "eigrp_ipv4": ["IPv4 routing/management"],
+    "ripv2": ["IPv4 routing/management"],
+    "static_route": ["IPv4 routing/management"],
+    "default_route": ["IPv4 routing/management"],
+    "dhcp_relay": ["IPv4 routing/management"],
+    "nat_static": ["IPv4 routing/management"],
+    "nat_dynamic": ["IPv4 routing/management"],
+    "pat": ["IPv4 routing/management"],
+    "ssh_ios": ["IPv4 routing/management"],
+    "ntp_ios": ["IPv4 routing/management"],
+    "syslog_ios": ["IPv4 routing/management"],
     "wlc": ["advanced wireless"],
     "wpa_enterprise": ["advanced wireless"],
     "wep": ["advanced wireless"],
@@ -625,6 +791,8 @@ CAPABILITY_REQUIRED_RUNTIME_FEATURES = {
     "gre": ["workspace_validated", "tunnel_runtime"],
     "ppp": ["workspace_validated", "wan_runtime"],
     "security_edge": ["workspace_validated", "security_runtime"],
+    "cbac": ["workspace_validated", "security_runtime"],
+    "zfw": ["workspace_validated", "security_runtime"],
     "multilayer_switching": ["workspace_validated", "multilayer_runtime"],
     "ipv6_slaac": ["workspace_validated", "ipv6_runtime"],
     "dhcpv6_stateful": ["workspace_validated", "ipv6_runtime"],
@@ -634,6 +802,18 @@ CAPABILITY_REQUIRED_RUNTIME_FEATURES = {
     "hsrp": ["workspace_validated", "ipv6_runtime"],
     "wep": ["workspace_validated", "wireless_runtime"],
     "wpa_enterprise": ["workspace_validated", "wireless_runtime"],
+    "ospfv2": ["workspace_validated", "ipv4_routing_management_runtime"],
+    "eigrp_ipv4": ["workspace_validated", "ipv4_routing_management_runtime"],
+    "ripv2": ["workspace_validated", "ipv4_routing_management_runtime"],
+    "static_route": ["workspace_validated", "ipv4_routing_management_runtime"],
+    "default_route": ["workspace_validated", "ipv4_routing_management_runtime"],
+    "dhcp_relay": ["workspace_validated", "ipv4_routing_management_runtime"],
+    "nat_static": ["workspace_validated", "ipv4_routing_management_runtime"],
+    "nat_dynamic": ["workspace_validated", "ipv4_routing_management_runtime"],
+    "pat": ["workspace_validated", "ipv4_routing_management_runtime"],
+    "ssh_ios": ["workspace_validated", "ipv4_routing_management_runtime"],
+    "ntp_ios": ["workspace_validated", "ipv4_routing_management_runtime"],
+    "syslog_ios": ["workspace_validated", "ipv4_routing_management_runtime"],
 }
 
 
@@ -653,6 +833,10 @@ def _generate_mismatch_reason(status: dict[str, object]) -> str | None:
     if bool(status.get("safe_open_generate_supported")):
         return None
     return "unsupported"
+
+
+def _donor_backed_ready(status: dict[str, object]) -> bool:
+    return bool(status.get("donor_backed_ready"))
 
 
 def _selected_sample_for_donor(
@@ -731,10 +915,102 @@ def _has_explicit_programming_edit(plan: IntentPlan, capability: str) -> bool:
             return True
         if capability == "javascript_programming" and (file_name.endswith(".js") or "javascript" in app_name):
             return True
+        script_text = " ".join([file_name, app_name, content])
+        if capability == "tcp_udp_app" and ("tcp" in script_text or "udp" in script_text):
+            return True
         if capability == "real_http" and ("realhttp" in content or "real http" in app_name):
             return True
         if capability == "real_websocket" and ("realws" in content or "websocket" in content or "websocket" in app_name):
             return True
+    return False
+
+
+def _has_explicit_l2_security_edit(plan: IntentPlan, capability: str) -> bool:
+    expected_ops = {
+        "dot1x": {"set_dot1x"},
+        "qos": {"set_qos_policy"},
+    }.get(capability, set())
+    if not expected_ops:
+        return False
+    for op in plan.switch_ops:
+        if str(op.get("op")) not in expected_ops:
+            continue
+        if not str(op.get("device") or "").strip():
+            continue
+        if capability == "dot1x":
+            return bool(str(op.get("interface") or "").strip() and str(op.get("mode") or "").strip())
+        if capability == "qos":
+            return bool(
+                str(op.get("interface") or "").strip()
+                and str(op.get("class_map") or "").strip()
+                and str(op.get("policy_map") or "").strip()
+                and str(op.get("direction") or "").strip()
+            )
+    return False
+
+
+def _has_explicit_l2_resiliency_edit(plan: IntentPlan, capability: str) -> bool:
+    if capability == "bgp":
+        return any(
+            op.get("op") == "set_bgp_neighbor"
+            and str(op.get("device") or "").strip()
+            and str(op.get("neighbor") or "").strip()
+            and str(op.get("remote_as") or "").strip()
+            for op in plan.router_ops
+        )
+    for op in plan.switch_ops:
+        if not str(op.get("device") or "").strip():
+            continue
+        op_name = str(op.get("op"))
+        if capability == "stp" and op_name == "set_stp":
+            return bool(str(op.get("mode") or "").strip())
+        if capability == "rstp" and op_name == "set_stp":
+            return bool(re.search(r"(?:rapid|rstp)", str(op.get("mode") or ""), flags=re.IGNORECASE))
+        if capability == "etherchannel" and op_name == "set_etherchannel":
+            return bool(op.get("interfaces"))
+        if capability == "lacp" and op_name == "set_etherchannel":
+            if str(op.get("mode") or "").lower() in {"active", "passive"} and bool(op.get("interfaces")):
+                return True
+            continue
+        if capability == "pagp" and op_name == "set_etherchannel":
+            if str(op.get("mode") or "").lower() in {"desirable", "auto"} and bool(op.get("interfaces")):
+                return True
+            continue
+        if capability == "vtp" and op_name == "set_vtp":
+            return bool(str(op.get("domain") or "").strip() and str(op.get("mode") or "").strip())
+        if capability == "dtp" and op_name == "set_dtp":
+            return bool(str(op.get("interface") or "").strip() and str(op.get("mode") or "").strip())
+    return False
+
+
+def _has_explicit_ipv4_routing_management_edit(plan: IntentPlan, capability: str) -> bool:
+    operation_map = {
+        "ospfv2": {"set_ospfv2_network"},
+        "eigrp_ipv4": {"set_eigrp_ipv4_network"},
+        "ripv2": {"set_ripv2_network"},
+        "static_route": {"set_static_route"},
+        "default_route": {"set_static_route"},
+        "dhcp_relay": {"set_dhcp_relay"},
+        "nat_static": {"set_nat_static"},
+        "nat_dynamic": {"set_nat_interface"},
+        "pat": {"set_pat_overload"},
+        "ssh_ios": {"set_ssh_ios"},
+        "ntp_ios": {"set_ntp_server"},
+        "syslog_ios": {"set_syslog_server"},
+    }
+    expected_ops = operation_map.get(capability, set())
+    if not expected_ops:
+        return False
+    for op in plan.router_ops:
+        if str(op.get("op")) not in expected_ops:
+            continue
+        if not str(op.get("device") or "").strip():
+            continue
+        if capability == "default_route":
+            return op.get("network") == "0.0.0.0" and op.get("prefix") == 0
+        if capability == "nat_dynamic":
+            return str(op.get("role") or "").lower() in {"inside", "outside"} and str(op.get("interface") or "").strip()
+        return True
     return False
 
 
@@ -744,6 +1020,8 @@ def _has_explicit_wan_security_edit(plan: IntentPlan, capability: str) -> bool:
         "ppp": {"set_ppp_interface"},
         "ipsec": {"set_ipsec_transform_set", "set_crypto_map"},
         "vpn": {"set_crypto_map"},
+        "cbac": {"set_cbac_inspect"},
+        "zfw": {"set_zfw_zone_interface", "set_zfw_zone_pair", "set_zfw_policy"},
     }.get(capability, set())
     if not expected_ops:
         return False
@@ -762,6 +1040,14 @@ def _has_explicit_wan_security_edit(plan: IntentPlan, capability: str) -> bool:
             return bool(str(op.get("map_name") or "").strip() and str(op.get("transform_set") or "").strip())
         if capability == "vpn":
             return bool(str(op.get("map_name") or "").strip() and str(op.get("peer") or "").strip())
+        if capability == "cbac":
+            return bool(str(op.get("name") or "").strip() and str(op.get("protocol") or "").strip() and str(op.get("interface") or "").strip())
+        if capability == "zfw":
+            if op.get("op") == "set_zfw_zone_interface":
+                return bool(str(op.get("zone") or "").strip() and str(op.get("interface") or "").strip())
+            if op.get("op") == "set_zfw_zone_pair":
+                return bool(str(op.get("pair_name") or "").strip() and str(op.get("source") or "").strip() and str(op.get("destination") or "").strip())
+            return bool(str(op.get("class_map") or "").strip() and str(op.get("policy_map") or "").strip())
     return False
 
 
@@ -773,6 +1059,17 @@ def _has_explicit_wan_security_intent(plan: IntentPlan) -> bool:
         or bool(capabilities & {"vpn", "ipsec", "gre", "ppp", "security_edge", "multilayer_switching"})
         or any(token in prompt_lower for token in ["site-to-site", "firewall", "asa", "cloud", "multilayer"])
     )
+
+
+def _has_explicit_voice_edit(plan: IntentPlan, capability: str) -> bool:
+    op_names = {str(op.get("op")) for op in plan.router_ops}
+    if capability == "voip":
+        return bool(op_names & {"set_telephony_service", "set_ephone_dn", "set_ephone", "set_dial_peer_voice"})
+    if capability == "call_manager":
+        return bool(op_names & {"set_telephony_service", "set_ephone_dn", "set_ephone"})
+    if capability == "ip_phone":
+        return bool(op_names & {"set_ephone_dn", "set_ephone"})
+    return False
 
 
 def _has_explicit_ipv6_operation(plan: IntentPlan, capability: str) -> bool:
@@ -879,7 +1176,7 @@ def _best_maturity_level(status: dict[str, object]) -> str:
 def _recommended_next_action_for_capability(capability: str, mismatch_reason: str | None) -> str:
     if mismatch_reason == "report_only":
         return f"Keep {capability} in atlas/report mode until donor-backed edit or generate evidence exists."
-    if capability in {"vpn", "ipsec", "gre", "ppp", "security_edge", "multilayer_switching"}:
+    if capability in {"vpn", "ipsec", "gre", "ppp", "security_edge", "multilayer_switching", "cbac", "zfw"}:
         if mismatch_reason == "supported_in_edit_only":
             return f"Use explicit WAN/security edit commands for {capability}; strict prompt generate still needs an acceptance-backed WAN/security donor."
         if mismatch_reason == "supported_but_donor_limited":
@@ -907,6 +1204,18 @@ def _recommended_next_action_for_capability(capability: str, mismatch_reason: st
         if mismatch_reason == "supported_but_donor_limited":
             return f"Provide an advanced wireless donor with reusable AP/router/WLC skeleton for {capability}."
         return f"Keep {capability} constrained to explicit wireless edit proof until an advanced wireless donor is acceptance-backed."
+    if capability in VOICE_COLLABORATION_EDIT_PROVEN_CAPABILITIES:
+        if mismatch_reason == "supported_in_edit_only":
+            return f"Use explicit voice IOS edit commands for {capability}; strict prompt generate still needs an acceptance-backed voice/collaboration donor."
+        if mismatch_reason == "supported_but_donor_limited":
+            return f"Provide a voice/collaboration donor with reusable telephony-service, ephone, or dial-peer skeleton for {capability}."
+        return f"Keep {capability} constrained to voice inventory/edit proof until a voice/collaboration donor is acceptance-backed."
+    if capability in AUTOMATION_CONTROLLER_EDIT_PROVEN_CAPABILITIES:
+        if mismatch_reason == "supported_in_edit_only":
+            return f"Use explicit script-file edit commands for {capability}; strict prompt generate still needs an acceptance-backed automation/controller donor."
+        if mismatch_reason == "supported_but_donor_limited":
+            return f"Provide an automation/controller donor with reusable existing app/file script surfaces for {capability}."
+        return f"Keep {capability} constrained to automation inventory/edit proof until an automation/controller donor is acceptance-backed."
     if capability == "iot_registration":
         if mismatch_reason == "supported_but_acceptance_gated":
             return "Use an IoT/home gateway donor and explicitly name the thing plus gateway/server target before strict generate."
@@ -1094,10 +1403,46 @@ def build_coverage_gap_report(
             and _has_explicit_programming_edit(plan, capability)
             and not selected_donor_backed
         )
+        programming_donor_backed_ready = (
+            capability in PROGRAMMING_DONOR_BACKED_READY_CAPABILITIES
+            and programming_edit_proven_only
+        )
+        voice_edit_proven_only = (
+            capability in VOICE_COLLABORATION_EDIT_PROVEN_CAPABILITIES
+            and _has_explicit_voice_edit(plan, capability)
+            and not selected_donor_backed
+        )
+        voice_donor_backed_ready = (
+            capability in VOICE_COLLABORATION_DONOR_BACKED_READY_CAPABILITIES
+            and voice_edit_proven_only
+        )
+        l2_security_edit_proven_only = (
+            capability in {"dot1x", "qos"}
+            and _has_explicit_l2_security_edit(plan, capability)
+            and not selected_donor_backed
+        )
+        l2_security_donor_backed_ready = (
+            capability in L2_SECURITY_MONITORING_DONOR_BACKED_READY_CAPABILITIES
+            and l2_security_edit_proven_only
+        )
         wan_security_edit_proven_only = (
             capability in WAN_SECURITY_EDIT_PROVEN_CAPABILITIES
             and _has_explicit_wan_security_edit(plan, capability)
             and not selected_donor_backed
+        )
+        l2_resiliency_edit_proven_only = (
+            capability in L2_RESILIENCY_ROUTING_EDIT_PROVEN_CAPABILITIES
+            and _has_explicit_l2_resiliency_edit(plan, capability)
+            and not selected_donor_backed
+        )
+        ipv4_routing_management_edit_proven_only = (
+            capability in IPV4_ROUTING_MANAGEMENT_EDIT_PROVEN_CAPABILITIES
+            and _has_explicit_ipv4_routing_management_edit(plan, capability)
+            and not selected_donor_backed
+        )
+        wan_security_donor_backed_ready = (
+            capability in WAN_SECURITY_DONOR_BACKED_READY_EDIT_CAPABILITIES
+            and wan_security_edit_proven_only
         )
         wan_security_donor_limited = (
             capability in WAN_SECURITY_DONOR_LIMITED_CAPABILITIES
@@ -1109,8 +1454,16 @@ def build_coverage_gap_report(
             capability in EDIT_PROVEN_REPORT_CAPABILITIES
             or wireless_edit_proven_only
             or programming_edit_proven_only
+            or voice_edit_proven_only
+            or l2_security_edit_proven_only
             or wan_security_edit_proven_only
+            or l2_resiliency_edit_proven_only
+            or ipv4_routing_management_edit_proven_only
         ) and not selected_donor_backed
+        ipv6_donor_backed_ready = (
+            capability in IPV6_DONOR_BACKED_READY_EDIT_CAPABILITIES
+            and edit_proven_only
+        )
         report_only = capability in REPORT_ONLY_CAPABILITIES and not selected_donor_backed and not edit_proven_only
         matching_entries = [
             entry
@@ -1146,6 +1499,14 @@ def build_coverage_gap_report(
                     "config_mutation_supported": True if edit_proven_only else False if report_only else any(MATURITY_RANK[entry.maturity_level] >= MATURITY_RANK["config-mutation-supported"] for entry in matching_entries),
                     "safe_open_generate_supported": False if report_only or edit_proven_only or wan_security_donor_limited else any(MATURITY_RANK[entry.maturity_level] >= MATURITY_RANK["safe-open-generate-supported"] for entry in matching_entries),
                     "acceptance_verified": acceptance_verified,
+                    "donor_backed_ready": bool(
+                        selected_donor_backed
+                        or ipv6_donor_backed_ready
+                        or programming_donor_backed_ready
+                        or voice_donor_backed_ready
+                        or l2_security_donor_backed_ready
+                        or wan_security_donor_backed_ready
+                    ),
                     "requires_curated_donor": requires_curated,
                     "requires_manual_acceptance": not acceptance_verified,
                     "report_only": report_only,
@@ -1156,6 +1517,7 @@ def build_coverage_gap_report(
             )
         elif edit_proven_only:
             supported_capabilities.append(capability)
+            requires_manual_acceptance.append(capability)
             capability_statuses.append(
                 {
                     "capability": capability,
@@ -1167,6 +1529,13 @@ def build_coverage_gap_report(
                     "config_mutation_supported": True,
                     "safe_open_generate_supported": False,
                     "acceptance_verified": False,
+                    "donor_backed_ready": bool(
+                        programming_donor_backed_ready
+                        or ipv6_donor_backed_ready
+                        or voice_donor_backed_ready
+                        or l2_security_donor_backed_ready
+                        or wan_security_donor_backed_ready
+                    ),
                     "requires_curated_donor": False,
                     "requires_manual_acceptance": True,
                     "report_only": False,
@@ -1177,6 +1546,7 @@ def build_coverage_gap_report(
             )
         elif report_only:
             supported_capabilities.append(capability)
+            requires_manual_acceptance.append(capability)
             capability_statuses.append(
                 {
                     "capability": capability,
@@ -1188,6 +1558,7 @@ def build_coverage_gap_report(
                     "config_mutation_supported": False,
                     "safe_open_generate_supported": False,
                     "acceptance_verified": False,
+                    "donor_backed_ready": False,
                     "requires_curated_donor": False,
                     "requires_manual_acceptance": True,
                     "report_only": True,
@@ -1209,6 +1580,7 @@ def build_coverage_gap_report(
                     "config_mutation_supported": True,
                     "safe_open_generate_supported": True,
                     "acceptance_verified": True,
+                    "donor_backed_ready": True,
                     "requires_curated_donor": False,
                     "requires_manual_acceptance": False,
                     "donor_limited_generate": False,
@@ -1229,6 +1601,7 @@ def build_coverage_gap_report(
                     "config_mutation_supported": False,
                     "safe_open_generate_supported": False,
                     "acceptance_verified": False,
+                    "donor_backed_ready": False,
                     "requires_curated_donor": False,
                     "requires_manual_acceptance": True,
                     "donor_limited_generate": False,
@@ -1246,6 +1619,7 @@ def build_coverage_gap_report(
             "capability": str(status.get("capability")),
             "inventory_supported": bool(status.get("inventory_supported")),
             "edit_supported": bool(status.get("edit_supported")),
+            "donor_backed_ready": _donor_backed_ready(status),
             "generate_supported": bool(status.get("safe_open_generate_supported")),
             "acceptance_verified": bool(status.get("acceptance_verified")),
             "best_maturity_level": _best_maturity_level(status),
@@ -1341,6 +1715,12 @@ def build_inventory_capability_report(payload: dict[str, Any]) -> dict[str, obje
         capabilities.update(str(capability) for capability in routing_details.get("capabilities", []) if str(capability).strip())
     for l2_details in payload.get("l2_security_monitoring", {}).values():
         capabilities.update(str(capability) for capability in l2_details.get("capabilities", []) if str(capability).strip())
+    for l2_resiliency_details in payload.get("l2_resiliency_routing", {}).values():
+        capabilities.update(str(capability) for capability in l2_resiliency_details.get("capabilities", []) if str(capability).strip())
+    for ipv4_details in payload.get("ipv4_routing_management", {}).values():
+        capabilities.update(str(capability) for capability in ipv4_details.get("capabilities", []) if str(capability).strip())
+    for voice_details in payload.get("voice", {}).values():
+        capabilities.update(str(capability) for capability in voice_details.get("capabilities", []) if str(capability).strip())
     for programming_details in payload.get("programming", {}).values():
         capabilities.update(str(capability) for capability in programming_details.get("feature_tags", []) if str(capability).strip())
     return {
