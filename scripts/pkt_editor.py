@@ -10,7 +10,7 @@ from functools import lru_cache
 
 from intent_parser import IntentPlan
 from packet_tracer_env import resolve_sample_path
-from pkt_codec import decode_pkt_modern, encode_pkt_modern
+from pkt_codec import decode_pkt_auto, decode_pkt_modern, encode_pkt_modern, parse_pkt_xml, serialize_pkt_xml
 from pkt_transformer import _device_type, _port_address_for_name, apply_cable_type, apply_host_ip, load_sample_root
 
 
@@ -27,7 +27,8 @@ def _decoded_pkt_xml(path_key: str, size: int, mtime_ns: int) -> bytes:
     costs ~42x more than parsing the result. Only the immutable bytes are
     cached; every caller still gets a fresh tree, because callers mutate it.
     """
-    return decode_pkt_modern(Path(path_key).read_bytes())
+    xml, _container = decode_pkt_auto(Path(path_key).read_bytes())
+    return xml
 
 
 def decode_pkt_to_root(pkt_path: str | Path) -> ET.Element:
@@ -35,8 +36,8 @@ def decode_pkt_to_root(pkt_path: str | Path) -> ET.Element:
     try:
         stat = path.stat()
     except OSError:
-        return ET.fromstring(decode_pkt_modern(path.read_bytes()))
-    return ET.fromstring(_decoded_pkt_xml(str(path), stat.st_size, stat.st_mtime_ns))
+        return parse_pkt_xml(decode_pkt_auto(path.read_bytes())[0])
+    return parse_pkt_xml(_decoded_pkt_xml(str(path), stat.st_size, stat.st_mtime_ns))
 
 
 def inventory_devices(root: ET.Element) -> list[dict[str, str]]:
@@ -1709,7 +1710,7 @@ def apply_edit_operations(root: ET.Element, plan: IntentPlan) -> ET.Element:
 def edit_pkt_file(pkt_path: str | Path, plan: IntentPlan, output_path: str | Path, xml_out_path: str | Path | None = None) -> Path:
     root = decode_pkt_to_root(pkt_path)
     updated = apply_plan_operations(root, plan)
-    xml_bytes = ET.tostring(updated, encoding="utf-8", xml_declaration=False)
+    xml_bytes = serialize_pkt_xml(updated)
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_bytes(encode_pkt_modern(xml_bytes))

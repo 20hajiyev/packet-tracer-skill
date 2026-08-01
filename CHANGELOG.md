@@ -76,6 +76,30 @@ performed only to read `<VERSION>`.
   an edited file is re-read rather than served stale. Only immutable bytes are
   cached; callers still get their own tree to mutate.
 
+### Every bundled sample is readable now
+
+18 of the 292 samples shipped with Packet Tracer 9.0 failed EAX tag
+verification and were reported as undecodable. They are Packet Tracer 5.x
+saves written before Twofish: qCompress output XORed byte-wise with
+`(length - index)`, no cipher and no tag. `decode_pkt_legacy`,
+`detect_pkt_format` and `decode_pkt_auto` handle both containers.
+
+A further 6 decoded but would not parse. Packet Tracer writes raw control bytes
+into element text — a Cisco banner delimiter is literally `banner motd ` —
+which XML 1.0 forbids. `parse_pkt_xml` maps those into the Unicode private use
+area and `serialize_pkt_xml` maps them back, so the round trip stays faithful
+instead of silently dropping banner delimiters.
+
+`build_sample_catalog.py` carried its own weaker `summarize_pkt` that omitted
+link endpoints, which is why the committed catalogue had 1051 link records with
+no `from`/`to` and the donor graph-fit filter was comparing empty strings. It
+now calls `sample_catalog._summarize_pkt`.
+
+Catalogue rebuild: **292 of 292 readable** (was 274) and **1126 links with
+endpoints** (was 0). Reading those labs promoted `qos`, `cbac`, `real_http` and
+`real_websocket` from report/edit level to `donor_backed_ready`. Those
+capabilities were never missing — the labs proving them were unreadable.
+
 ### Topologies are no longer limited to the donor's own
 
 Reuse-only wiring meant a chain donor could never satisfy a star request:

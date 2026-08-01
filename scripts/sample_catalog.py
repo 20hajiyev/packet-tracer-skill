@@ -13,7 +13,7 @@ from packet_tracer_env import (
     get_packet_tracer_saves_root,
     get_packet_tracer_target_version,
 )
-from pkt_codec import decode_pkt_modern
+from pkt_codec import decode_pkt_auto, decode_pkt_modern, parse_pkt_xml
 from workspace_repair import inspect_workspace_integrity
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -1036,8 +1036,8 @@ def load_catalog(path: Path | None = None) -> list[SampleDescriptor]:
 
 
 def _summarize_pkt(path: Path, relative_path: str, origin: str, prototype_eligible: bool) -> dict[str, Any]:
-    xml = decode_pkt_modern(path.read_bytes())
-    root = ET.fromstring(xml)
+    xml, _container = decode_pkt_auto(path.read_bytes())
+    root = parse_pkt_xml(xml)
     from pkt_editor import inventory_root
 
     inventory = inventory_root(root)

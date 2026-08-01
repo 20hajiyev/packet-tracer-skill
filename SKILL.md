@@ -52,6 +52,16 @@ For the modern format targeted by this skill, the pipeline is:
 The XML includes a `<VERSION>` value such as `9.0.0.0810`. This skill targets the
 9.0 line.
 
+Packet Tracer 5.x and 6.x wrote a simpler container: qCompress output XORed
+byte-wise with `(length - index)`, with no cipher and no tag. 18 of the 292
+bundled samples are still in that format. `decode_pkt_auto` reads both and
+reports which one matched.
+
+Packet Tracer also writes raw control bytes into element text — a Cisco banner
+delimiter is literally `banner motd `, which XML 1.0 forbids. Use
+`parse_pkt_xml` / `serialize_pkt_xml` rather than `ET.fromstring` / `ET.tostring`
+so those bytes survive a round trip.
+
 The Twofish step needs no compiled binary. `scripts/vendor/twofish_pure.py` is a
 vendored pure-Python implementation verified against the official Twofish test
 vectors, so decode/edit/generate work on a clean checkout with no environment

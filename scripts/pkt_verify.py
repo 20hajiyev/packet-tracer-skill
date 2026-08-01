@@ -28,7 +28,7 @@ from packet_tracer_env import (
     get_packet_tracer_exe,
     get_packet_tracer_target_version,
 )
-from pkt_codec import decode_pkt_modern
+from pkt_codec import decode_pkt_auto, parse_pkt_xml
 
 DEFAULT_OPEN_TIMEOUT_SECONDS = 150
 POLL_INTERVAL_SECONDS = 3
@@ -40,6 +40,7 @@ class StructuralReport:
     pkt_path: str
     version: str = ""
     compatibility_tier: str = ""
+    container: str = ""
     device_count: int = 0
     link_count: int = 0
     failures: list[str] = field(default_factory=list)
@@ -52,6 +53,7 @@ class StructuralReport:
             "pkt": self.pkt_path,
             "version": self.version,
             "compatibility_tier": self.compatibility_tier,
+            "container": self.container,
             "device_count": self.device_count,
             "link_count": self.link_count,
             "failures": self.failures,
@@ -95,13 +97,14 @@ def structural_check(pkt_path: str | Path, expected_devices: int | None = None) 
         return report
 
     try:
-        xml_bytes = decode_pkt_modern(path.read_bytes())
+        xml_bytes, container = decode_pkt_auto(path.read_bytes())
+        report.container = container
     except Exception as exc:
         report.failures.append(f"decode failed: {exc}")
         return report
 
     try:
-        root = ET.fromstring(xml_bytes)
+        root = parse_pkt_xml(xml_bytes)
     except ET.ParseError as exc:
         report.failures.append(f"XML does not parse: {exc}")
         return report

@@ -39,7 +39,7 @@ from packet_tracer_env import (
     require_packet_tracer_exe,
 )
 from pkt_builder import build_packet_tracer_xml
-from pkt_codec import decode_pkt_file, decode_pkt_modern, encode_pkt_modern
+from pkt_codec import decode_pkt_file, decode_pkt_modern, encode_pkt_modern, serialize_pkt_xml
 from pkt_editor import apply_plan_operations, decode_pkt_to_root, edit_pkt_file, inventory_devices, inventory_links, inventory_root
 from pkt_transformer import port_exists, transform_from_blueprint
 import pkt_verify
@@ -1908,7 +1908,7 @@ def _apply_safe_open_preview(plan: IntentPlan) -> IntentPlan:
 
 
 def _write_pkt_root(root: ET.Element, pkt_path: Path, xml_path: Path | None = None) -> None:
-    xml_bytes = ET.tostring(root, encoding="utf-8", xml_declaration=False)
+    xml_bytes = serialize_pkt_xml(root)
     pkt_path.parent.mkdir(parents=True, exist_ok=True)
     pkt_path.write_bytes(encode_pkt_modern(xml_bytes))
     if xml_path is not None:
@@ -3874,7 +3874,7 @@ def generate_from_prompt(
     if unexpected_workspace_issues:
         raise ValueError("; ".join(unexpected_workspace_issues))
     validate_donor_coherence(donor_root, root)
-    xml_bytes = ET.tostring(root, encoding="utf-8", xml_declaration=False)
+    xml_bytes = serialize_pkt_xml(root)
     if xml_out_path is not None:
         xml_out_path.parent.mkdir(parents=True, exist_ok=True)
         xml_out_path.write_bytes(xml_bytes)

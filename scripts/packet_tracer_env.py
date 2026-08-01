@@ -346,7 +346,7 @@ def _pkt_version_cached(path_key: str, size: int, mtime_ns: int) -> str | None:
     is constant-time; caching removes the repeats. The size and mtime are part
     of the key so an edited file is re-read rather than served stale.
     """
-    from pkt_codec import decode_pkt_modern, peek_pkt_header
+    from pkt_codec import decode_pkt_auto, peek_pkt_header
 
     raw = Path(path_key).read_bytes()
     try:
@@ -356,10 +356,12 @@ def _pkt_version_cached(path_key: str, size: int, mtime_ns: int) -> str | None:
     except Exception:
         pass
 
-    # Header peek did not yield a version: fall back to the authenticated decode
-    # rather than reporting the file as unreadable.
+    # The peek only models the modern container. Fall back to a full decode,
+    # which also handles pre-Twofish 5.x saves, rather than reporting the file
+    # as unreadable.
     try:
-        return ET.fromstring(decode_pkt_modern(raw)).findtext("./VERSION")
+        xml, _ = decode_pkt_auto(raw)
+        return ET.fromstring(xml).findtext("./VERSION")
     except Exception:
         return None
 

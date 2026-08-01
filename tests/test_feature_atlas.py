@@ -47,6 +47,10 @@ def test_feature_gap_report_compares_parser_catalog_coverage_and_samples() -> No
         for feature in group["features"]
     }
 
+    # Reading the pre-Twofish container made 18 more bundled labs available as
+    # evidence, which promoted qos, cbac, real_http and real_websocket from
+    # report/edit level to donor-backed. Those capabilities were never missing;
+    # the labs proving them were simply unreadable.
     assert report["packet_tracer_sample_count"] >= 290
     assert report["total_feature_count"] >= 50
     assert report["mapped_feature_count"] > report["unmapped_feature_count"]
@@ -80,11 +84,14 @@ def test_feature_gap_report_compares_parser_catalog_coverage_and_samples() -> No
     assert status_by_capability["blockly_programming"]["status"] == "report_supported"
     assert status_by_capability["vm_iox"]["status"] == "report_supported"
     assert status_by_capability["port_security"]["status"] == "edit_proven"
-    assert status_by_capability["qos"]["status"] == "edit_proven"
+    # QoS.pkt is a Packet Tracer 5.2 save. It was unreadable while the codec only
+    # modelled the modern container, so the capability could not be donor-backed
+    # however much evidence the lab actually contained.
+    assert status_by_capability["qos"]["status"] == "donor_backed_ready"
     assert status_by_capability["qos"]["evidence"]["donor_backed_proof"] is True
-    assert status_by_capability["qos"]["evidence"]["donor_backed_proof_ready"] is False
+    assert status_by_capability["qos"]["evidence"]["donor_backed_proof_ready"] is True
     assert status_by_capability["qos"]["evidence"]["sample_path_count"] >= 1
-    assert status_by_capability["qos"]["evidence"]["decode_verified_sample_count"] == 0
+    assert status_by_capability["qos"]["evidence"]["decode_verified_sample_count"] >= 1
     assert status_by_capability["dot1x"]["status"] == "donor_backed_ready"
     assert status_by_capability["dot1x"]["evidence"]["donor_backed_proof_ready"] is True
     assert status_by_capability["wep"]["status"] == "edit_proven"
@@ -96,9 +103,9 @@ def test_feature_gap_report_compares_parser_catalog_coverage_and_samples() -> No
     assert status_by_capability["ipsec"]["status"] == "edit_proven"
     assert status_by_capability["vpn"]["status"] == "edit_proven"
     assert status_by_capability["security_edge"]["status"] == "report_supported"
-    assert status_by_capability["cbac"]["status"] == "edit_proven"
+    assert status_by_capability["cbac"]["status"] == "donor_backed_ready"
     assert status_by_capability["cbac"]["evidence"]["donor_backed_proof"] is True
-    assert status_by_capability["cbac"]["evidence"]["donor_backed_proof_ready"] is False
+    assert status_by_capability["cbac"]["evidence"]["donor_backed_proof_ready"] is True
     assert status_by_capability["zfw"]["status"] == "donor_backed_ready"
     assert status_by_capability["zfw"]["evidence"]["donor_backed_proof_ready"] is True
     assert status_by_capability["asa_service_policy"]["status"] == "report_supported"
@@ -136,9 +143,12 @@ def test_feature_gap_report_requires_roundtrip_and_decode_for_donor_backed_ready
         for feature in group["features"]
     }
 
+    # This test patches out editor-test evidence, so donor-backed readiness must
+    # drop even though the donor proof itself is present. It is the guard that
+    # keeps `donor_backed_ready` meaning more than "a sample exists".
     assert status_by_capability["real_http"]["evidence"]["donor_backed_proof"] is True
     assert status_by_capability["real_http"]["evidence"]["donor_backed_proof_ready"] is False
-    assert status_by_capability["real_http"]["status"] == "report_supported"
+    assert status_by_capability["real_http"]["status"] != "donor_backed_ready"
     assert status_by_capability["real_websocket"]["evidence"]["donor_backed_proof"] is True
     assert status_by_capability["real_websocket"]["evidence"]["donor_backed_proof_ready"] is False
-    assert status_by_capability["real_websocket"]["status"] == "report_supported"
+    assert status_by_capability["real_websocket"]["status"] != "donor_backed_ready"

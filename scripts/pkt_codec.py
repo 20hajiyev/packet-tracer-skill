@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    import xml.etree.ElementTree as ET
     from vendor.twofish import Twofish
 
 
@@ -186,6 +187,105 @@ def decode_pkt_modern(pkt_bytes: bytes) -> bytes:
     stage2 = eax_twofish_decrypt(ciphertext, tag)
     payload = stage2_xor(stage2)
     return quncompress(payload)
+
+
+# Packet Tracer writes raw control bytes into element text — a Cisco banner
+# delimiter is literally `banner motd \x03`. XML 1.0 forbids those, so a strict
+# parser rejects the whole document even though Packet Tracer reads it happily.
+# Map them into the Unicode private use area for parsing and map them back on
+# the way out, so the round trip is faithful rather than lossy.
+_XML_SAFE_CONTROL_BYTES = {0x09, 0x0A, 0x0D}
+_CONTROL_PLACEHOLDER_BASE = 0xE000
+
+
+def xml_escape_control_bytes(xml_bytes: bytes) -> bytes:
+    """Replace XML-forbidden control bytes with private-use placeholders."""
+    if not any(byte < 0x20 and byte not in _XML_SAFE_CONTROL_BYTES for byte in xml_bytes):
+        return xml_bytes
+    out = bytearray()
+    for byte in xml_bytes:
+        if byte < 0x20 and byte not in _XML_SAFE_CONTROL_BYTES:
+            out.extend(chr(_CONTROL_PLACEHOLDER_BASE + byte).encode("utf-8"))
+        else:
+            out.append(byte)
+    return bytes(out)
+
+
+def xml_restore_control_bytes(xml_bytes: bytes) -> bytes:
+    """Inverse of `xml_escape_control_bytes`."""
+    text = xml_bytes.decode("utf-8", "surrogatepass")
+    if not any(_CONTROL_PLACEHOLDER_BASE <= ord(char) < _CONTROL_PLACEHOLDER_BASE + 0x20 for char in text):
+        return xml_bytes
+    restored = "".join(
+        chr(ord(char) - _CONTROL_PLACEHOLDER_BASE)
+        if _CONTROL_PLACEHOLDER_BASE <= ord(char) < _CONTROL_PLACEHOLDER_BASE + 0x20
+        else char
+        for char in text
+    )
+    return restored.encode("utf-8", "surrogatepass")
+
+
+def parse_pkt_xml(xml_bytes: bytes) -> "ET.Element":
+    """Parse Packet Tracer XML, tolerating the control bytes it really writes."""
+    import xml.etree.ElementTree as ET
+
+    return ET.fromstring(xml_escape_control_bytes(xml_bytes))
+
+
+def serialize_pkt_xml(root: "ET.Element") -> bytes:
+    """Serialize a tree parsed by `parse_pkt_xml`, restoring control bytes."""
+    import xml.etree.ElementTree as ET
+
+    return xml_restore_control_bytes(ET.tostring(root, encoding="utf-8", xml_declaration=False))
+
+
+def legacy_xor(data: bytes) -> bytes:
+    """The pre-Twofish `.pkt` obfuscation, which is its own inverse.
+
+    Packet Tracer 5.x and 6.x wrote saves as qCompress output XORed byte-wise
+    with `(length - index)`. No Twofish, no EAX tag, no reversal. 18 of the 292
+    samples bundled with Packet Tracer 9.0 are still in this format, including
+    the QoS, SNMP, NAT, TFTP, IPsec, AAA, CBAC, ZFW and VoIP labs.
+    """
+    length = len(data)
+    return bytes(byte ^ ((length - index) & 0xFF) for index, byte in enumerate(data))
+
+
+def decode_pkt_legacy(pkt_bytes: bytes) -> bytes:
+    """Decode a pre-Twofish `.pkt`."""
+    return quncompress(legacy_xor(pkt_bytes))
+
+
+def encode_pkt_legacy(xml_bytes: bytes) -> bytes:
+    return legacy_xor(qcompress(xml_bytes))
+
+
+def detect_pkt_format(pkt_bytes: bytes) -> str:
+    """Return `modern`, `legacy`, or `unknown` without raising."""
+    try:
+        decode_pkt_modern(pkt_bytes)
+        return "modern"
+    except Exception:
+        pass
+    try:
+        decode_pkt_legacy(pkt_bytes)
+        return "legacy"
+    except Exception:
+        return "unknown"
+
+
+def decode_pkt_auto(pkt_bytes: bytes) -> tuple[bytes, str]:
+    """Decode either container variant, reporting which one matched."""
+    try:
+        return decode_pkt_modern(pkt_bytes), "modern"
+    except Exception as modern_error:
+        try:
+            return decode_pkt_legacy(pkt_bytes), "legacy"
+        except Exception:
+            raise ValueError(
+                f"not a readable Packet Tracer save: modern decode failed ({modern_error}), "
+                "and the legacy container did not match either"
+            ) from modern_error
 
 
 def peek_pkt_header(pkt_bytes: bytes, max_xml_bytes: int = 8192) -> bytes:
