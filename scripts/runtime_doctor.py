@@ -72,7 +72,7 @@ def _best_next_fix(runtime_blockers: list[str], recommended_next_steps: list[str
         "missing_twofish_bridge": "Fix the Twofish bridge next so strict decode/edit/generate can run locally.",
         "missing_packet_tracer_root": "Fix PACKET_TRACER_ROOT so the doctor can resolve the install layout deterministically.",
         "missing_packet_tracer_executable": "Fix the Packet Tracer install root or executable path before relying on validate_open.",
-        "windows_first_runtime": "Do not assume non-Windows strict runtime support without a custom native bridge and explicit Packet Tracer paths.",
+        "windows_first_runtime": "Set PACKET_TRACER_ROOT so the Packet Tracer executable resolves on this host.",
         "using_external_bridge_only": "Verify the vendored pure-Python Twofish engine; the external compiled bridge is only an accelerator.",
     }
     for blocker in runtime_blockers:
@@ -117,9 +117,9 @@ def build_recommended_next_steps(
 ) -> list[str]:
     guidance: list[str] = []
     if not runtime_supported:
-        guidance.append(f"Real runtime is still Windows-first: {runtime_message}")
+        guidance.append(runtime_message)
     if python_support_status != "ok":
-        guidance.append("Use Python 3.14.x for Packet Tracer 9.0 encode/decode.")
+        guidance.append("Use Python 3.10 or newer.")
     if packet_tracer_root is None and recommended_root:
         guidance.append(f"Set PACKET_TRACER_ROOT to {recommended_root}.")
     if donor_status != "ok":
@@ -148,7 +148,7 @@ def build_recommended_next_steps(
         message.append("or set PKT_TWOFISH_LIBRARY / PKT_TWOFISH_SEARCH_ROOTS.")
         guidance.append(" ".join(message))
     if host_os in {"macOS", "Linux"} and not runtime_supported:
-        guidance.append("For non-Windows hosts, install a native Twofish bridge before expecting real .pkt runtime support.")
+        guidance.append("On non-Windows hosts set PACKET_TRACER_ROOT explicitly; the codec itself needs no extra setup.")
     return guidance
 
 
@@ -179,13 +179,25 @@ def collect_runtime_doctor() -> dict[str, object]:
         bridge_resolution = "missing"
     twofish_backend = str(twofish.get("twofish_backend") or "")
 
-    runtime_supported = host_os == "Windows"
-    if runtime_supported:
-        runtime_message = "validated Windows Packet Tracer 9.0 runtime path"
-    elif twofish.get("resolved_twofish_path"):
-        runtime_message = "custom native runtime may work, but bundled validation is still Windows-first"
+    # The Windows-only restriction existed because the codec needed a compiled
+    # Twofish bridge that was only ever built for Windows. The vendored
+    # pure-Python engine removed that dependency, and `packet_tracer_env` already
+    # resolves install layouts for macOS and Linux, so any host with Packet Tracer
+    # installed is supported. What differs by platform is how much has been
+    # exercised in practice, which is a confidence note, not a blocker.
+    runtime_supported = packet_tracer_exe is not None
+    if runtime_supported and host_os == "Windows":
+        runtime_message = f"resolved Windows Packet Tracer runtime at {packet_tracer_exe}"
+    elif runtime_supported:
+        runtime_message = (
+            f"resolved {host_os} Packet Tracer runtime at {packet_tracer_exe}. "
+            "Non-Windows hosts are supported but less exercised; verify a generated file opens."
+        )
     else:
-        runtime_message = "needs custom Packet Tracer paths and a non-Windows native Twofish bridge"
+        runtime_message = (
+            "no Packet Tracer executable was resolved. Decode, inventory and edit still work; "
+            "set PACKET_TRACER_ROOT to enable validate_open."
+        )
 
     blocking_reasons: list[str] = []
     if twofish.get("python_support_status") != "ok":
@@ -203,7 +215,7 @@ def collect_runtime_doctor() -> dict[str, object]:
     if packet_tracer_root is None:
         blocking_reasons.append("packet_tracer_root:not_set")
     if not runtime_supported:
-        blocking_reasons.append(f"runtime_os:{host_os}")
+        blocking_reasons.append("packet_tracer_executable:not_resolved")
 
     recommended_next_steps = build_recommended_next_steps(
         host_os=host_os,
@@ -237,8 +249,9 @@ def collect_runtime_doctor() -> dict[str, object]:
         runtime_blockers.append("missing_packet_tracer_root")
     if packet_tracer_exe is None:
         runtime_blockers.append("missing_packet_tracer_executable")
-    if not runtime_supported:
-        runtime_blockers.append("windows_first_runtime")
+    # `windows_first_runtime` is no longer raised: a missing Packet Tracer
+    # executable is already reported as `missing_packet_tracer_executable`, and
+    # the host OS by itself no longer blocks anything.
     # An externally-resolved compiled bridge is no longer a runtime blocker: it is
     # an optional accelerator over the vendored pure-Python engine, which is always
     # repo-local. Only flag it when the pure engine itself could not be verified.
@@ -336,7 +349,7 @@ def collect_runtime_doctor() -> dict[str, object]:
             "message": "supported" if installer_supported else "unknown host platform",
         },
         "real_pkt_runtime_support": {
-            "status": "validated" if runtime_supported else "windows_first",
+            "status": "validated" if runtime_supported else "packet_tracer_not_resolved",
             "message": runtime_message,
         },
         "env_examples": runtime_env_examples(host_os),

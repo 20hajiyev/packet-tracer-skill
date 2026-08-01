@@ -8,8 +8,9 @@ description: >
 
 # Cisco Packet Tracer 9.0 `.pkt` Hybrid Generator/Editor
 
-This skill targets Packet Tracer `9.0.0.0810` and treats a `.pkt` file as a single
-binary blob, not a zip container or folder tree.
+This skill targets whichever Packet Tracer release is installed (detected at runtime,
+9.0 by default) and treats a `.pkt` file as a single binary blob, not a zip
+container or folder tree.
 
 The current builder/editor is Cisco-sample-centric:
 
@@ -76,6 +77,12 @@ the rest span 5.x through 8.x. Donors are therefore classified into tiers:
 `PACKET_TRACER_DONOR_POLICY` names the loosest acceptable tier. The default is
 `same_minor`. When several donors qualify, the strictest tier wins.
 
+The target version is **detected**, not hardcoded. Resolution order:
+`PACKET_TRACER_TARGET_VERSION` → the installed Packet Tracer's directory name →
+the compatibility donor's own `<VERSION>` → the built-in default. Installing
+Packet Tracer 8.2 makes the skill target 8.2 and accept 8.2.x donors; no
+configuration is needed to follow a different release.
+
 ## Workflow
 
 1. Parse the request into a hybrid intent plan:
@@ -114,6 +121,12 @@ Open-first rules remain strict:
   Encodes and decodes the modern `.pkt` format
 - `scripts/vendor/twofish_pure.py`
   Vendored pure-Python Twofish; the repo-local baseline engine
+- `scripts/pkt_verify.py`
+  Two-tier verification: headless structural checks, plus a real Packet Tracer
+  open test that watches for the file's window
+- `scripts/usage_ledger.py`
+  Local, gitignored record of which donors actually worked, fed back into donor
+  ranking so the skill improves with use
 - `scripts/generate_pkt.py`
   CLI entrypoint for generate/edit/decode/inventory/explain-plan
 - `scripts/intent_parser.py`
@@ -145,7 +158,7 @@ override is absent.
 
 Strict compatibility rules:
 
-- keep `PACKET_TRACER_TARGET_VERSION` on `9.0.0.0810`
+- the target version is detected from the install; override with `PACKET_TRACER_TARGET_VERSION` only when you need to pin it
 - never accept a `5.x` donor; Packet Tracer does not reliably upgrade those
 - the donor tier that was accepted is recorded in `compatibility_tier` and
   reported as an assumption, never hidden
@@ -203,13 +216,13 @@ If the user does not specify details:
 
 ## Constraints
 
-- This skill currently plans for Packet Tracer 9.0 only
-- The builder currently depends on a local Packet Tracer installation with the bundled
-  sample saves present
-- Donor selection is still the narrowest layer: a compatible donor can be
-  resolved and every capability can be recognised, and the donor graph-fit
-  filter can still reject the whole candidate pool. When that happens the
-  rejection reasons are reported per candidate
+- The builder depends on a local Packet Tracer installation with the bundled
+  sample saves present, on any of Windows, macOS or Linux
+- Donor devices the plan does not need are deleted. `PACKET_TRACER_SPARE_STRATEGY=park`
+  restores the older behaviour of renaming them `UNUSED-*` / `*-SPARE-*` and
+  moving them offscreen, if a donor turns out to depend on one staying present
+- `--validate-open` needs Packet Tracer installed. Everything else — decode,
+  inventory, edit, generate, structural verification — does not
 - The bundled template library is intentionally minimal in v1
 - Imported external sample roots are reference-only unless you explicitly promote them
 - Prompt generation in the default path is donor-prune based, not full synthetic rebuild
@@ -287,8 +300,25 @@ Decode a `.pkt` back to XML for inspection:
 python scripts/generate_pkt.py --decode output\minimal.pkt --xml-out output\minimal.xml
 ```
 
-Launch Packet Tracer for a smoke open test:
+Verify a generated file. The structural tier is headless; `--open` launches
+Packet Tracer and waits until the file's own window appears:
 
 ```powershell
+python scripts/pkt_verify.py output\minimal.pkt
+python scripts/pkt_verify.py output\minimal.pkt --open
 python scripts/generate_pkt.py --validate-open output\minimal.pkt
 ```
+
+A file that fails the structural tier is never handed to Packet Tracer.
+
+Inspect what the skill has learned from previous runs:
+
+```powershell
+python scripts/usage_ledger.py
+```
+
+Learning is local and on by default. Prompts are stored only as a non-reversible
+fingerprint, the ledger lives under gitignored `output/`, and it is never
+committed or packaged. Set `PKT_USAGE_LEDGER=off` to disable it, or point it at
+another path. Deleting the ledger changes results in no way except donor
+ordering.

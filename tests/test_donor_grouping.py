@@ -118,3 +118,31 @@ def test_department_groups_path_also_excludes_routers() -> None:
 
     assert len(groups) == 1
     assert {str(member["type"]) for member in groups[0]["members"]} == {"PC"}
+
+
+def test_default_spare_strategy_is_prune(monkeypatch: object) -> None:
+    """Leftover donor devices are deleted, not hidden offscreen.
+
+    Parking renamed them `UNUSED-*` and moved them to x=9000, so a five-device
+    request produced a twenty-device, 282 KB file. Pruning was verified against a
+    real Packet Tracer open (6 devices, 73 KB, opened in 17s) before becoming the
+    default; `park` stays available as an escape hatch.
+    """
+    from generate_pkt import DEFAULT_SPARE_STRATEGY, SPARE_STRATEGIES, _spare_strategy
+
+    assert DEFAULT_SPARE_STRATEGY == "prune"
+    assert set(SPARE_STRATEGIES) == {"park", "prune"}
+    assert _spare_strategy() == "prune"
+
+
+def test_spare_strategy_can_be_overridden(monkeypatch) -> None:
+    from generate_pkt import DEFAULT_SPARE_STRATEGY, _spare_strategy
+
+    monkeypatch.setenv("PACKET_TRACER_SPARE_STRATEGY", "park")
+    assert _spare_strategy() == "park"
+
+    monkeypatch.setenv("PACKET_TRACER_SPARE_STRATEGY", "  PRUNE  ")
+    assert _spare_strategy() == "prune"
+
+    monkeypatch.setenv("PACKET_TRACER_SPARE_STRATEGY", "nonsense")
+    assert _spare_strategy() == DEFAULT_SPARE_STRATEGY

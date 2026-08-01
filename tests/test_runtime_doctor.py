@@ -92,7 +92,7 @@ def test_collect_runtime_doctor_windows_ready(monkeypatch) -> None:
     assert payload["blocking_reason"] == ""
 
 
-def test_collect_runtime_doctor_linux_reports_windows_first_runtime(monkeypatch) -> None:
+def test_collect_runtime_doctor_linux_reports_missing_packet_tracer(monkeypatch) -> None:
     monkeypatch.setattr(runtime_doctor, "_host_os_label", lambda: "Linux")
     monkeypatch.setattr(
         runtime_doctor,
@@ -129,8 +129,11 @@ def test_collect_runtime_doctor_linux_reports_windows_first_runtime(monkeypatch)
     payload = runtime_doctor.collect_runtime_doctor()
 
     assert payload["host_os"] == "Linux"
-    assert payload["real_pkt_runtime_support"]["status"] == "windows_first"
-    assert "custom Packet Tracer paths" in payload["real_pkt_runtime_support"]["message"]
+    # The host OS no longer blocks anything: the pure-Python codec runs anywhere
+    # and Linux install layouts are resolved. What is missing here is the Packet
+    # Tracer executable itself, which is what the payload must now say.
+    assert payload["real_pkt_runtime_support"]["status"] == "packet_tracer_not_resolved"
+    assert "no Packet Tracer executable" in payload["real_pkt_runtime_support"]["message"]
     assert payload["detected_layout_type"] == "missing"
     assert payload["recommended_packet_tracer_root"]
     assert payload["recommended_packet_tracer_saves_root"]
@@ -141,7 +144,8 @@ def test_collect_runtime_doctor_linux_reports_windows_first_runtime(monkeypatch)
     assert payload["capability_impact"]["decode"] == "blocked"
     assert "missing_or_incompatible_donor" in payload["runtime_blockers"]
     assert "missing_twofish_bridge" in payload["runtime_blockers"]
-    assert "windows_first_runtime" in payload["runtime_blockers"]
+    assert "missing_packet_tracer_executable" in payload["runtime_blockers"]
+    assert "windows_first_runtime" not in payload["runtime_blockers"]
     assert "generate" in payload["blocked_operations"]
     assert payload["what_currently_works"] == "No strict runtime operations are currently working."
     assert payload["what_is_blocked"] == "Blocked operations: inventory, decode, edit, generate, validate_open."
@@ -157,11 +161,12 @@ def test_collect_runtime_doctor_linux_reports_windows_first_runtime(monkeypatch)
     assert payload["bridge_resolution"] == "missing"
     assert "resolve a local bridge" in payload["bridge_recommendation"]
     assert "strict decode/edit/generate remain blocked" in payload["runtime_contract_notes"]
-    assert any("Windows-first" in line for line in payload["recommended_next_steps"])
+    assert any("PACKET_TRACER_ROOT" in line for line in payload["recommended_next_steps"])
     assert any("Packet Tracer saves" in line for line in payload["recommended_next_steps"])
     assert any("Twofish bridge" in line for line in payload["recommended_next_steps"])
     assert "packet_tracer_root:not_set" in payload["blocking_reason"]
-    assert "runtime_os:Linux" in payload["blocking_reason"]
+    assert "packet_tracer_executable:not_resolved" in payload["blocking_reason"]
+    assert "runtime_os:Linux" not in payload["blocking_reason"]
 
 
 def test_collect_runtime_doctor_reports_external_bridge_resolution(monkeypatch) -> None:

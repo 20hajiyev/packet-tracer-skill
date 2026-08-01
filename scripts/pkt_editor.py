@@ -6,6 +6,7 @@ import json
 import re
 from pathlib import Path
 import xml.etree.ElementTree as ET
+from functools import lru_cache
 
 from intent_parser import IntentPlan
 from packet_tracer_env import resolve_sample_path
@@ -18,8 +19,24 @@ SERVER_SAMPLE = r"01 Networking\DNS\Multilevel_DNS.pkt"
 WIRELESS_SAMPLE = r"01 Networking\DHCP\dhcp_reservation.pkt"
 
 
+@lru_cache(maxsize=32)
+def _decoded_pkt_xml(path_key: str, size: int, mtime_ns: int) -> bytes:
+    """Decoded XML for a `.pkt`, cached on the file's identity.
+
+    Donor evaluation decodes the same donor several times per run, and decoding
+    costs ~42x more than parsing the result. Only the immutable bytes are
+    cached; every caller still gets a fresh tree, because callers mutate it.
+    """
+    return decode_pkt_modern(Path(path_key).read_bytes())
+
+
 def decode_pkt_to_root(pkt_path: str | Path) -> ET.Element:
-    return ET.fromstring(decode_pkt_modern(Path(pkt_path).read_bytes()))
+    path = Path(pkt_path)
+    try:
+        stat = path.stat()
+    except OSError:
+        return ET.fromstring(decode_pkt_modern(path.read_bytes()))
+    return ET.fromstring(_decoded_pkt_xml(str(path), stat.st_size, stat.st_mtime_ns))
 
 
 def inventory_devices(root: ET.Element) -> list[dict[str, str]]:

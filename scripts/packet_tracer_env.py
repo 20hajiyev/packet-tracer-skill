@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import os
+import re
 import platform
 from pathlib import Path
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
+from functools import lru_cache
 
 
 DEFAULT_INSTALL_CANDIDATES_BY_OS = {
@@ -282,18 +284,92 @@ def resolve_sample_path(relative_path: str) -> Path:
     return require_packet_tracer_saves_root() / relative_path
 
 
+def _version_from_install_root(root: Path) -> str | None:
+    """Read a Packet Tracer version out of the install directory name.
+
+    Cisco names the install folder after the release, e.g.
+    `Cisco Packet Tracer 9.0.0`. That gives major.minor.patch and nothing more.
+
+    The build field is deliberately omitted rather than padded with `0000`.
+    Inventing a build would make bundled samples that happen to carry
+    `9.0.0.0000` compare as `exact`, outranking the user's own saves written by
+    the actual installed binary. A three-field target can never match `exact`,
+    so every donor lands on `same_minor` and is ranked on real criteria instead.
+    """
+    match = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", root.name)
+    if not match:
+        return None
+    major, minor, patch = match.group(1), match.group(2), match.group(3) or "0"
+    return f"{major}.{minor}.{patch}"
+
+
+def detect_packet_tracer_target_version() -> tuple[str, str]:
+    """Resolve the version to target, and say where it came from.
+
+    Order: explicit env override, then the installed Packet Tracer, then the
+    resolved compatibility donor's own `<VERSION>`, then the built-in default.
+    This is what removes the hard requirement for one specific Packet Tracer
+    build: the skill follows whatever release is actually installed.
+    """
+    override = os.getenv("PACKET_TRACER_TARGET_VERSION")
+    if override:
+        return override, "env"
+
+    root = get_packet_tracer_root()
+    if root is not None:
+        detected = _version_from_install_root(root)
+        if detected:
+            return detected, "install_root"
+
+    env_donor = _existing_path(os.getenv("PACKET_TRACER_COMPAT_DONOR"))
+    if env_donor is not None and env_donor.suffix.lower() == ".pkt":
+        donor_version = _pkt_version(env_donor)
+        if donor_version:
+            return donor_version, "compat_donor"
+
+    return DEFAULT_PACKET_TRACER_TARGET_VERSION, "default"
+
+
 def get_packet_tracer_target_version() -> str:
-    return os.getenv("PACKET_TRACER_TARGET_VERSION", DEFAULT_PACKET_TRACER_TARGET_VERSION)
+    return detect_packet_tracer_target_version()[0]
+
+
+_VERSION_PATTERN = re.compile(rb"<VERSION>([^<]*)</VERSION>")
+
+
+@lru_cache(maxsize=1024)
+def _pkt_version_cached(path_key: str, size: int, mtime_ns: int) -> str | None:
+    """Read `<VERSION>` from a `.pkt`, keyed on the file's identity.
+
+    Donor scanning asks the same files for their version many times per run, and
+    a full decode of a multi-megabyte lab costs seconds. Reading only the header
+    is constant-time; caching removes the repeats. The size and mtime are part
+    of the key so an edited file is re-read rather than served stale.
+    """
+    from pkt_codec import decode_pkt_modern, peek_pkt_header
+
+    raw = Path(path_key).read_bytes()
+    try:
+        match = _VERSION_PATTERN.search(peek_pkt_header(raw))
+        if match:
+            return match.group(1).decode("utf-8", "replace")
+    except Exception:
+        pass
+
+    # Header peek did not yield a version: fall back to the authenticated decode
+    # rather than reporting the file as unreadable.
+    try:
+        return ET.fromstring(decode_pkt_modern(raw)).findtext("./VERSION")
+    except Exception:
+        return None
 
 
 def _pkt_version(pkt_path: Path) -> str | None:
     try:
-        from pkt_codec import decode_pkt_modern
-
-        root = ET.fromstring(decode_pkt_modern(pkt_path.read_bytes()))
-    except Exception:
+        stat = pkt_path.stat()
+    except OSError:
         return None
-    return root.findtext("./VERSION")
+    return _pkt_version_cached(str(pkt_path), stat.st_size, stat.st_mtime_ns)
 
 
 def _candidate_pkt_files(directory: Path, source: str) -> list[tuple[str, Path]]:

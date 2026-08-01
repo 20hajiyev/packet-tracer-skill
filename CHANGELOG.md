@@ -6,6 +6,89 @@ The format is intentionally simple and release-oriented.
 
 ## [0.3.0] - Unreleased candidate
 
+### First verified generation
+
+A prompt now produces a `.pkt` that Packet Tracer actually opens. Confirmed on
+2026-08-02: `1 router 1 switch ve 3 komputer qur` produced a `9.0.0.0810` file
+containing exactly `R1 <-> SW1` and `SW1 <-> PC1/PC2/PC3`, and Packet Tracer
+loaded it in 40 seconds with the window title naming the file.
+
+### Added
+
+- `scripts/pkt_verify.py`: two-tier verification. `structural_check` is headless
+  and catches dangling link endpoints, duplicate device names, undecodable
+  bytes, wrong root elements and incompatible versions. `open_check` launches
+  Packet Tracer and waits for the file's own window, reporting
+  `opened` / `timeout` / `process_exited` / `packet_tracer_missing`.
+- `scripts/usage_ledger.py`: a local, gitignored record of which donors actually
+  worked, fed back into donor ranking so repeat requests try proven donors
+  first. Prompts are stored as a non-reversible fingerprint, never verbatim.
+  Bounded to 2000 entries, disabled with `PKT_USAGE_LEDGER=off`, and never
+  load-bearing — deleting it changes nothing but donor order.
+- `tests/test_pkt_verify.py`, `tests/test_usage_ledger.py`,
+  `tests/test_donor_grouping.py`.
+
+### Changed — limitations removed
+
+- **The target version is detected, not hardcoded.** Resolution order:
+  `PACKET_TRACER_TARGET_VERSION`, the installed Packet Tracer's directory name,
+  the compatibility donor's `<VERSION>`, then the default. An 8.2 install now
+  targets 8.2 with no configuration. The install-root name yields a three-field
+  version deliberately, so a bundled sample carrying `9.0.0.0000` cannot
+  outrank the user's own saves by matching a build number that was invented.
+- **The Windows-only restriction is gone.** It existed because the codec needed
+  a compiled bridge only ever built for Windows; the pure-Python engine removed
+  that. `windows_first_runtime` is no longer raised, and a missing Packet Tracer
+  executable is reported as exactly that.
+- **Pruning is no longer an unsafe mutation.** `remove_link` was categorised as
+  `port_reassignment` and, with `device_prune`, sat on the blocked list — so the
+  safe-open profile forbade the two core operations of donor-prune generation.
+  `remove_link` is now `link_prune`, and prune operations are allowed. Inventing
+  structure the donor never had stays blocked.
+- **The sample catalogue is version-gated.** Only the compatibility donor was
+  checked before, so a 9.0-targeted run could select a 6.1 sample and emit a 6.1
+  file. Observed and fixed.
+- Donor groups are aligned to targets by router uplink instead of name order. A
+  donor containing `Router <-> Switch` on its second switch was previously
+  reported as not containing that link at all.
+- `validate_open` verifies instead of announcing. It ran `subprocess.Popen` and
+  printed `{"status": "launched"}` without observing anything, so a corrupt file
+  reported the same result as a working one.
+- `validate_external_sample_summary` uses the compatibility ladder rather than
+  string equality.
+- Python minimum is 3.10; the 3.14 pin applied only to the optional accelerator.
+
+### Performance
+
+Generation went from 200-250 s to **94 s** for a small lab. Profiling showed 340
+of 349 seconds inside `decode_pkt_modern`, and 69 of the 82 calls came from
+`_pkt_version` — full authenticated decrypts of entire multi-megabyte files
+performed only to read `<VERSION>`.
+
+- `pkt_codec.peek_pkt_header` decrypts only the front of a file. CTR mode is
+  seekable and stage 1 reverses the buffer, so the needed plaintext prefix comes
+  from the file's tail: the probe is now O(prefix), not O(file). Measured
+  constant ~21 ms regardless of size, against 14.8 s for a full decode of the
+  largest lab — 679x on that file, and byte-identical version strings.
+  Tag verification is deliberately skipped; this is a read-only probe and
+  anything that matters still goes through `decode_pkt_modern`.
+- `_pkt_version` and `decode_pkt_to_root` cache on `(path, size, mtime_ns)`, so
+  an edited file is re-read rather than served stale. Only immutable bytes are
+  cached; callers still get their own tree to mutate.
+
+### Leftover donor devices are now deleted
+
+Spares were renamed `UNUSED-*` / `*-SPARE-*` and moved offscreen rather than
+deleted, so a five-device request produced a twenty-device, 282 KB file. Parking
+was a precaution, not a measured constraint — and with real verification in place
+it could finally be tested instead of assumed.
+
+Pruning verified against a real Packet Tracer open: **6 devices, 73 KB, opened in
+17 s** (the parked equivalent took 40 s). `prune` is now the default;
+`PACKET_TRACER_SPARE_STRATEGY=park` restores the old behaviour.
+
+## [0.3.0-pre] - Runtime and donor gate
+
 Removes the two mechanical defects that produced `generate_ready=0` for the
 whole `0.2.x` line. See `docs/improvement-plan-0.3.0.md` for the audit.
 

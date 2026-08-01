@@ -188,6 +188,58 @@ def decode_pkt_modern(pkt_bytes: bytes) -> bytes:
     return quncompress(payload)
 
 
+def peek_pkt_header(pkt_bytes: bytes, max_xml_bytes: int = 8192) -> bytes:
+    """Decrypt just enough of a `.pkt` to read the start of its XML.
+
+    Donor scanning reads `<VERSION>` from dozens of files per run. Doing that
+    with `decode_pkt_modern` costs a full EAX pass over every byte plus three
+    OMACs, which measured at ~3 s per file and dominated the runtime.
+
+    CTR mode is seekable and the header sits at the front, so only the first few
+    blocks need decrypting. The zlib stream is fed incrementally and abandoned
+    as soon as enough plaintext is out.
+
+    This intentionally skips tag verification: it is a read-only probe used to
+    decide whether a file is worth considering, and it never produces content
+    that is written back out. Anything that matters goes through
+    `decode_pkt_modern`, which does authenticate.
+    """
+    if len(pkt_bytes) < TAG_LEN + BLOCK_SIZE:
+        raise ValueError("pkt blob is too short")
+
+    blob_length = len(pkt_bytes)
+    total_length = blob_length - TAG_LEN
+
+    # 4 bytes of qCompress header + a compressed prefix that is generously
+    # larger than the plaintext we want back out.
+    wanted = 4 + max_xml_bytes
+    prefix_len = min(total_length, ((wanted + BLOCK_SIZE - 1) // BLOCK_SIZE) * BLOCK_SIZE)
+
+    # Stage 1 reverses the buffer, so the prefix we need comes from the *tail* of
+    # the file. Computing only those bytes keeps this O(prefix) rather than
+    # O(file), which matters because the largest labs are several megabytes.
+    stage1_prefix = bytes(
+        pkt_bytes[blob_length - 1 - index] ^ ((blob_length - index * blob_length) & 0xFF)
+        for index in range(prefix_len)
+    )
+
+    cipher = _twofish_cls()(NEW_KEY)
+    nonce_mac = _omac(cipher, 0, NEW_IV)
+    stage2_prefix = _ctr_crypt(cipher, nonce_mac, stage1_prefix)
+
+    # stage2_xor's key stream depends on the *full* payload length, which is
+    # known from the blob size without decrypting the rest.
+    payload_prefix = bytes(
+        byte ^ ((total_length - index) & 0xFF) for index, byte in enumerate(stage2_prefix)
+    )
+
+    decompressor = zlib.decompressobj()
+    try:
+        return decompressor.decompress(payload_prefix[4:], max_xml_bytes)
+    except zlib.error as exc:
+        raise ValueError(f"could not decompress pkt header: {exc}") from exc
+
+
 def encode_xml_file(xml_path: str | Path, output_path: str | Path) -> Path:
     xml_path = Path(xml_path)
     output_path = Path(output_path)

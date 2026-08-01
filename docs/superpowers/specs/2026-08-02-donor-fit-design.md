@@ -349,6 +349,64 @@ The first is recommended: the current mapping is simply wrong, and the blocked
 list was almost certainly written for the edit path and then inherited by
 generation.
 
+### Second wave: generation completed and verified
+
+**4. Pruning was classified as an unsafe mutation.** `_operation_category` mapped
+`remove_link` to `port_reassignment`; that and `device_prune` were on
+`SAFE_OPEN_BLOCKED_MUTATIONS`, whose only consumers are the three prompt-generation
+paths. The safe-open profile forbade the two core operations of donor-prune
+generation. `remove_link` is now `link_prune`, and prune operations are allowed;
+inventing structure the donor never had stays blocked.
+
+**5. The sample catalogue was not version-gated.** Only the compatibility donor
+was version-checked. Donor-prune builds on the *selected sample*, so the output
+inherits its `<VERSION>` — the first file ever generated claimed `6.1.0.0026`
+while the skill advertised 9.0. `_existing_ranked_candidates` now applies the
+compatibility ladder.
+
+**6. Donor groups were zipped in name order.** `Senan_K231.pkt` contains
+`DIA-RS <-> Mertebe 3`, a real Router-Switch link, but `SW1` was assigned to
+`Mertebe 1`, so the plan reported the donor "does not contain that
+device-to-device link". `_align_donor_groups_to_targets` now places the donor's
+router-facing switch where the target expects it.
+
+**Result, verified on 2026-08-02:**
+
+```
+prompt : "1 router 1 switch ve 3 komputer qur"
+output : 9.0.0.0810, 282 KB
+links  : R1 <-> SW1 [Gig0/0/1, Gig0/1]
+         SW1 <-> PC1/PC2/PC3 [Fa0/1..3, Fa0]
+open   : status=opened, 40.0s
+         title "Cisco Packet Tracer - ...\output\gen1.pkt"
+```
+
+A truncated copy of the same file is caught by the structural tier
+(`decode failed: EAX authentication tag verification failed`) and Packet Tracer
+is never launched, so the check discriminates rather than always passing.
+
+### Built after all: verification and learning
+
+`pkt_verify.py` was built as specified. `donor_requirements.py` and
+`donor_fit.py` were not, and should not be: the defects were in the prune
+planner, not in a missing ranking model.
+
+`usage_ledger.py` is new scope, added on request: a local gitignored record of
+which donors actually worked, fed back into donor ranking. Its measured value is
+currently unproven — in the case tested, the winning donor was already ranked
+first, so learning had nothing to improve. It should pay off when the first-ranked
+donor fails and a later one succeeds, at roughly 4.3 s per skipped attempt.
+
+### Open
+
+- **Generation takes 200-250 s.** Not decode-bound: only 10 `decode_pkt_to_root`
+  calls happen per run, and `load_catalog()` is 0.2 s and cached. The cost is
+  elsewhere in ranking and support-report construction and has not been profiled.
+- **Leftover donor devices.** A five-device request yields a twenty-device file.
+  Spares are renamed `UNUSED-*` / `*-SPARE-*`, unlinked and parked offscreen
+  rather than deleted. Parking is safer; deleting is future work.
+- The `what_failed: "donor selection"` mislabel when the intent plan has gaps.
+
 ### Not built
 
 `donor_requirements.py`, `donor_fit.py`, and `pkt_verify.py` were not created.

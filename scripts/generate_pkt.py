@@ -30,7 +30,11 @@ from coverage_matrix import (
 from feature_atlas import build_feature_gap_report
 from intent_parser import IntentPlan, parse_intent
 from packet_tracer_env import (
+    donor_compatibility,
+    donor_tier_is_accepted,
+    get_donor_policy,
     get_packet_tracer_compatibility_donor,
+    get_packet_tracer_target_version,
     inspect_packet_tracer_compatibility_donor,
     require_packet_tracer_exe,
 )
@@ -38,6 +42,8 @@ from pkt_builder import build_packet_tracer_xml
 from pkt_codec import decode_pkt_file, decode_pkt_modern, encode_pkt_modern
 from pkt_editor import apply_plan_operations, decode_pkt_to_root, edit_pkt_file, inventory_devices, inventory_links, inventory_root
 from pkt_transformer import transform_from_blueprint
+import pkt_verify
+import usage_ledger
 from remote_search import (
     asdict_list as remote_asdict_list,
     auto_import_remote_candidates,
@@ -163,7 +169,24 @@ def _compat_donor_details() -> tuple[Path | None, str | None]:
 
 
 def _existing_ranked_candidates(ranked: list[SampleCandidate]) -> list[SampleCandidate]:
-    return [candidate for candidate in ranked if Path(candidate.sample.path).exists()]
+    """Keep candidates that exist on disk and pass the donor version policy.
+
+    Donor-prune generation builds the output on the *selected sample* donor, so
+    the output inherits that sample's `<VERSION>`. Without this check the sample
+    catalogue was ungated while only the compatibility donor was version-checked,
+    and a 9.0-targeted run could emit a 6.1 file.
+    """
+    target_version = get_packet_tracer_target_version()
+    policy = get_donor_policy()
+    kept: list[SampleCandidate] = []
+    for candidate in ranked:
+        if not Path(candidate.sample.path).exists():
+            continue
+        tier = donor_compatibility(candidate.sample.version, target_version)
+        if not donor_tier_is_accepted(tier, policy):
+            continue
+        kept.append(candidate)
+    return kept
 
 
 def _compat_donor_candidate() -> SampleCandidate | None:
@@ -1104,14 +1127,57 @@ def _filter_candidates_for_blueprint(
     return [*viable, *deprioritized], filtered_diagnostics
 
 
-def _rerank_candidates_for_blueprint(candidates: list[SampleCandidate], blueprint: dict[str, object]) -> list[SampleCandidate]:
-    def _sort_key(candidate: SampleCandidate) -> tuple[int, int, int, int, int, int]:
+def _learned_donor_scores(plan: IntentPlan, blueprint: dict[str, object]) -> dict[str, int]:
+    """Donor preferences learned from previous runs. Never fatal."""
+    try:
+        family = str(blueprint.get("topology_archetype") or "general")
+        return usage_ledger.donor_scores(family, usage_ledger.prompt_fingerprint(plan.prompt))
+    except Exception:
+        return {}
+
+
+def _record_generation_outcome(
+    *,
+    prompt: str,
+    scenario_decision: dict[str, object] | None,
+    donor_archetype: DonorArchetypePlan,
+    outcome: str,
+) -> None:
+    """Write one ledger entry. A ledger failure must never fail a generation."""
+    try:
+        decision = scenario_decision or {}
+        usage_ledger.record(
+            usage_ledger.LedgerEntry(
+                scenario_family=str(decision.get("family") or "general"),
+                prompt_shape=usage_ledger.prompt_fingerprint(prompt),
+                donor=str(donor_archetype.compat_donor_relative_path or donor_archetype.compat_donor),
+                donor_version=str(donor_archetype.donor_capacity.get("version", "") or ""),
+                target_version=get_packet_tracer_target_version(),
+                outcome=outcome,
+            )
+        )
+    except Exception:
+        return
+
+
+def _rerank_candidates_for_blueprint(
+    candidates: list[SampleCandidate],
+    blueprint: dict[str, object],
+    learned_scores: dict[str, int] | None = None,
+) -> list[SampleCandidate]:
+    # Evidence from previous runs outranks every heuristic below it: a donor that
+    # has actually produced a working file for this kind of request is a better
+    # bet than one that merely scores well on paper.
+    learned = learned_scores or {}
+
+    def _sort_key(candidate: SampleCandidate) -> tuple[int, int, int, int, int, int, int]:
         fit = build_donor_graph_fit(candidate.sample, blueprint)
         acceptance_penalty, _ = _candidate_acceptance_penalty(candidate, blueprint)
         adjusted_score = candidate.total_score - acceptance_penalty
         preferred_archetypes = [str(item) for item in list(blueprint.get("preferred_donor_archetypes", [])) if item]
         archetype_match_score, _, _ = _candidate_archetype_alignment(candidate.sample, preferred_archetypes)
         return (
+            learned.get(candidate.sample.relative_path, 0),
             fit.layout_reuse_score,
             archetype_match_score,
             fit.fit_score - acceptance_penalty,
@@ -1275,17 +1341,23 @@ class SubtreeDiffReport:
     runtime_suspects: list[str]
 
 
+# Pruning is how donor-prune generation works: it takes a real Cisco lab, removes
+# what the plan does not need, and renames and repositions the rest. Those
+# operations are therefore *allowed* here, not blocked. What stays blocked is
+# everything that invents structure the donor never had, because that is what
+# produces files Packet Tracer refuses to open.
 SAFE_OPEN_ALLOWED_MUTATIONS = [
     "device_rename",
     "layout_reposition",
     "config_mutation",
     "service_mutation",
+    "device_prune",
+    "link_prune",
+    "donor_group_reduction",
 ]
 SAFE_OPEN_BLOCKED_MUTATIONS = [
     "link_rewrite",
     "port_reassignment",
-    "device_prune",
-    "donor_group_reduction",
     "wireless_mutation",
     "wireless_client_association",
     "end_device_mutation",
@@ -1488,7 +1560,10 @@ def _operation_category(bucket_name: str, operation: dict[str, object]) -> str:
         if op_name == "set_link":
             return "link_rewrite"
         if op_name == "remove_link":
-            return "port_reassignment"
+            # Removing a donor link is a prune, not a port change. Calling it
+            # `port_reassignment` put it on the blocked list and made donor-prune
+            # generation forbid its own core operation.
+            return "link_prune"
         return "workspace_physical_mutation"
     if bucket_name in {"switch_ops", "router_ops", "management_ops"}:
         return "config_mutation"
@@ -2473,6 +2548,85 @@ def _unexpected_workspace_issues(donor_root: ET.Element, generated_root: ET.Elem
     return [issue for issue in generated_result.blocking_issues if issue not in donor_issue_set]
 
 
+SPARE_STRATEGIES = ("park", "prune")
+DEFAULT_SPARE_STRATEGY = "prune"
+
+
+def _spare_strategy() -> str:
+    """What to do with donor devices the plan does not need.
+
+    `prune` deletes them, so the generated lab contains only what was asked for.
+    `park` renames them `UNUSED-*` / `*-SPARE-*`, unlinks them and moves them
+    offscreen — the older, more conservative behaviour, kept as an escape hatch
+    via `PACKET_TRACER_SPARE_STRATEGY` in case a donor turns out to depend on a
+    device staying present.
+    """
+    raw = (os.getenv("PACKET_TRACER_SPARE_STRATEGY") or "").strip().lower()
+    return raw if raw in SPARE_STRATEGIES else DEFAULT_SPARE_STRATEGY
+
+
+def _switch_carrying_router_uplink(
+    devices_by_name: dict[str, str],
+    links: list[dict[str, object]],
+) -> str | None:
+    """The name of the switch that is actually wired to a router."""
+    for link in links:
+        left, right = str(link.get("from") or ""), str(link.get("to") or "")
+        left_kind, right_kind = devices_by_name.get(left), devices_by_name.get(right)
+        if left_kind == "Router" and right_kind == "Switch":
+            return right
+        if right_kind == "Router" and left_kind == "Switch":
+            return left
+    return None
+
+
+def _align_donor_groups_to_targets(
+    donor_groups: list[dict[str, object]],
+    target_groups: list[dict[str, object]],
+    donor_devices: list[dict[str, str]],
+    donor_links: list[dict[str, object]],
+    blueprint: dict[str, object],
+) -> list[dict[str, object]]:
+    """Put the donor's router-facing switch group where the target expects it.
+
+    Groups were previously zipped in name order, so a target switch carrying the
+    router uplink could be matched to a donor switch that has no router link at
+    all. The plan then asked for a Router-Switch link the donor "did not contain",
+    even when the donor did contain one on a different switch.
+    """
+    if len(donor_groups) < 2 or not target_groups:
+        return donor_groups
+
+    donor_kinds = {str(device["name"]): _device_kind(device) for device in donor_devices}
+    donor_uplink_switch = _switch_carrying_router_uplink(donor_kinds, donor_links)
+    if donor_uplink_switch is None:
+        return donor_groups
+
+    blueprint_kinds = {str(device["name"]): _device_kind(device) for device in blueprint.get("devices", [])}
+    blueprint_links = [
+        {"from": str(link["a"]["dev"]), "to": str(link["b"]["dev"])}
+        for link in blueprint.get("links", [])
+    ]
+    target_uplink_switch = _switch_carrying_router_uplink(blueprint_kinds, blueprint_links)
+    if target_uplink_switch is None:
+        return donor_groups
+
+    donor_index = next(
+        (index for index, group in enumerate(donor_groups) if str(group["switch"]["name"]) == donor_uplink_switch),
+        None,
+    )
+    target_index = next(
+        (index for index, group in enumerate(target_groups) if str(group["switch"]["name"]) == target_uplink_switch),
+        None,
+    )
+    if donor_index is None or target_index is None or donor_index == target_index:
+        return donor_groups
+
+    reordered = list(donor_groups)
+    reordered.insert(target_index, reordered.pop(donor_index))
+    return reordered
+
+
 def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, object], compat_donor: Path) -> tuple[IntentPlan, DonorArchetypePlan]:
     donor_root = decode_pkt_to_root(compat_donor)
     donor_groups = _collect_donor_groups(donor_root)
@@ -2482,6 +2636,7 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
     donor_devices = inventory_devices(donor_root)
     donor_links = inventory_links(donor_root)
     donor_capacity = _donor_capacity(donor_root, donor_groups)
+    donor_groups = _align_donor_groups_to_targets(donor_groups, target_groups, donor_devices, donor_links, blueprint)
     if len(target_groups) > len(donor_groups):
         gap = f"Compatibility donor supports only {len(donor_groups)} switch groups; requested {len(target_groups)}."
         if gap not in adapted_plan.blocking_gaps:
@@ -2494,6 +2649,7 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
     mutation_groups: list[dict[str, object]] = []
     rename_map: dict[str, str] = {}
     spare_candidates_by_type: dict[str, list[dict[str, object]]] = {}
+    pruned_spares: list[str] = []
 
     def keep_name(old_name: str, new_name: str | None = None, x: int | None = None, y: int | None = None) -> None:
         kept_devices.add(old_name)
@@ -2532,6 +2688,14 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
         parked_name: str | None = None,
     ) -> None:
         if old_name in kept_devices:
+            return
+        if _spare_strategy() == "prune":
+            # Delete the donor's leftovers instead of hiding them offscreen, so a
+            # five-device request yields a five-device lab. Verified against a
+            # real Packet Tracer open before being made the default.
+            kept_devices.add(old_name)
+            adapted_plan.edit_operations.append({"op": "prune_device", "device": old_name})
+            pruned_spares.append(old_name)
             return
         kept_devices.add(old_name)
         final_name = parked_name or old_name
@@ -2812,7 +2976,9 @@ def _build_donor_prune_plan(
 ) -> tuple[IntentPlan, DonorArchetypePlan]:
     topology_tags = _topology_tags_for_plan(plan, str(blueprint.get("topology_archetype", "general")))
     _, _, donor_candidates = _rank_generation_donors(plan, topology_tags, donor_roots)
-    donor_candidates = _rerank_candidates_for_blueprint(donor_candidates, blueprint)
+    donor_candidates = _rerank_candidates_for_blueprint(
+        donor_candidates, blueprint, _learned_donor_scores(plan, blueprint)
+    )
     if not donor_candidates:
         blocked_plan = _copy_plan(plan)
         if STRICT_COMPATIBILITY_GAP not in blocked_plan.blocking_gaps:
@@ -3533,6 +3699,12 @@ def generate_from_prompt(
     compat_donor, compat_donor_version = _compat_donor_details()
     if compat_donor is not None:
         print(f"Compatibility donor: {compat_donor} ({compat_donor_version or 'unknown'})")
+    _record_generation_outcome(
+        prompt=prompt,
+        scenario_decision=scenario_generate_decision,
+        donor_archetype=donor_archetype,
+        outcome=usage_ledger.OUTCOME_GENERATED_UNVERIFIED,
+    )
     if blueprint_out_path is not None:
         blueprint_out_path.parent.mkdir(parents=True, exist_ok=True)
         blueprint_out_path.write_text(json.dumps(blueprint_plan, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -3987,9 +4159,25 @@ def inventory_pkt(
 
 
 def validate_open(pkt_path: Path) -> None:
-    packet_tracer_exe = require_packet_tracer_exe()
-    process = subprocess.Popen([str(packet_tracer_exe), str(pkt_path)])
-    print(json.dumps({"status": "launched", "pid": process.pid, "pkt": str(pkt_path)}, ensure_ascii=False))
+    """Structurally verify the file, then confirm Packet Tracer really opens it.
+
+    This used to launch Packet Tracer and print `{"status": "launched"}` without
+    waiting for or observing anything, so a corrupt file reported the same
+    result as a working one.
+    """
+    require_packet_tracer_exe()
+    structural = pkt_verify.structural_check(pkt_path)
+    payload: dict[str, object] = {"structural": structural.to_json()}
+    if structural.passed:
+        payload["open"] = pkt_verify.open_check(pkt_path).to_json()
+    else:
+        payload["open"] = {
+            "tier": "open",
+            "status": "skipped",
+            "opened": False,
+            "detail": "structural check failed; not launching Packet Tracer",
+        }
+    print(json.dumps(payload, ensure_ascii=False))
 
 
 def validate_open_debug(prompt: str, output_path: Path | None = None, donor_roots: list[Path] | None = None) -> None:

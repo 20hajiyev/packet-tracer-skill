@@ -757,12 +757,18 @@ def test_safe_open_profile_blocks_department_link_mutations_until_cumulative_acc
         generate_pkt_module.apply_plan_operations = original_apply
 
     assert profiled_plan.compatibility_profile["mode"] == "safe_open_strict_9_0"
+    # Inventing new structure stays blocked; pruning does not. Removing a donor
+    # link is `link_prune`, which is how donor-prune generation works at all.
     assert "link_rewrite" in profiled_plan.blocked_mutations
-    assert "port_reassignment" in profiled_plan.blocked_mutations
+    assert "port_reassignment" not in profiled_plan.blocked_mutations
+    assert "link_prune" not in profiled_plan.blocked_mutations
     assert profiled_plan.acceptance_stage_plan
     assert any(stage["stage_name"] == "link_remove_only" for stage in profiled_plan.acceptance_stage_plan)
     assert any(stage["stage_name"] == "link_add_only" for stage in profiled_plan.acceptance_stage_plan)
-    assert all(op["op"] in {"rename_device", "reflow_layout"} for op in safe_plan.edit_operations)
+    assert all(
+        op["op"] in {"rename_device", "reflow_layout", "prune_device", "remove_link"}
+        for op in safe_plan.edit_operations
+    )
 
 
 def test_safe_open_profile_allows_rename_layout_and_config_only() -> None:

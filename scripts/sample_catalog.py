@@ -7,7 +7,12 @@ from pathlib import Path
 from typing import Any
 import xml.etree.ElementTree as ET
 
-from packet_tracer_env import get_packet_tracer_saves_root, get_packet_tracer_target_version
+from packet_tracer_env import (
+    donor_compatibility,
+    donor_tier_is_accepted,
+    get_packet_tracer_saves_root,
+    get_packet_tracer_target_version,
+)
 from pkt_codec import decode_pkt_modern
 from workspace_repair import inspect_workspace_integrity
 
@@ -854,7 +859,10 @@ def validate_external_sample_summary(item: dict[str, Any], curated: bool) -> Don
     target_version = get_packet_tracer_target_version()
     packet_tracer_version = str(item.get("version", ""))
     issues: list[str] = []
-    if packet_tracer_version != target_version:
+    # Use the shared compatibility ladder rather than string equality: the build
+    # field of a `<VERSION>` is not a schema identifier, and the target may be a
+    # three-field version detected from the install directory.
+    if not donor_tier_is_accepted(donor_compatibility(packet_tracer_version, target_version)):
         issues.append(f"version_mismatch:{packet_tracer_version or 'unknown'}")
     if int(item.get("device_count", 0)) < 2:
         issues.append("insufficient_devices")
