@@ -1190,9 +1190,11 @@ def test_filter_candidates_for_blueprint_filters_zero_viability_donor() -> None:
         ]
     }
     viable, diagnostics = _filter_candidates_for_blueprint(candidates, blueprint)
-    assert [candidate.sample.relative_path for candidate in viable] == ["viable.pkt"]
+    # The heuristic orders the pool but must never remove a candidate: only the
+    # transformer, which actually executes the prune, is allowed to reject.
+    assert [candidate.sample.relative_path for candidate in viable] == ["viable.pkt", "filtered.pkt"]
     assert diagnostics
-    assert diagnostics[0]["status"] == "filtered"
+    assert diagnostics[0]["status"] == "deprioritized"
     assert any("no reusable link pairs" in reason for reason in diagnostics[0]["rejection_reasons"])
 
 
@@ -1233,7 +1235,8 @@ def test_filter_candidates_for_blueprint_filters_wireless_association_gap() -> N
     ]
     blueprint = {"capabilities": ["wireless_client_association"], "links": []}
     viable, diagnostics = _filter_candidates_for_blueprint(candidates, blueprint)
-    assert [candidate.sample.relative_path for candidate in viable] == ["strong.pkt"]
+    assert [candidate.sample.relative_path for candidate in viable][0] == "strong.pkt"
+    assert len(viable) == len(candidates)
     assert any(
         "sample lacks donor-backed support for requested wireless client association" in reason
         for item in diagnostics
@@ -1275,7 +1278,8 @@ def test_filter_candidates_for_blueprint_filters_wireless_mutation_gap() -> None
     ]
     blueprint = {"capabilities": ["wireless_mutation"], "links": []}
     viable, diagnostics = _filter_candidates_for_blueprint(candidates, blueprint)
-    assert [candidate.sample.relative_path for candidate in viable] == ["strong_wireless_mutation.pkt"]
+    assert [candidate.sample.relative_path for candidate in viable][0] == "strong_wireless_mutation.pkt"
+    assert len(viable) == len(candidates)
     assert any(
         "sample lacks donor-backed support for requested wireless mutation" in reason
         for item in diagnostics
@@ -1319,7 +1323,8 @@ def test_filter_candidates_for_blueprint_filters_end_device_mutation_gap() -> No
     ]
     blueprint = {"capabilities": ["end_device_mutation"], "links": []}
     viable, diagnostics = _filter_candidates_for_blueprint(candidates, blueprint)
-    assert [candidate.sample.relative_path for candidate in viable] == ["strong_end_devices.pkt"]
+    assert [candidate.sample.relative_path for candidate in viable][0] == "strong_end_devices.pkt"
+    assert len(viable) == len(candidates)
     assert any(
         "sample lacks donor-backed support for requested end-device mutation" in reason
         for item in diagnostics
@@ -1388,7 +1393,8 @@ def test_filter_candidates_for_blueprint_filters_archetype_mismatch_with_weak_la
         ],
     }
     viable, diagnostics = _filter_candidates_for_blueprint(candidates, blueprint)
-    assert [candidate.sample.relative_path for candidate in viable] == ["strong-archetype.pkt"]
+    assert [candidate.sample.relative_path for candidate in viable][0] == "strong-archetype.pkt"
+    assert len(viable) == len(candidates)
     assert any(
         "sample archetype does not align with the requested donor shape" in reason
         for item in diagnostics
@@ -1407,7 +1413,7 @@ def test_summarize_candidate_pool_reports_counts_and_top_reasons() -> None:
         ["campus/core", "service-heavy"],
     )
     assert summary["preferred_donor_archetypes"] == ["campus/core", "service-heavy"]
-    assert summary["candidate_counts"] == {"selected": 1, "rejected": 1, "filtered": 1}
+    assert summary["candidate_counts"] == {"selected": 1, "rejected": 1, "filtered": 1, "deprioritized": 0}
     assert summary["best_adjusted_total_score"] == 20
     assert summary["best_layout_reuse_score"] == 21
     assert summary["top_rejection_reasons"] == ["reason-a", "reason-b", "reason-c"]
@@ -2055,6 +2061,11 @@ def test_parity_report_writes_prompt_scoped_parity_payload(tmp_path: Path, monke
     assert payload["critical_parity_donor_backed_ready_count"] == 0
     assert len(payload["critical_capability_parity"]) == 2
     assert len(payload["critical_parity_mismatches"]) == 1
+    assert payload["user_summary"]["status"] in {"has_generate_ready_capability", "recognized_but_not_generate_ready"}
+    assert payload["user_summary"]["next_best_action"]
+    assert payload["next_best_action"] == payload["user_summary"]["next_best_action"]
+    assert payload["support_level_explanation"] == payload["user_summary"]["message"]
+    assert isinstance(payload["proof_card_refs"], list)
     assert out_path.exists()
 
 

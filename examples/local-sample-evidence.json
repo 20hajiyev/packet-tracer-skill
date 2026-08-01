@@ -1,0 +1,24 @@
+{
+  "schema_version": "examples.truth.v2",
+  "source": "examples/local-sample-evidence.json",
+  "available": true,
+  "policy": "Local user-supplied samples are evidence inputs only, not curated donor truth or npm package content.",
+  "audit_source": "output/local-sample-audit.json",
+  "total_files": 367,
+  "decode_success_count": 366,
+  "decode_fail_count": 1,
+  "top_capabilities": [
+    {"capability": "stp", "sample_count": 348, "examples": ["09. 2Switches_3Routers_Rime_New.pkt", "1-Securing Network Devices and Establish a SSH Session.pkt", "10-IPv4 Static and Default Routes.pkt"]},
+    {"capability": "static_route", "sample_count": 87, "examples": ["09. 2Switches_3Routers_Rime_New.pkt", "10-IPv4 Static and Default Routes.pkt", "13.3.2 lab.pkt"]},
+    {"capability": "ripv2", "sample_count": 61, "examples": ["10routerEGIRP.pkt", "10RouterRIP.pkt", "13.3.2 lab.pkt"]},
+    {"capability": "default_route", "sample_count": 56, "examples": ["10-IPv4 Static and Default Routes.pkt", "13.3.2 lab.pkt", "23i2110.pkt"]},
+    {"capability": "ospfv2", "sample_count": 50, "examples": ["11-Single-Area OSPFv2.pkt", "13routerOSPF.pkt", "2020-06-18 OSPF.pkt"]},
+    {"capability": "dhcp_pool", "sample_count": 48, "examples": ["10PORTDHCP.pkt", "20211220 VoIP, PortSec, DHCP - finished.pkt", "6-DHCPv4.pkt"]},
+    {"capability": "acl", "sample_count": 40, "examples": ["13.3.2 lab.pkt", "2020-06-18 OSPF.pkt", "23i2110.pkt"]},
+    {"capability": "ssh_ios", "sample_count": 27, "examples": ["1-Securing Network Devices and Establish a SSH Session.pkt", "16.4.7 lab.pkt", "2020-05-16 AAA NTP For Learnersv3.pkt"]},
+    {"capability": "dhcp_relay", "sample_count": 24, "examples": ["2020-04-19 HSRP OGIT PT Lab.pkt", "2020-05-16 AAA NTP For Learnersv3.pkt", "2020-05-20 Routing  NTP and more WTW.pkt"]},
+    {"capability": "eigrp_ipv4", "sample_count": 22, "examples": ["10routerEGIRP.pkt", "13routerEigrp.pkt", "13routerEigrpFINALIZED.pkt"]},
+    {"capability": "etherchannel", "sample_count": 7, "examples": ["20211124 L2 EtherChannel, HSRP, OSPF - empty.pkt", "20211124 L2 EtherChannel, HSRP, OSPF - finished.pkt", "5-Implement Inter-VLAN Routing and Etherchannel.pkt"]},
+    {"capability": "bgp", "sample_count": 2, "examples": ["Cisco-networking-projects-main\\BGP\\BGP_3_Router\\BGP_3_ROUTERS.pkt", "Cisco-networking-projects-main\\BGP\\BGP_Class_C\\BGP_Class_C.pkt"]}
+  ]
+}

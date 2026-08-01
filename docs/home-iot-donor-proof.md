@@ -25,15 +25,15 @@ Observed Home IoT proof facts:
   - IoT rule enable/disable state
   - donor-backed wireless association
 
-## Donor-Backed Generate Interpretation
+## Donor-Backed Readiness Interpretation
 
 The current product contract for Home IoT is intentionally narrow:
 
-- `iot_registration`, `iot_control`, and `wireless_client_association` are only considered generate-ready when a selected donor exists
+- `iot_registration`, `iot_control`, and `wireless_client_association` are only considered donor-backed ready when a selected donor exists
 - the selected donor must match `IoT/home gateway` or a compatible `wireless-heavy` shape
 - the prompt must name deterministic targets such as the thing, gateway/server, client, AP/router, and SSID
 
-This is why the public wording uses `donor-backed constrained-generate` rather than broad `smart home generate-ready`.
+This is why the public wording uses `donor-backed constrained edit/readiness` rather than broad smart-home generation.
 
 ## What This Proves
 
@@ -45,7 +45,7 @@ This is why the public wording uses `donor-backed constrained-generate` rather t
 ## What This Does Not Prove
 
 - it does not prove free-form smart-home topology generation is solved
-- it does not prove every prompt mentioning IoT registration is generate-ready
+- it does not prove every prompt mentioning IoT registration is donor-backed ready or generation ready
 - it does not remove the need for a selected donor and deterministic target resolution
 - it does not promote WAN/security features ahead of the next wave
 

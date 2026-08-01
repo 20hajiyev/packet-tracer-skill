@@ -1,6 +1,14 @@
 {
-  "curated_examples": [
+  "schema_version": "examples.truth.v2",
+  "release_line": "0.2.4 candidate proof surface",
+  "support_truth": {
+    "generate_ready": 0,
+    "policy": "Example artifacts can be known-working, edit-proven, or donor-backed-ready without making broad generation ready."
+  },
+  "showcase_examples": [
     {
+      "schema_version": "examples.truth.v2",
+      "artifact_type": "showcase_example",
       "name": "complex_campus_master_edit_v4",
       "title": "Complex Campus",
       "scenario_family": "campus",
@@ -29,9 +37,21 @@
       "donor_origin": "donor-backed",
       "fixture_name": "campus_core_complex",
       "matrix_excerpt": "campus_core_complex | known_working_example | family=campus",
-      "parity_excerpt": "management_vlan=generate-ready, telnet=generate-ready, acl=generate-ready",
+      "parity_excerpt": "management_vlan=known_working_example, telnet=known_working_example, acl=known_working_example",
       "decision_excerpt": "decision=known_working_example | donor_origin=donor-backed",
       "runtime_excerpt": "runtime=donor-backed example artifact",
+      "artifact_policy": {
+        "commit_pkt_binary": false,
+        "commit_inventory_json": true,
+        "commit_screenshots": true,
+        "raw_source_public": false
+      },
+      "maturity_summary": {
+        "atlas_status": "known_working_example",
+        "example_status": "known_working_example",
+        "donor_backed_ready": true,
+        "generate_ready": false
+      },
       "inventory_json": "examples/complex_campus_master_edit_v4.inventory.json",
       "screenshots": [
         "examples/screenshots/complex_campus_master_edit_v4.png"
@@ -43,6 +63,8 @@
       "image": "examples/screenshots/complex_campus_master_edit_v4.png"
     },
     {
+      "schema_version": "examples.truth.v2",
+      "artifact_type": "showcase_example",
       "name": "home_iot_cli_edit_v1",
       "title": "Home IoT",
       "scenario_family": "home_iot",
@@ -59,13 +81,25 @@
       ],
       "acceptance_rank": 3,
       "acceptance_label": "known_working_example",
-      "acceptance_excerpt": "known_working_example | donor=donor-backed | capabilities=iot, iot_registration, wireless_ap | mode=donor-backed constrained-generate",
+      "acceptance_excerpt": "known_working_example | donor=donor-backed | capabilities=iot, iot_registration, wireless_ap | mode=donor-backed constrained edit",
       "donor_origin": "donor-backed",
       "fixture_name": "home_iot_complex",
       "matrix_excerpt": "home_iot_complex | known_working_example | family=home_iot",
-      "parity_excerpt": "iot=generate-ready, iot_registration=donor-backed constrained-generate, wireless_ap=generate-ready",
+      "parity_excerpt": "iot=known_working_example, iot_registration=donor_backed_ready, wireless_ap=known_working_example",
       "decision_excerpt": "decision=known_working_example | donor_origin=donor-backed",
       "runtime_excerpt": "runtime=donor-backed example artifact",
+      "artifact_policy": {
+        "commit_pkt_binary": false,
+        "commit_inventory_json": true,
+        "commit_screenshots": true,
+        "raw_source_public": false
+      },
+      "maturity_summary": {
+        "atlas_status": "donor_backed_ready",
+        "example_status": "known_working_example",
+        "donor_backed_ready": true,
+        "generate_ready": false
+      },
       "inventory_json": "examples/home_iot_cli_edit_v1.inventory.json",
       "screenshots": [
         "examples/screenshots/home_iot_cli_edit_v1.png"
@@ -77,6 +111,8 @@
       "image": "examples/screenshots/home_iot_cli_edit_v1.png"
     },
     {
+      "schema_version": "examples.truth.v2",
+      "artifact_type": "showcase_example",
       "name": "service_heavy_cli_edit_v1",
       "title": "Service Heavy",
       "scenario_family": "service_heavy",
@@ -103,9 +139,901 @@
       "donor_origin": "donor-backed",
       "fixture_name": "service_heavy_complex",
       "matrix_excerpt": "service_heavy_complex | known_working_example | family=service_heavy",
-      "parity_excerpt": "server_dns=generate-ready, server_dhcp=generate-ready, server_ftp=generate-ready",
+      "parity_excerpt": "server_dns=known_working_example, server_dhcp=known_working_example, server_ftp=known_working_example",
       "decision_excerpt": "decision=known_working_example | donor_origin=donor-backed",
       "runtime_excerpt": "runtime=donor-backed example artifact",
+      "artifact_policy": {
+        "commit_pkt_binary": false,
+        "commit_inventory_json": true,
+        "commit_screenshots": true,
+        "raw_source_public": false
+      },
+      "maturity_summary": {
+        "atlas_status": "known_working_example",
+        "example_status": "known_working_example",
+        "donor_backed_ready": true,
+        "generate_ready": false
+      },
+      "inventory_json": "examples/service_heavy_cli_edit_v1.inventory.json",
+      "screenshots": [
+        "examples/screenshots/service_heavy_cli_edit_v1.png",
+        "examples/screenshots/service_heavy_cli_edit_v1_dhcp.png",
+        "examples/screenshots/service_heavy_cli_edit_v1_dns.png",
+        "examples/screenshots/service_heavy_cli_edit_v1_ftp.png"
+      ],
+      "screenshot_count": 4,
+      "screenshot": "examples/screenshots/service_heavy_cli_edit_v1.png",
+      "detail_images": [
+        "examples/screenshots/service_heavy_cli_edit_v1_dhcp.png",
+        "examples/screenshots/service_heavy_cli_edit_v1_dns.png",
+        "examples/screenshots/service_heavy_cli_edit_v1_ftp.png"
+      ],
+      "preview": "examples/previews/service_heavy_cli_edit_v1.svg",
+      "image": "examples/screenshots/service_heavy_cli_edit_v1.png"
+    }
+  ],
+  "proof_cards": [
+    {
+      "schema_version": "examples.truth.v2",
+      "artifact_type": "proof_card",
+      "name": "ipv4_routing_management_edit_proof",
+      "title": "IPv4 Routing / NAT / IOS Management",
+      "scenario_family": "ipv4_routing_management",
+      "support_level": "edit_proven",
+      "capabilities": [
+        "ospfv2",
+        "eigrp_ipv4",
+        "ripv2",
+        "static_route",
+        "default_route",
+        "dhcp_relay",
+        "nat_static",
+        "nat_dynamic",
+        "pat",
+        "ssh_ios",
+        "ntp_ios",
+        "syslog_ios"
+      ],
+      "explicit_command": "set R1 ospfv2 1 network 10.0.0.0 wildcard 0.0.0.255 area 0",
+      "try_command": "set R1 ospfv2 1 network 10.0.0.0 wildcard 0.0.0.255 area 0",
+      "proof_doc": "docs/ipv4-routing-management-proof.md",
+      "parity_excerpt": "explicit IPv4 routing/NAT/IOS-management commands are edit_proven; generate_ready=false",
+      "refusal_boundary": "No topology synthesis, route convergence proof, ACL object inference, or broad NAT design generation.",
+      "does_not_claim": "No topology synthesis, route convergence proof, ACL object inference, or broad NAT design generation.",
+      "maturity_summary": {
+        "atlas_status": "edit_proven",
+        "example_status": "proof_card",
+        "donor_backed_ready": false,
+        "generate_ready": false
+      },
+      "artifact_policy": {
+        "commit_pkt_binary": false,
+        "commit_inventory_json": false,
+        "commit_screenshots": false,
+        "raw_source_public": false
+      },
+      "support_level_explanation": "edit_proven is a proof-card support level, not broad topology generation."
+    },
+    {
+      "schema_version": "examples.truth.v2",
+      "artifact_type": "proof_card",
+      "name": "l2_resiliency_bgp_edit_proof",
+      "title": "L2 Resiliency + BGP",
+      "scenario_family": "l2_resiliency_routing",
+      "support_level": "edit_proven",
+      "capabilities": [
+        "bgp",
+        "stp",
+        "rstp",
+        "etherchannel",
+        "lacp",
+        "pagp",
+        "vtp",
+        "dtp"
+      ],
+      "explicit_command": "set SW1 etherchannel 1 mode active interfaces FastEthernet0/1 FastEthernet0/2",
+      "try_command": "set SW1 etherchannel 1 mode active interfaces FastEthernet0/1 FastEthernet0/2",
+      "proof_doc": "docs/l2-resiliency-bgp-proof.md",
+      "parity_excerpt": "explicit BGP/STP/EtherChannel/VTP/DTP IOS commands are edit_proven; generate_ready=false",
+      "refusal_boundary": "No redundant link creation, STP state validation, BGP convergence proof, or topology generation.",
+      "does_not_claim": "No redundant link creation, STP state validation, BGP convergence proof, or topology generation.",
+      "maturity_summary": {
+        "atlas_status": "edit_proven",
+        "example_status": "proof_card",
+        "donor_backed_ready": false,
+        "generate_ready": false
+      },
+      "artifact_policy": {
+        "commit_pkt_binary": false,
+        "commit_inventory_json": false,
+        "commit_screenshots": false,
+        "raw_source_public": false
+      },
+      "support_level_explanation": "edit_proven is a proof-card support level, not broad topology generation."
+    },
+    {
+      "schema_version": "examples.truth.v2",
+      "artifact_type": "proof_card",
+      "name": "l2_security_qos_proof",
+      "title": "L2 Security + QoS",
+      "scenario_family": "l2_security_monitoring",
+      "support_level": "donor_backed_ready",
+      "capabilities": [
+        "dot1x",
+        "qos",
+        "dhcp_snooping",
+        "dai",
+        "snmp",
+        "netflow",
+        "span"
+      ],
+      "explicit_command": "set SW1 dot1x interface FastEthernet0/1 mode auto radius 192.168.1.10 key radius123",
+      "try_command": "set SW1 dot1x interface FastEthernet0/1 mode auto radius 192.168.1.10 key radius123",
+      "proof_doc": "docs/l2-security-qos-proof.md",
+      "parity_excerpt": "dot1x is donor_backed_ready; QoS remains edit_proven; generate_ready=false",
+      "refusal_boundary": "No broad NAC design, RADIUS user synthesis, certificate workflow, or end-to-end QoS policy inference.",
+      "does_not_claim": "No broad NAC design, RADIUS user synthesis, certificate workflow, or end-to-end QoS policy inference.",
+      "maturity_summary": {
+        "atlas_status": "donor_backed_ready",
+        "example_status": "proof_card",
+        "donor_backed_ready": true,
+        "generate_ready": false
+      },
+      "artifact_policy": {
+        "commit_pkt_binary": false,
+        "commit_inventory_json": false,
+        "commit_screenshots": false,
+        "raw_source_public": false
+      },
+      "support_level_explanation": "donor_backed_ready is a proof-card support level, not broad topology generation."
+    },
+    {
+      "schema_version": "examples.truth.v2",
+      "artifact_type": "proof_card",
+      "name": "security_edge_deepening_proof",
+      "title": "Security Edge CBAC/ZFW",
+      "scenario_family": "wan_security_edge",
+      "support_level": "donor_backed_ready",
+      "capabilities": [
+        "cbac",
+        "zfw"
+      ],
+      "explicit_command": "set R1 zfw zone-pair INSIDE_OUT source inside destination outside policy POLICY1",
+      "try_command": "set R1 zfw zone-pair INSIDE_OUT source inside destination outside policy POLICY1",
+      "proof_doc": "docs/security-edge-deepening-proof.md",
+      "parity_excerpt": "ZFW is donor_backed_ready; CBAC remains edit_proven; generate_ready=false",
+      "refusal_boundary": "No ASA GUI/internal mutation, clientless VPN, service-policy synthesis, or broad security topology generation.",
+      "does_not_claim": "No ASA GUI/internal mutation, clientless VPN, service-policy synthesis, or broad security topology generation.",
+      "maturity_summary": {
+        "atlas_status": "donor_backed_ready",
+        "example_status": "proof_card",
+        "donor_backed_ready": true,
+        "generate_ready": false
+      },
+      "artifact_policy": {
+        "commit_pkt_binary": false,
+        "commit_inventory_json": false,
+        "commit_screenshots": false,
+        "raw_source_public": false
+      },
+      "support_level_explanation": "donor_backed_ready is a proof-card support level, not broad topology generation."
+    },
+    {
+      "schema_version": "examples.truth.v2",
+      "artifact_type": "proof_card",
+      "name": "voice_collaboration_proof",
+      "title": "Voice / Collaboration",
+      "scenario_family": "voice_collaboration",
+      "support_level": "donor_backed_ready",
+      "capabilities": [
+        "voip",
+        "ip_phone",
+        "call_manager"
+      ],
+      "explicit_command": "set \"Router0\" telephony service source-address 192.168.10.1 port 2000 max-ephones 4 max-dn 4",
+      "try_command": "set \"Router0\" telephony service source-address 192.168.10.1 port 2000 max-ephones 4 max-dn 4",
+      "proof_doc": "docs/voice-collaboration-proof.md",
+      "parity_excerpt": "IOS telephony-service, ephone, and dial-peer paths are donor_backed_ready; generate_ready=false",
+      "refusal_boundary": "No Call Manager GUI synthesis, Linksys voice mutation, phone GUI internals, or broad VoIP topology generation.",
+      "does_not_claim": "No Call Manager GUI synthesis, Linksys voice mutation, phone GUI internals, or broad VoIP topology generation.",
+      "maturity_summary": {
+        "atlas_status": "donor_backed_ready",
+        "example_status": "proof_card",
+        "donor_backed_ready": true,
+        "generate_ready": false
+      },
+      "artifact_policy": {
+        "commit_pkt_binary": false,
+        "commit_inventory_json": false,
+        "commit_screenshots": false,
+        "raw_source_public": false
+      },
+      "support_level_explanation": "donor_backed_ready is a proof-card support level, not broad topology generation."
+    },
+    {
+      "schema_version": "examples.truth.v2",
+      "artifact_type": "proof_card",
+      "name": "automation_controller_proof",
+      "title": "Automation / Controller Scripts",
+      "scenario_family": "automation_controller",
+      "support_level": "donor_backed_ready",
+      "capabilities": [
+        "python_programming",
+        "javascript_programming",
+        "tcp_udp_app"
+      ],
+      "explicit_command": "set \"Device\" script app \"App Name\" file \"main.py\" content \"print('hello')\"",
+      "try_command": "set \"Device\" script app \"App Name\" file \"main.py\" content \"print('hello')\"",
+      "proof_doc": "docs/automation-controller-proof.md",
+      "parity_excerpt": "existing Python, JavaScript, and TCP/UDP script files are donor_backed_ready; generate_ready=false",
+      "refusal_boundary": "No Network Controller GUI synthesis, Blockly graph mutation, VM/IOx workflow generation, or new app/file creation.",
+      "does_not_claim": "No Network Controller GUI synthesis, Blockly graph mutation, VM/IOx workflow generation, or new app/file creation.",
+      "maturity_summary": {
+        "atlas_status": "donor_backed_ready",
+        "example_status": "proof_card",
+        "donor_backed_ready": true,
+        "generate_ready": false
+      },
+      "artifact_policy": {
+        "commit_pkt_binary": false,
+        "commit_inventory_json": false,
+        "commit_screenshots": false,
+        "raw_source_public": false
+      },
+      "support_level_explanation": "donor_backed_ready is a proof-card support level, not broad topology generation."
+    },
+    {
+      "schema_version": "examples.truth.v2",
+      "artifact_type": "proof_card",
+      "name": "industrial_programming_proof",
+      "title": "Industrial Programming",
+      "scenario_family": "industrial_iot",
+      "support_level": "donor_backed_ready",
+      "capabilities": [
+        "real_http",
+        "real_websocket"
+      ],
+      "explicit_command": "set \"Py: real http server 2\" script app \"Real HTTP Server\" file \"main.py\" content \"print('updated')\"",
+      "try_command": "set \"Py: real http server 2\" script app \"Real HTTP Server\" file \"main.py\" content \"print('updated')\"",
+      "proof_doc": "docs/industrial-programming-proof.md",
+      "parity_excerpt": "Real HTTP and Real WebSocket script-file edits are donor_backed_ready; generate_ready=false",
+      "refusal_boundary": "No MQTT broker generation, Profinet/PTP/L2NAT mutation, CyberObserver workflow, or industrial topology generation.",
+      "does_not_claim": "No MQTT broker generation, Profinet/PTP/L2NAT mutation, CyberObserver workflow, or industrial topology generation.",
+      "maturity_summary": {
+        "atlas_status": "donor_backed_ready",
+        "example_status": "proof_card",
+        "donor_backed_ready": true,
+        "generate_ready": false
+      },
+      "artifact_policy": {
+        "commit_pkt_binary": false,
+        "commit_inventory_json": false,
+        "commit_screenshots": false,
+        "raw_source_public": false
+      },
+      "support_level_explanation": "donor_backed_ready is a proof-card support level, not broad topology generation."
+    }
+  ],
+  "local_sample_evidence": {
+    "schema_version": "examples.truth.v2",
+    "source": "examples/local-sample-evidence.json",
+    "available": true,
+    "policy": "Local user-supplied samples are evidence inputs only, not curated donor truth or npm package content.",
+    "audit_source": "output/local-sample-audit.json",
+    "total_files": 367,
+    "decode_success_count": 366,
+    "decode_fail_count": 1,
+    "top_capabilities": [
+      {
+        "capability": "stp",
+        "sample_count": 348,
+        "examples": [
+          "09. 2Switches_3Routers_Rime_New.pkt",
+          "1-Securing Network Devices and Establish a SSH Session.pkt",
+          "10-IPv4 Static and Default Routes.pkt"
+        ]
+      },
+      {
+        "capability": "static_route",
+        "sample_count": 87,
+        "examples": [
+          "09. 2Switches_3Routers_Rime_New.pkt",
+          "10-IPv4 Static and Default Routes.pkt",
+          "13.3.2 lab.pkt"
+        ]
+      },
+      {
+        "capability": "ripv2",
+        "sample_count": 61,
+        "examples": [
+          "10routerEGIRP.pkt",
+          "10RouterRIP.pkt",
+          "13.3.2 lab.pkt"
+        ]
+      },
+      {
+        "capability": "default_route",
+        "sample_count": 56,
+        "examples": [
+          "10-IPv4 Static and Default Routes.pkt",
+          "13.3.2 lab.pkt",
+          "23i2110.pkt"
+        ]
+      },
+      {
+        "capability": "ospfv2",
+        "sample_count": 50,
+        "examples": [
+          "11-Single-Area OSPFv2.pkt",
+          "13routerOSPF.pkt",
+          "2020-06-18 OSPF.pkt"
+        ]
+      },
+      {
+        "capability": "dhcp_pool",
+        "sample_count": 48,
+        "examples": [
+          "10PORTDHCP.pkt",
+          "20211220 VoIP, PortSec, DHCP - finished.pkt",
+          "6-DHCPv4.pkt"
+        ]
+      },
+      {
+        "capability": "acl",
+        "sample_count": 40,
+        "examples": [
+          "13.3.2 lab.pkt",
+          "2020-06-18 OSPF.pkt",
+          "23i2110.pkt"
+        ]
+      },
+      {
+        "capability": "ssh_ios",
+        "sample_count": 27,
+        "examples": [
+          "1-Securing Network Devices and Establish a SSH Session.pkt",
+          "16.4.7 lab.pkt",
+          "2020-05-16 AAA NTP For Learnersv3.pkt"
+        ]
+      },
+      {
+        "capability": "dhcp_relay",
+        "sample_count": 24,
+        "examples": [
+          "2020-04-19 HSRP OGIT PT Lab.pkt",
+          "2020-05-16 AAA NTP For Learnersv3.pkt",
+          "2020-05-20 Routing  NTP and more WTW.pkt"
+        ]
+      },
+      {
+        "capability": "eigrp_ipv4",
+        "sample_count": 22,
+        "examples": [
+          "10routerEGIRP.pkt",
+          "13routerEigrp.pkt",
+          "13routerEigrpFINALIZED.pkt"
+        ]
+      },
+      {
+        "capability": "etherchannel",
+        "sample_count": 7,
+        "examples": [
+          "20211124 L2 EtherChannel, HSRP, OSPF - empty.pkt",
+          "20211124 L2 EtherChannel, HSRP, OSPF - finished.pkt",
+          "5-Implement Inter-VLAN Routing and Etherchannel.pkt"
+        ]
+      },
+      {
+        "capability": "bgp",
+        "sample_count": 2,
+        "examples": [
+          "Cisco-networking-projects-main\\BGP\\BGP_3_Router\\BGP_3_ROUTERS.pkt",
+          "Cisco-networking-projects-main\\BGP\\BGP_Class_C\\BGP_Class_C.pkt"
+        ]
+      }
+    ]
+  },
+  "proof_readiness_candidates": {
+    "schema_version": "proof_readiness.v1",
+    "available": true,
+    "release_line": "0.2.4 candidate",
+    "dashboard_doc": "docs/proof-readiness-dashboard.md",
+    "policy": "Promotion candidates are planning truth only. A capability can move to donor_backed_ready only after explicit command shape, sample evidence, decode evidence, editor roundtrip, deterministic target resolution, and clean refusal behavior all exist.",
+    "generate_ready": 0,
+    "primary_candidates": [
+      {
+        "capability": "ospfv2",
+        "scenario_family": "ipv4_routing_management",
+        "current_status": "edit_proven",
+        "local_sample_count": 50,
+        "proof_doc": "docs/ipv4-routing-management-proof.md",
+        "next_safe_action": "Add proof-linked selected-donor readiness for explicit OSPFv2 IOS network commands.",
+        "promotion_blocker": "blocked_by_no_deterministic_target",
+        "explicit_command": "set R1 ospfv2 1 network 10.0.0.0 wildcard 0.0.0.255 area 0",
+        "required_evidence": [
+          "explicit_command_shape",
+          "parser_family_regression",
+          "decode_backed_sample_evidence",
+          "editor_roundtrip_test",
+          "deterministic_target_resolution",
+          "clean_ambiguity_refusal"
+        ],
+        "test_target": "tests/test_pkt_editor.py::requires_twofish explicit IOS roundtrip path",
+        "strict_gate": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q"
+      },
+      {
+        "capability": "eigrp_ipv4",
+        "scenario_family": "ipv4_routing_management",
+        "current_status": "edit_proven",
+        "local_sample_count": 22,
+        "proof_doc": "docs/ipv4-routing-management-proof.md",
+        "next_safe_action": "Add proof-linked readiness for explicit EIGRP IPv4 network commands with router target validation.",
+        "promotion_blocker": "blocked_by_no_deterministic_target",
+        "explicit_command": "set R1 eigrp ipv4 100 network 10.0.0.0 wildcard 0.0.0.255 no-auto-summary",
+        "required_evidence": [
+          "explicit_command_shape",
+          "parser_family_regression",
+          "decode_backed_sample_evidence",
+          "editor_roundtrip_test",
+          "deterministic_target_resolution",
+          "clean_ambiguity_refusal"
+        ],
+        "test_target": "tests/test_pkt_editor.py::requires_twofish explicit IOS roundtrip path",
+        "strict_gate": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q"
+      },
+      {
+        "capability": "ripv2",
+        "scenario_family": "ipv4_routing_management",
+        "current_status": "edit_proven",
+        "local_sample_count": 61,
+        "proof_doc": "docs/ipv4-routing-management-proof.md",
+        "next_safe_action": "Promote explicit RIPv2 IOS commands after selected donor and interface scope are locked.",
+        "promotion_blocker": "blocked_by_no_deterministic_target",
+        "explicit_command": "set R1 rip version 2 network 10.0.0.0 no-auto-summary",
+        "required_evidence": [
+          "explicit_command_shape",
+          "parser_family_regression",
+          "decode_backed_sample_evidence",
+          "editor_roundtrip_test",
+          "deterministic_target_resolution",
+          "clean_ambiguity_refusal"
+        ],
+        "test_target": "tests/test_pkt_editor.py::requires_twofish explicit IOS roundtrip path",
+        "strict_gate": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q"
+      },
+      {
+        "capability": "static_route",
+        "scenario_family": "ipv4_routing_management",
+        "current_status": "edit_proven",
+        "local_sample_count": 87,
+        "proof_doc": "docs/ipv4-routing-management-proof.md",
+        "next_safe_action": "Promote explicit static/default route commands where gateway and router target are deterministic.",
+        "promotion_blocker": "blocked_by_no_deterministic_target",
+        "explicit_command": "set R1 static-route 192.168.10.0/24 via 10.0.0.1",
+        "required_evidence": [
+          "explicit_command_shape",
+          "parser_family_regression",
+          "decode_backed_sample_evidence",
+          "editor_roundtrip_test",
+          "deterministic_target_resolution",
+          "clean_ambiguity_refusal"
+        ],
+        "test_target": "tests/test_pkt_editor.py::requires_twofish explicit IOS roundtrip path",
+        "strict_gate": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q"
+      },
+      {
+        "capability": "default_route",
+        "scenario_family": "ipv4_routing_management",
+        "current_status": "edit_proven",
+        "local_sample_count": 56,
+        "proof_doc": "docs/ipv4-routing-management-proof.md",
+        "next_safe_action": "Use the same selected-donor proof path as static_route, but keep broad routing design blocked.",
+        "promotion_blocker": "blocked_by_no_deterministic_target",
+        "explicit_command": "set R1 static-route 0.0.0.0/0 via 10.0.0.1",
+        "required_evidence": [
+          "explicit_command_shape",
+          "parser_family_regression",
+          "decode_backed_sample_evidence",
+          "editor_roundtrip_test",
+          "deterministic_target_resolution",
+          "clean_ambiguity_refusal"
+        ],
+        "test_target": "tests/test_pkt_editor.py::requires_twofish explicit IOS roundtrip path",
+        "strict_gate": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q"
+      },
+      {
+        "capability": "dhcp_relay",
+        "scenario_family": "ipv4_routing_management",
+        "current_status": "edit_proven",
+        "local_sample_count": 24,
+        "proof_doc": "docs/ipv4-routing-management-proof.md",
+        "next_safe_action": "Promote explicit helper-address edits only when interface and relay server are named or uniquely resolved.",
+        "promotion_blocker": "blocked_by_no_deterministic_target",
+        "explicit_command": "set R1 dhcp-relay interface GigabitEthernet0/0 helper 192.168.1.10",
+        "required_evidence": [
+          "explicit_command_shape",
+          "parser_family_regression",
+          "decode_backed_sample_evidence",
+          "editor_roundtrip_test",
+          "deterministic_target_resolution",
+          "clean_ambiguity_refusal"
+        ],
+        "test_target": "tests/test_pkt_editor.py::requires_twofish explicit IOS roundtrip path",
+        "strict_gate": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q"
+      },
+      {
+        "capability": "ssh_ios",
+        "scenario_family": "ipv4_routing_management",
+        "current_status": "edit_proven",
+        "local_sample_count": 27,
+        "proof_doc": "docs/ipv4-routing-management-proof.md",
+        "next_safe_action": "Promote explicit IOS SSH setup when router target, domain, username, and modulus are deterministic.",
+        "promotion_blocker": "blocked_by_no_deterministic_target",
+        "explicit_command": "set R1 ssh domain lab.local username admin password cisco123 modulus 1024",
+        "required_evidence": [
+          "explicit_command_shape",
+          "parser_family_regression",
+          "decode_backed_sample_evidence",
+          "editor_roundtrip_test",
+          "deterministic_target_resolution",
+          "clean_ambiguity_refusal"
+        ],
+        "test_target": "tests/test_pkt_editor.py::requires_twofish explicit IOS roundtrip path",
+        "strict_gate": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q"
+      },
+      {
+        "capability": "ntp_ios",
+        "scenario_family": "ipv4_routing_management",
+        "current_status": "edit_proven",
+        "local_sample_count": 9,
+        "proof_doc": "docs/ipv4-routing-management-proof.md",
+        "next_safe_action": "Promote explicit NTP server edits after selected-donor proof confirms config persistence.",
+        "promotion_blocker": "blocked_by_no_deterministic_target",
+        "explicit_command": "set R1 ntp server 192.168.1.20",
+        "required_evidence": [
+          "explicit_command_shape",
+          "parser_family_regression",
+          "decode_backed_sample_evidence",
+          "editor_roundtrip_test",
+          "deterministic_target_resolution",
+          "clean_ambiguity_refusal"
+        ],
+        "test_target": "tests/test_pkt_editor.py::requires_twofish explicit IOS roundtrip path",
+        "strict_gate": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q"
+      },
+      {
+        "capability": "syslog_ios",
+        "scenario_family": "ipv4_routing_management",
+        "current_status": "edit_proven",
+        "local_sample_count": 0,
+        "proof_doc": "docs/ipv4-routing-management-proof.md",
+        "next_safe_action": "Keep edit-proven until local decode-backed sample evidence exists for logging host lines.",
+        "promotion_blocker": "blocked_by_missing_decode_evidence",
+        "explicit_command": "set R1 syslog server 192.168.1.30",
+        "required_evidence": [
+          "explicit_command_shape",
+          "parser_family_regression",
+          "decode_backed_sample_evidence",
+          "editor_roundtrip_test",
+          "deterministic_target_resolution",
+          "clean_ambiguity_refusal"
+        ],
+        "test_target": "tests/test_pkt_editor.py::requires_twofish explicit IOS roundtrip path",
+        "strict_gate": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q"
+      }
+    ],
+    "secondary_candidates": [
+      {
+        "capability": "stp",
+        "scenario_family": "l2_resiliency_routing",
+        "current_status": "edit_proven",
+        "local_sample_count": 348,
+        "proof_doc": "docs/l2-resiliency-bgp-proof.md",
+        "next_safe_action": "Promote explicit STP mode/root commands after switch target and VLAN scope are deterministic.",
+        "promotion_blocker": "blocked_by_no_deterministic_target",
+        "explicit_command": "set SW1 stp mode rapid-pvst vlan 10 root primary",
+        "required_evidence": [
+          "explicit_command_shape",
+          "parser_family_regression",
+          "decode_backed_sample_evidence",
+          "editor_roundtrip_test",
+          "deterministic_target_resolution",
+          "clean_ambiguity_refusal"
+        ],
+        "test_target": "tests/test_pkt_editor.py::requires_twofish explicit IOS roundtrip path",
+        "strict_gate": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q"
+      },
+      {
+        "capability": "rstp",
+        "scenario_family": "l2_resiliency_routing",
+        "current_status": "edit_proven",
+        "local_sample_count": 348,
+        "proof_doc": "docs/l2-resiliency-bgp-proof.md",
+        "next_safe_action": "Use STP selected-donor proof path for rapid-pvst command shape.",
+        "promotion_blocker": "blocked_by_no_deterministic_target",
+        "explicit_command": "set SW1 stp mode rapid-pvst vlan 10 root primary",
+        "required_evidence": [
+          "explicit_command_shape",
+          "parser_family_regression",
+          "decode_backed_sample_evidence",
+          "editor_roundtrip_test",
+          "deterministic_target_resolution",
+          "clean_ambiguity_refusal"
+        ],
+        "test_target": "tests/test_pkt_editor.py::requires_twofish explicit IOS roundtrip path",
+        "strict_gate": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q"
+      },
+      {
+        "capability": "etherchannel",
+        "scenario_family": "l2_resiliency_routing",
+        "current_status": "edit_proven",
+        "local_sample_count": 7,
+        "proof_doc": "docs/l2-resiliency-bgp-proof.md",
+        "next_safe_action": "Promote explicit channel-group edits only when every interface target is named and unique.",
+        "promotion_blocker": "blocked_by_no_deterministic_target",
+        "explicit_command": "set SW1 etherchannel 1 mode active interfaces FastEthernet0/1 FastEthernet0/2",
+        "required_evidence": [
+          "explicit_command_shape",
+          "parser_family_regression",
+          "decode_backed_sample_evidence",
+          "editor_roundtrip_test",
+          "deterministic_target_resolution",
+          "clean_ambiguity_refusal"
+        ],
+        "test_target": "tests/test_pkt_editor.py::requires_twofish explicit IOS roundtrip path",
+        "strict_gate": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q"
+      },
+      {
+        "capability": "lacp",
+        "scenario_family": "l2_resiliency_routing",
+        "current_status": "edit_proven",
+        "local_sample_count": 7,
+        "proof_doc": "docs/l2-resiliency-bgp-proof.md",
+        "next_safe_action": "Promote active/passive LACP modes through the EtherChannel proof gate.",
+        "promotion_blocker": "blocked_by_no_deterministic_target",
+        "explicit_command": "set SW1 etherchannel 1 mode active interfaces FastEthernet0/1 FastEthernet0/2",
+        "required_evidence": [
+          "explicit_command_shape",
+          "parser_family_regression",
+          "decode_backed_sample_evidence",
+          "editor_roundtrip_test",
+          "deterministic_target_resolution",
+          "clean_ambiguity_refusal"
+        ],
+        "test_target": "tests/test_pkt_editor.py::requires_twofish explicit IOS roundtrip path",
+        "strict_gate": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q"
+      },
+      {
+        "capability": "pagp",
+        "scenario_family": "l2_resiliency_routing",
+        "current_status": "edit_proven",
+        "local_sample_count": 7,
+        "proof_doc": "docs/l2-resiliency-bgp-proof.md",
+        "next_safe_action": "Promote desirable/auto PAgP modes only after selected-donor interface validation.",
+        "promotion_blocker": "blocked_by_no_deterministic_target",
+        "explicit_command": "set SW1 etherchannel 1 mode desirable interfaces FastEthernet0/1 FastEthernet0/2",
+        "required_evidence": [
+          "explicit_command_shape",
+          "parser_family_regression",
+          "decode_backed_sample_evidence",
+          "editor_roundtrip_test",
+          "deterministic_target_resolution",
+          "clean_ambiguity_refusal"
+        ],
+        "test_target": "tests/test_pkt_editor.py::requires_twofish explicit IOS roundtrip path",
+        "strict_gate": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q"
+      },
+      {
+        "capability": "vtp",
+        "scenario_family": "l2_resiliency_routing",
+        "current_status": "edit_proven",
+        "local_sample_count": 5,
+        "proof_doc": "docs/l2-resiliency-bgp-proof.md",
+        "next_safe_action": "Promote explicit VTP domain/mode/version edits when switch target is deterministic.",
+        "promotion_blocker": "blocked_by_no_deterministic_target",
+        "explicit_command": "set SW1 vtp domain CAMPUS mode server version 2",
+        "required_evidence": [
+          "explicit_command_shape",
+          "parser_family_regression",
+          "decode_backed_sample_evidence",
+          "editor_roundtrip_test",
+          "deterministic_target_resolution",
+          "clean_ambiguity_refusal"
+        ],
+        "test_target": "tests/test_pkt_editor.py::requires_twofish explicit IOS roundtrip path",
+        "strict_gate": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q"
+      },
+      {
+        "capability": "dtp",
+        "scenario_family": "l2_resiliency_routing",
+        "current_status": "edit_proven",
+        "local_sample_count": 0,
+        "proof_doc": "docs/l2-resiliency-bgp-proof.md",
+        "next_safe_action": "Keep edit-proven until local decode-backed DTP sample evidence is found.",
+        "promotion_blocker": "blocked_by_missing_decode_evidence",
+        "explicit_command": "set SW1 dtp interface FastEthernet0/1 mode dynamic desirable",
+        "required_evidence": [
+          "explicit_command_shape",
+          "parser_family_regression",
+          "decode_backed_sample_evidence",
+          "editor_roundtrip_test",
+          "deterministic_target_resolution",
+          "clean_ambiguity_refusal"
+        ],
+        "test_target": "tests/test_pkt_editor.py::requires_twofish explicit IOS roundtrip path",
+        "strict_gate": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q"
+      },
+      {
+        "capability": "bgp",
+        "scenario_family": "l2_resiliency_routing",
+        "current_status": "edit_proven",
+        "local_sample_count": 2,
+        "proof_doc": "docs/l2-resiliency-bgp-proof.md",
+        "next_safe_action": "Promote explicit BGP neighbor/network edits only after ASN, neighbor, and network target validation are proof-linked.",
+        "promotion_blocker": "blocked_by_no_deterministic_target",
+        "explicit_command": "set R1 bgp 65001 neighbor 10.0.0.2 remote-as 65002 network 192.168.1.0 mask 255.255.255.0",
+        "required_evidence": [
+          "explicit_command_shape",
+          "parser_family_regression",
+          "decode_backed_sample_evidence",
+          "editor_roundtrip_test",
+          "deterministic_target_resolution",
+          "clean_ambiguity_refusal"
+        ],
+        "test_target": "tests/test_pkt_editor.py::requires_twofish explicit IOS roundtrip path",
+        "strict_gate": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q"
+      }
+    ]
+  },
+  "curated_examples": [
+    {
+      "schema_version": "examples.truth.v2",
+      "artifact_type": "showcase_example",
+      "name": "complex_campus_master_edit_v4",
+      "title": "Complex Campus",
+      "scenario_family": "campus",
+      "summary": "Management VLAN, Telnet, ACL, DNS, email, AAA, and multi-SSID wireless campus edit.",
+      "capabilities": [
+        "management_vlan",
+        "telnet",
+        "acl",
+        "server_dns",
+        "server_email",
+        "server_aaa",
+        "wireless_mutation"
+      ],
+      "primary_capabilities": [
+        "management_vlan",
+        "telnet",
+        "acl",
+        "server_dns",
+        "server_email",
+        "server_aaa",
+        "wireless_mutation"
+      ],
+      "acceptance_rank": 3,
+      "acceptance_label": "known_working_example",
+      "acceptance_excerpt": "known_working_example | donor=donor-backed | capabilities=management_vlan, telnet, acl",
+      "donor_origin": "donor-backed",
+      "fixture_name": "campus_core_complex",
+      "matrix_excerpt": "campus_core_complex | known_working_example | family=campus",
+      "parity_excerpt": "management_vlan=known_working_example, telnet=known_working_example, acl=known_working_example",
+      "decision_excerpt": "decision=known_working_example | donor_origin=donor-backed",
+      "runtime_excerpt": "runtime=donor-backed example artifact",
+      "artifact_policy": {
+        "commit_pkt_binary": false,
+        "commit_inventory_json": true,
+        "commit_screenshots": true,
+        "raw_source_public": false
+      },
+      "maturity_summary": {
+        "atlas_status": "known_working_example",
+        "example_status": "known_working_example",
+        "donor_backed_ready": true,
+        "generate_ready": false
+      },
+      "inventory_json": "examples/complex_campus_master_edit_v4.inventory.json",
+      "screenshots": [
+        "examples/screenshots/complex_campus_master_edit_v4.png"
+      ],
+      "screenshot_count": 1,
+      "screenshot": "examples/screenshots/complex_campus_master_edit_v4.png",
+      "detail_images": [],
+      "preview": "examples/previews/complex_campus_master_edit_v4.svg",
+      "image": "examples/screenshots/complex_campus_master_edit_v4.png"
+    },
+    {
+      "schema_version": "examples.truth.v2",
+      "artifact_type": "showcase_example",
+      "name": "home_iot_cli_edit_v1",
+      "title": "Home IoT",
+      "scenario_family": "home_iot",
+      "summary": "Home gateway and IoT device onboarding with donor-backed registration state and constrained wireless readiness.",
+      "capabilities": [
+        "iot",
+        "iot_registration",
+        "wireless_ap"
+      ],
+      "primary_capabilities": [
+        "iot",
+        "iot_registration",
+        "wireless_ap"
+      ],
+      "acceptance_rank": 3,
+      "acceptance_label": "known_working_example",
+      "acceptance_excerpt": "known_working_example | donor=donor-backed | capabilities=iot, iot_registration, wireless_ap | mode=donor-backed constrained edit",
+      "donor_origin": "donor-backed",
+      "fixture_name": "home_iot_complex",
+      "matrix_excerpt": "home_iot_complex | known_working_example | family=home_iot",
+      "parity_excerpt": "iot=known_working_example, iot_registration=donor_backed_ready, wireless_ap=known_working_example",
+      "decision_excerpt": "decision=known_working_example | donor_origin=donor-backed",
+      "runtime_excerpt": "runtime=donor-backed example artifact",
+      "artifact_policy": {
+        "commit_pkt_binary": false,
+        "commit_inventory_json": true,
+        "commit_screenshots": true,
+        "raw_source_public": false
+      },
+      "maturity_summary": {
+        "atlas_status": "donor_backed_ready",
+        "example_status": "known_working_example",
+        "donor_backed_ready": true,
+        "generate_ready": false
+      },
+      "inventory_json": "examples/home_iot_cli_edit_v1.inventory.json",
+      "screenshots": [
+        "examples/screenshots/home_iot_cli_edit_v1.png"
+      ],
+      "screenshot_count": 1,
+      "screenshot": "examples/screenshots/home_iot_cli_edit_v1.png",
+      "detail_images": [],
+      "preview": "examples/previews/home_iot_cli_edit_v1.svg",
+      "image": "examples/screenshots/home_iot_cli_edit_v1.png"
+    },
+    {
+      "schema_version": "examples.truth.v2",
+      "artifact_type": "showcase_example",
+      "name": "service_heavy_cli_edit_v1",
+      "title": "Service Heavy",
+      "scenario_family": "service_heavy",
+      "summary": "Service-rich server lab with DNS, DHCP, FTP, email, syslog, AAA, and detailed service metadata.",
+      "capabilities": [
+        "server_dns",
+        "server_dhcp",
+        "server_ftp",
+        "server_email",
+        "server_syslog",
+        "server_aaa"
+      ],
+      "primary_capabilities": [
+        "server_dns",
+        "server_dhcp",
+        "server_ftp",
+        "server_email",
+        "server_syslog",
+        "server_aaa"
+      ],
+      "acceptance_rank": 3,
+      "acceptance_label": "known_working_example",
+      "acceptance_excerpt": "known_working_example | donor=donor-backed | capabilities=server_dns, server_dhcp, server_ftp",
+      "donor_origin": "donor-backed",
+      "fixture_name": "service_heavy_complex",
+      "matrix_excerpt": "service_heavy_complex | known_working_example | family=service_heavy",
+      "parity_excerpt": "server_dns=known_working_example, server_dhcp=known_working_example, server_ftp=known_working_example",
+      "decision_excerpt": "decision=known_working_example | donor_origin=donor-backed",
+      "runtime_excerpt": "runtime=donor-backed example artifact",
+      "artifact_policy": {
+        "commit_pkt_binary": false,
+        "commit_inventory_json": true,
+        "commit_screenshots": true,
+        "raw_source_public": false
+      },
+      "maturity_summary": {
+        "atlas_status": "known_working_example",
+        "example_status": "known_working_example",
+        "donor_backed_ready": true,
+        "generate_ready": false
+      },
       "inventory_json": "examples/service_heavy_cli_edit_v1.inventory.json",
       "screenshots": [
         "examples/screenshots/service_heavy_cli_edit_v1.png",

@@ -39,24 +39,25 @@ def _packet_tracer_os_name(host_os: str) -> str:
 
 
 def runtime_env_examples(host_os: str) -> list[str]:
+    # PKT_TWOFISH_* is optional: it selects the compiled accelerator. The
+    # vendored pure-Python engine is used automatically when it is absent.
     if host_os == "Windows":
         return [
             r"$env:PACKET_TRACER_ROOT='C:\Program Files\Cisco Packet Tracer 9.0.0'",
             r"$env:PACKET_TRACER_COMPAT_DONOR='C:\path\to\your-working-9.0-donor.pkt'",
-            r'$env:PKT_TWOFISH_LIBRARY="C:\path\to\_twofish.cp314-win_amd64.pyd"',
-            r'$env:PKT_TWOFISH_SEARCH_ROOTS="C:\path\to\bridge-folder"',
+            r'# optional speed-up: $env:PKT_TWOFISH_LIBRARY="C:\path\to\_twofish.cp314-win_amd64.pyd"',
         ]
     if host_os == "macOS":
         return [
             "export PACKET_TRACER_ROOT='/Applications/Cisco Packet Tracer.app/Contents/Resources'",
             "export PACKET_TRACER_COMPAT_DONOR=\"$HOME/path/to/your-working-9.0-donor.pkt\"",
-            "export PKT_TWOFISH_SEARCH_ROOTS=\"$HOME/path/to/bridge-folder:$HOME/pkt-bridges\"",
+            "# optional speed-up: export PKT_TWOFISH_SEARCH_ROOTS=\"$HOME/pkt-bridges\"",
         ]
     if host_os == "Linux":
         return [
             "export PACKET_TRACER_ROOT='/opt/pt/bin'",
             "export PACKET_TRACER_COMPAT_DONOR=\"$HOME/path/to/your-working-9.0-donor.pkt\"",
-            "export PKT_TWOFISH_SEARCH_ROOTS=\"$HOME/path/to/bridge-folder:$HOME/pkt-bridges\"",
+            "# optional speed-up: export PKT_TWOFISH_SEARCH_ROOTS=\"$HOME/pkt-bridges\"",
         ]
     return []
 
@@ -72,7 +73,7 @@ def _best_next_fix(runtime_blockers: list[str], recommended_next_steps: list[str
         "missing_packet_tracer_root": "Fix PACKET_TRACER_ROOT so the doctor can resolve the install layout deterministically.",
         "missing_packet_tracer_executable": "Fix the Packet Tracer install root or executable path before relying on validate_open.",
         "windows_first_runtime": "Do not assume non-Windows strict runtime support without a custom native bridge and explicit Packet Tracer paths.",
-        "using_external_bridge_only": "Move the external bridge into the repo-local vendor path if you need a self-contained runtime claim.",
+        "using_external_bridge_only": "Verify the vendored pure-Python Twofish engine; the external compiled bridge is only an accelerator.",
     }
     for blocker in runtime_blockers:
         if blocker in blocker_map:
@@ -94,7 +95,7 @@ def _why_it_is_blocked(runtime_blockers: list[str], bridge_resolution: str) -> s
         reasons.append("Packet Tracer executable is not resolved")
     if "windows_first_runtime" in runtime_blockers:
         reasons.append("strict bundled validation is still Windows-first")
-    if bridge_resolution == "external_env":
+    if bridge_resolution == "external_env" and "using_external_bridge_only" in runtime_blockers:
         reasons.append("strict runtime currently relies on an external bridge override")
     return "; ".join(reasons) + "."
 
@@ -176,6 +177,7 @@ def collect_runtime_doctor() -> dict[str, object]:
             bridge_resolution = "external_env"
     else:
         bridge_resolution = "missing"
+    twofish_backend = str(twofish.get("twofish_backend") or "")
 
     runtime_supported = host_os == "Windows"
     if runtime_supported:
@@ -237,7 +239,15 @@ def collect_runtime_doctor() -> dict[str, object]:
         runtime_blockers.append("missing_packet_tracer_executable")
     if not runtime_supported:
         runtime_blockers.append("windows_first_runtime")
-    if bridge_resolution == "external_env" and "using_external_bridge_only" not in runtime_blockers:
+    # An externally-resolved compiled bridge is no longer a runtime blocker: it is
+    # an optional accelerator over the vendored pure-Python engine, which is always
+    # repo-local. Only flag it when the pure engine itself could not be verified.
+    if (
+        bridge_resolution == "external_env"
+        and twofish_backend != "pure_python"
+        and str(twofish.get("twofish_load_status")) != "ok"
+        and "using_external_bridge_only" not in runtime_blockers
+    ):
         runtime_blockers.append("using_external_bridge_only")
     if runtime_blockers:
         runtime_grade = "blocked" if len(ready_operations) == 0 else "partially_ready"
@@ -281,20 +291,43 @@ def collect_runtime_doctor() -> dict[str, object]:
     )
     why_it_is_blocked = _why_it_is_blocked(runtime_blockers, bridge_resolution)
     best_next_fix = _best_next_fix(runtime_blockers, recommended_next_steps)
-    bridge_recommendation = (
-        "Use or install a repo-local vendor bridge for fully self-contained runtime readiness."
-        if bridge_resolution == "external_env"
-        else "Provide PKT_TWOFISH_LIBRARY or PKT_TWOFISH_SEARCH_ROOTS to resolve a local bridge."
-        if bridge_resolution == "missing"
-        else "Repo-local bridge is resolved."
-    )
+    if twofish_backend == "pure_python":
+        bridge_recommendation = (
+            "Vendored pure-Python Twofish is in use; no bridge is required. "
+            "A compiled bridge is optional and only speeds up large labs (~12x)."
+        )
+    elif bridge_resolution == "external_env":
+        bridge_recommendation = (
+            "A compiled accelerator is being used from an external path. "
+            "This is optional; the vendored pure-Python engine is the supported baseline."
+        )
+    elif bridge_resolution == "missing":
+        bridge_recommendation = "Provide PKT_TWOFISH_LIBRARY or PKT_TWOFISH_SEARCH_ROOTS to resolve a local bridge."
+    else:
+        bridge_recommendation = "Repo-local bridge is resolved."
     runtime_contract_notes = (
-        "Repo-local bridge and donor are present, so this checkout can run strict decode/edit/generate locally."
+        "The vendored pure-Python Twofish engine is repo-local, so this checkout can run strict "
+        "decode/edit/generate with no binaries and no environment variables."
+        if twofish_backend == "pure_python"
+        else "Repo-local bridge and donor are present, so this checkout can run strict decode/edit/generate locally."
         if bridge_resolution == "repo_local"
         else "Strict decode/edit/generate currently rely on an external bridge path. Repo-local runtime packaging is still incomplete."
         if bridge_resolution == "external_env"
         else "No bridge is resolved. validate_open may still work when Packet Tracer is installed, but strict decode/edit/generate remain blocked."
     )
+    strict_gate_ready = twofish.get("twofish_load_status") == "ok"
+    runtime_gate_status = {
+        "default_gate": "unit/doc surface can pass; requires_twofish tests skip when the bridge is missing",
+        "strict_gate": "requires PKT_REQUIRE_TWOFISH_TESTS=1 plus PKT_TWOFISH_LIBRARY or PKT_TWOFISH_SEARCH_ROOTS",
+        "strict_gate_ready": strict_gate_ready,
+        "strict_gate_command": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q",
+    }
+    user_summary = {
+        "status": runtime_grade,
+        "message": doctor_summary,
+        "next_best_action": best_next_fix,
+        "runtime_gate_status": runtime_gate_status,
+    }
 
     return {
         "host_os": host_os,
@@ -320,6 +353,7 @@ def collect_runtime_doctor() -> dict[str, object]:
         "twofish_search_roots": resolved_search_roots,
         "resolved_twofish_path": resolved_twofish_path,
         "twofish_source": twofish.get("twofish_source", ""),
+        "twofish_backend": twofish.get("twofish_backend", ""),
         "twofish_load_status": twofish.get("twofish_load_status", "unknown"),
         "twofish_message": twofish.get("twofish_message", "unknown"),
         "twofish_sha256": twofish.get("twofish_sha256", ""),
@@ -330,6 +364,8 @@ def collect_runtime_doctor() -> dict[str, object]:
         "target_version": donor.get("target_version", ""),
         "resolved_donor_path": donor.get("resolved_donor_path", ""),
         "donor_version": donor.get("donor_version", ""),
+        "donor_policy": donor.get("donor_policy", ""),
+        "donor_compatibility_tier": donor.get("compatibility_tier", ""),
         "donor_source": donor.get("donor_source", ""),
         "donor_status": donor.get("status", "unknown"),
         "donor_message": donor.get("message", "unknown"),
@@ -343,6 +379,8 @@ def collect_runtime_doctor() -> dict[str, object]:
         "what_is_blocked": what_is_blocked,
         "why_it_is_blocked": why_it_is_blocked,
         "best_next_fix": best_next_fix,
+        "user_summary": user_summary,
+        "runtime_gate_status": runtime_gate_status,
         "doctor_summary": doctor_summary,
         "runtime_grade": runtime_grade,
         "recommended_next_steps": recommended_next_steps,

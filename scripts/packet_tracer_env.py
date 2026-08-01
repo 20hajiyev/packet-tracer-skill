@@ -49,6 +49,92 @@ class CompatibilityDonorDetails:
     status: str
     blocking_reason: str
     candidate_paths: list[tuple[str, Path]]
+    compatibility_tier: str = ""
+
+
+# --- donor version compatibility -------------------------------------------
+#
+# Packet Tracer `<VERSION>` strings look like `major.minor.patch.build`, and the
+# build field is *not* a schema identifier: it changes with every point release
+# and with every re-save. Requiring an exact build match therefore rejects
+# essentially the whole donor corpus. Of the 292 sample saves that ship with
+# Packet Tracer 9.0.0, none carry `9.0.0.0810` — 48 are 9.0.0.x with other
+# builds, and the rest span 5.x through 8.x.
+#
+# Tiers are ordered from strictest to loosest. A policy names the loosest tier
+# that is still acceptable.
+
+COMPATIBILITY_TIERS = ("exact", "same_minor", "same_major", "upgradeable", "incompatible")
+DEFAULT_DONOR_POLICY = "same_minor"
+
+# Packet Tracer reliably upgrades saves from this major version onward on open.
+MINIMUM_UPGRADEABLE_MAJOR = 6
+
+
+def _version_fields(version: str | None) -> tuple[int, ...]:
+    if not version:
+        return ()
+    fields: list[int] = []
+    for part in str(version).split("."):
+        try:
+            fields.append(int(part))
+        except ValueError:
+            break
+    return tuple(fields)
+
+
+def donor_compatibility(donor_version: str | None, target_version: str | None = None) -> str:
+    """Classify a donor `<VERSION>` against the target, as a compatibility tier.
+
+    Returns one of `COMPATIBILITY_TIERS`.
+    """
+    target_version = target_version or get_packet_tracer_target_version()
+    if not donor_version:
+        return "incompatible"
+    if donor_version == target_version:
+        return "exact"
+
+    donor_fields = _version_fields(donor_version)
+    target_fields = _version_fields(target_version)
+    if len(donor_fields) < 2 or len(target_fields) < 2:
+        return "incompatible"
+
+    if donor_fields[:2] == target_fields[:2]:
+        return "same_minor"
+    if donor_fields[0] == target_fields[0]:
+        return "same_major"
+    if MINIMUM_UPGRADEABLE_MAJOR <= donor_fields[0] < target_fields[0]:
+        return "upgradeable"
+    return "incompatible"
+
+
+def get_donor_policy() -> str:
+    """The loosest acceptable compatibility tier, from the environment."""
+    raw = (os.getenv("PACKET_TRACER_DONOR_POLICY") or "").strip().lower()
+    return raw if raw in COMPATIBILITY_TIERS else DEFAULT_DONOR_POLICY
+
+
+def donor_tier_is_accepted(tier: str, policy: str | None = None) -> bool:
+    policy = policy or get_donor_policy()
+    if tier not in COMPATIBILITY_TIERS or policy not in COMPATIBILITY_TIERS:
+        return False
+    if tier == "incompatible":
+        return False
+    return COMPATIBILITY_TIERS.index(tier) <= COMPATIBILITY_TIERS.index(policy)
+
+
+def describe_donor_rejection(donor_version: str, target_version: str, tier: str, policy: str) -> str:
+    if tier == "incompatible":
+        return (
+            f"version {donor_version} is not compatible with target {target_version} "
+            f"(Packet Tracer does not reliably upgrade saves older than "
+            f"{MINIMUM_UPGRADEABLE_MAJOR}.x)"
+        )
+    return (
+        f"version {donor_version} is tier '{tier}' against target {target_version}, "
+        f"but the active donor policy is '{policy}'. "
+        f"Set PACKET_TRACER_DONOR_POLICY={tier} to accept it."
+    )
 
 
 def _existing_path(raw: str | None) -> Path | None:
@@ -307,15 +393,21 @@ def inspect_packet_tracer_compatibility_donor() -> CompatibilityDonorDetails:
                 blocking_reason=f"could not decode donor version: {env_path}",
                 candidate_paths=candidates,
             )
-        if donor_version != target_version:
+        policy = get_donor_policy()
+        tier = donor_compatibility(donor_version, target_version)
+        if not donor_tier_is_accepted(tier, policy):
             return CompatibilityDonorDetails(
                 target_version=target_version,
                 resolved_path=None,
                 donor_version=donor_version,
                 donor_source="env",
                 status="version_mismatch",
-                blocking_reason=f"{env_path} is version {donor_version}; expected {target_version}",
+                blocking_reason=(
+                    f"{env_path}: "
+                    + describe_donor_rejection(donor_version, target_version, tier, policy)
+                ),
                 candidate_paths=candidates,
+                compatibility_tier=tier,
             )
         return CompatibilityDonorDetails(
             target_version=target_version,
@@ -325,10 +417,15 @@ def inspect_packet_tracer_compatibility_donor() -> CompatibilityDonorDetails:
             status="ok",
             blocking_reason="",
             candidate_paths=candidates,
+            compatibility_tier=tier,
         )
 
+    policy = get_donor_policy()
     decode_failures = 0
     wrong_version_count = 0
+    # Prefer the strictest tier available rather than the first candidate that
+    # merely passes policy, so an exact-build donor always beats a same_minor one.
+    best: tuple[int, str, Path, str] | None = None
     for source, candidate in candidates:
         if not candidate.exists() or candidate.suffix.lower() != ".pkt":
             continue
@@ -336,9 +433,18 @@ def inspect_packet_tracer_compatibility_donor() -> CompatibilityDonorDetails:
         if donor_version is None:
             decode_failures += 1
             continue
-        if donor_version != target_version:
+        tier = donor_compatibility(donor_version, target_version)
+        if not donor_tier_is_accepted(tier, policy):
             wrong_version_count += 1
             continue
+        rank = COMPATIBILITY_TIERS.index(tier)
+        if best is None or rank < best[0]:
+            best = (rank, donor_version, candidate, source)
+        if rank == 0:
+            break
+
+    if best is not None:
+        _, donor_version, candidate, source = best
         return CompatibilityDonorDetails(
             target_version=target_version,
             resolved_path=candidate,
@@ -347,16 +453,22 @@ def inspect_packet_tracer_compatibility_donor() -> CompatibilityDonorDetails:
             status="ok",
             blocking_reason="",
             candidate_paths=candidates,
+            compatibility_tier=COMPATIBILITY_TIERS[best[0]],
         )
 
     if candidates:
         if decode_failures == len(candidates):
             reason = (
                 "donor candidates were found, but none could be decoded. "
-                "Check the local Twofish bridge and Python 3.14 runtime."
+                "They may use an unsupported Packet Tracer container variant."
             )
         elif wrong_version_count > 0:
-            reason = f"no Packet Tracer {target_version} donor was found among the discovered local candidates"
+            reason = (
+                f"no donor compatible with {target_version} under the '{policy}' policy was found "
+                f"among {wrong_version_count} discovered local candidates. "
+                "Set PACKET_TRACER_DONOR_POLICY to a looser tier "
+                f"({', '.join(COMPATIBILITY_TIERS[:-1])}) to widen the search."
+            )
         else:
             reason = f"no compatible Packet Tracer {target_version} donor was found"
     else:

@@ -48,8 +48,33 @@ For the modern format targeted by this skill, the pipeline is:
 4. Encrypt with Twofish in EAX mode and append the 16-byte authentication tag
 5. Apply Stage-1 reverse/XOR obfuscation
 
-The XML includes a `<VERSION>` value. Compatibility is not guaranteed across Packet
-Tracer releases, so this skill intentionally targets the 9.0 line.
+The XML includes a `<VERSION>` value such as `9.0.0.0810`. This skill targets the
+9.0 line.
+
+The Twofish step needs no compiled binary. `scripts/vendor/twofish_pure.py` is a
+vendored pure-Python implementation verified against the official Twofish test
+vectors, so decode/edit/generate work on a clean checkout with no environment
+variables. A compiled `_twofish` bridge is optional: when `PKT_TWOFISH_LIBRARY`
+or `PKT_TWOFISH_SEARCH_ROOTS` resolves one, it is used automatically as a ~12x
+accelerator for large labs.
+
+### Donor Version Compatibility
+
+The build field in a `<VERSION>` string is not a schema identifier — it changes
+on every point release and re-save. None of the 292 sample saves bundled with
+Packet Tracer 9.0.0 carry `9.0.0.0810`; 48 are `9.0.0.x` with other builds and
+the rest span 5.x through 8.x. Donors are therefore classified into tiers:
+
+| Tier | Meaning |
+|---|---|
+| `exact` | build strings identical |
+| `same_minor` | same `major.minor`, e.g. any `9.0.0.x` |
+| `same_major` | same major, different minor |
+| `upgradeable` | 6.x–8.x; Packet Tracer upgrades these on open |
+| `incompatible` | 5.x and older |
+
+`PACKET_TRACER_DONOR_POLICY` names the loosest acceptable tier. The default is
+`same_minor`. When several donors qualify, the strictest tier wins.
 
 ## Workflow
 
@@ -84,9 +109,11 @@ Open-first rules remain strict:
 ## Files
 
 - `scripts/pkt_builder.py`
-  Builds Packet Tracer XML from a blueprint
+  Thin entrypoint: selects a sample and delegates to `pkt_transformer`
 - `scripts/pkt_codec.py`
   Encodes and decodes the modern `.pkt` format
+- `scripts/vendor/twofish_pure.py`
+  Vendored pure-Python Twofish; the repo-local baseline engine
 - `scripts/generate_pkt.py`
   CLI entrypoint for generate/edit/decode/inventory/explain-plan
 - `scripts/intent_parser.py`
@@ -119,14 +146,15 @@ override is absent.
 Strict compatibility rules:
 
 - keep `PACKET_TRACER_TARGET_VERSION` on `9.0.0.0810`
-- do not downgrade prompt generation to `5.3.0.0011`
-- do not use a legacy `5.3` donor/template fallback to bypass strict 9.0 mode
-- if the donor is missing, undecodable, or version-mismatched, stop with a
-  blocking error instead of switching versions
-- if `PACKET_TRACER_COMPAT_DONOR` is explicitly set and wrong, do not silently
+- never accept a `5.x` donor; Packet Tracer does not reliably upgrade those
+- the donor tier that was accepted is recorded in `compatibility_tier` and
+  reported as an assumption, never hidden
+- if the donor is missing, undecodable, or below the active policy tier, stop
+  with a blocking error that names the tier and the policy needed to accept it
+- if `PACKET_TRACER_COMPAT_DONOR` is explicitly set and rejected, do not silently
   fall back to another donor
-- every host process must inherit the same `PACKET_TRACER_*` and
-  `PKT_TWOFISH_LIBRARY` environment variables; this is not host-specific
+- `PACKET_TRACER_*` variables must be inherited by every host process;
+  `PKT_TWOFISH_*` is optional and only selects the compiled accelerator
 
 ## Supported First Iteration
 
@@ -178,6 +206,10 @@ If the user does not specify details:
 - This skill currently plans for Packet Tracer 9.0 only
 - The builder currently depends on a local Packet Tracer installation with the bundled
   sample saves present
+- Donor selection is still the narrowest layer: a compatible donor can be
+  resolved and every capability can be recognised, and the donor graph-fit
+  filter can still reject the whole candidate pool. When that happens the
+  rejection reasons are reported per candidate
 - The bundled template library is intentionally minimal in v1
 - Imported external sample roots are reference-only unless you explicitly promote them
 - Prompt generation in the default path is donor-prune based, not full synthetic rebuild

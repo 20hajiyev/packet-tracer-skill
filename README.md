@@ -150,6 +150,15 @@ npx packet-tracer-skill --doctor
 python .\scripts\runtime_doctor.py
 ```
 
+First-run workflow for real use:
+
+1. Run `npx packet-tracer-skill --doctor` or `python .\scripts\runtime_doctor.py`.
+2. Read `runtime_grade`, `ready_operations`, `blocked_operations`, and `best_next_fix`.
+3. If runtime is blocked, fix Packet Tracer root, donor path, or Twofish bridge before expecting real `.pkt` decode/edit/generate.
+4. Run `python .\scripts\generate_pkt.py --parity-report "<your prompt>"` to see whether the scenario is report-only, edit-proven, donor-backed-ready, or generate-ready.
+5. Run `python .\scripts\generate_pkt.py --explain-plan "<your prompt>"` when parity says the prompt is blocked; the `user_summary`, `next_best_action`, and `proof_card_refs` fields are the fastest path to the next correct action.
+6. Check `examples/gallery.md` when you need a known working example, proof card, or local evidence summary before attempting a new donor-backed workflow.
+
 Local development:
 
 ```powershell
@@ -161,11 +170,12 @@ powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1 -Dev
 Launch references:
 
 - [docs/release-notes-0.2.3.md](docs/release-notes-0.2.3.md)
-- [docs/release-notes-0.2.2.md](docs/release-notes-0.2.2.md)
+- [docs/release-notes-0.2.4.md](docs/release-notes-0.2.4.md)
 - [docs/hero-demo-plan.md](docs/hero-demo-plan.md)
 - [docs/github-metadata.md](docs/github-metadata.md)
 - [docs/release-checklist.md](docs/release-checklist.md)
-- [docs/github-launch-ops-0.2.2.md](docs/github-launch-ops-0.2.2.md)
+- [docs/github-launch-ops-0.2.3.md](docs/github-launch-ops-0.2.3.md)
+- [docs/proof-readiness-dashboard.md](docs/proof-readiness-dashboard.md)
 - [docs/campus-donor-proof.md](docs/campus-donor-proof.md)
 - [docs/home-iot-donor-proof.md](docs/home-iot-donor-proof.md)
 - [docs/wan-security-donor-proof.md](docs/wan-security-donor-proof.md)
@@ -464,7 +474,7 @@ Primary screenshot:
 
 ![Packet Tracer topology](examples/screenshots/complex_campus_master_edit_v4.png)
 
-Hero visual for the `0.2.3` capability release surface:
+Hero visual for the `0.2.3` capability release and `0.2.4` candidate surface:
 
 - `examples/screenshots/complex_campus_master_edit_v4.png`
 
@@ -479,6 +489,7 @@ Canonical public proof:
 - [docs/ipv4-routing-management-proof.md](docs/ipv4-routing-management-proof.md)
 - [docs/l2-security-qos-proof.md](docs/l2-security-qos-proof.md)
 - [docs/security-edge-deepening-proof.md](docs/security-edge-deepening-proof.md)
+- [docs/proof-readiness-dashboard.md](docs/proof-readiness-dashboard.md)
 
 The campus donor proof is intentionally more specific than the gallery cards. It shows that a real donor artifact inventories correctly, but it also shows that a generalized campus prompt can still be donor-limited. That is exactly the kind of nuance the public docs should preserve.
 
@@ -493,6 +504,8 @@ The IPv4 routing/management proof is IOS text only. It can append explicit `rout
 The L2 security/QoS proof is explicit-command only. It can append IOS-style dot1x and QoS lines when the switch, interface, class-map, policy-map, direction, and optional RADIUS target are explicit. It does not create a full NAC design, supplicant profiles, RADIUS users, or broad QoS policy from intent alone.
 
 The security-edge deepening proof is router IOS only. It can append CBAC and ZFW line-based configuration for explicit targets. It does not mutate ASA GUI/internal state, clientless VPN, ASA service-policy, or broad security topology generation.
+
+The proof-readiness dashboard is the next promotion queue. It combines proof cards, feature atlas state, and local sample evidence so the next donor-backed readiness work is chosen from evidence instead of random feature requests.
 
 Generate-ready pilot design is intentionally separate from implementation:
 
@@ -542,16 +555,18 @@ See also:
 
 ## Release and Launch State
 
-The npm package line is advancing to `packet-tracer-skill@0.2.3`. This release is a capability proof and readiness release, not a broad generate-ready release. The GitHub README, npm README, changelog, release notes, proof docs, and feature atlas should all say the same thing: the skill can recognize more Packet Tracer features, edit more explicit IOS/script surfaces, and report donor-backed readiness for more narrow paths, while still refusing broad unsupported generation.
+The current published npm package line is `packet-tracer-skill@0.2.3`. That release is a capability proof and readiness release, not a broad generate-ready release. The GitHub README, npm README, changelog, release notes, proof docs, examples, and feature atlas should all say the same thing: the skill can recognize more Packet Tracer features, edit more explicit IOS/script surfaces, and report donor-backed readiness for narrow paths, while still refusing broad unsupported generation.
 
-So the current state is no longer "preparing an experiment." The package line is public and the `0.2.3` release freezes a real capability batch. The remaining launch ops are about making the public surface operationally complete:
+The next candidate line is `0.2.4`. Its purpose is not another random capability wave. It is a product-hardening patch for Examples Truth 2.0, proof-card discoverability, local sample evidence presentation, and proof-readiness promotion planning.
 
-- GitHub release object should match the published npm state
-- About/Topics should match the README and launch wording
-- Discussions should exist as the feedback intake surface
-- donor proof should exist as the first post-launch technical evidence layer
+So the current state is no longer "preparing an experiment." The `0.2.3` package line is public, and the `0.2.4` candidate is about making the public proof surface operationally complete:
 
-That is the difference between "published" and "productized." The release can be installed from npm, but GitHub release notes, About/Topics, Discussions, and follow-up proof artifacts are what make it operationally coherent.
+- examples should clearly distinguish `showcase_example` and `proof_card`
+- proof-readiness candidates should show why a feature is not yet donor-backed-ready
+- local sample evidence should be summarized without publishing raw `.pkt/.pka`
+- GitHub metadata should match the published `0.2.3` state and next `0.2.4` candidate wording
+
+That is the difference between "published" and "productized." The release can be installed from npm, but examples truth, proof cards, promotion queues, GitHub metadata, and follow-up proof artifacts are what make it operationally coherent.
 
 Recommended local validation before release:
 
@@ -569,8 +584,9 @@ Launch ops references:
 - [docs/publish-preview-roadmap.md](docs/publish-preview-roadmap.md)
 - [docs/discovery-keywords.md](docs/discovery-keywords.md)
 - [docs/github-metadata.md](docs/github-metadata.md)
-- [docs/github-launch-ops-0.2.2.md](docs/github-launch-ops-0.2.2.md)
+- [docs/github-launch-ops-0.2.3.md](docs/github-launch-ops-0.2.3.md)
 - [docs/post-launch-follow-up.md](docs/post-launch-follow-up.md)
+- [docs/proof-readiness-dashboard.md](docs/proof-readiness-dashboard.md)
 
 ## Azerbaijani Summary
 
@@ -616,9 +632,11 @@ Hələ konservativ saxlanan sahələr:
 
 Hazırkı release prioriteti:
 
-- `0.2.3` capability release-i dondurmaq və npm/GitHub ilə hizalamaq
-- README, npm package, changelog, release notes və proof docs arasında terminologiya drift-ni bağlamaq
+- `0.2.3` capability release-ini published baseline kimi saxlamaq
+- `0.2.4` candidate üçün Examples Truth 2.0, proof-card discoverability və proof-readiness dashboard-u sabitləşdirmək
+- README, npm package, changelog, release notes, examples və proof docs arasında terminologiya drift-ni bağlamaq
 - scenario truth source, donor registry və runtime doctor contract consistency-ni qorumaq
+- local `pkt_examples` evidence-ni public proof queue kimi xülasələmək, amma raw `.pkt/.pka` faylları paylaşmamaq
 - feature atlas üzərindən Packet Tracer-də qalan bütün boşluqları görünən backlog kimi saxlamaq
 - yeni capability-ləri yalnız inventory proof, edit roundtrip proof, deterministic target resolution və donor-backed acceptance olduqda yüksəltmək
 

@@ -4,6 +4,72 @@ All notable changes to this project should be recorded in this file.
 
 The format is intentionally simple and release-oriented.
 
+## [0.3.0] - Unreleased candidate
+
+Removes the two mechanical defects that produced `generate_ready=0` for the
+whole `0.2.x` line. See `docs/improvement-plan-0.3.0.md` for the audit.
+
+### Added
+
+- `scripts/vendor/twofish_pure.py`: vendored pure-Python Twofish, verified
+  against the official 128/192/256-bit test vectors and cross-checked as
+  bit-identical to the compiled bridge
+- donor version compatibility ladder in `packet_tracer_env.py`
+  (`exact` / `same_minor` / `same_major` / `upgradeable` / `incompatible`),
+  selected by `PACKET_TRACER_DONOR_POLICY`, defaulting to `same_minor`
+- `twofish_backend`, `donor_policy`, and `compatibility_tier` diagnostic fields
+- `tests/test_twofish_pure.py` and `tests/test_donor_compatibility.py`
+
+### Changed
+
+- the compiled `_twofish` bridge is now an optional accelerator, not a
+  prerequisite: `decode`, `inventory`, `edit`, and `generate` are all `ready` on
+  a clean checkout with no binaries and no environment variables
+- `bridge_resolution=external_env` no longer downgrades `runtime_grade` or
+  raises a `using_external_bridge_only` blocker
+- donor rejection messages now name the tier, the active policy, and the setting
+  that would accept the donor
+- minimum Python relaxed from exactly 3.14 to 3.10+; the 3.14 ABI requirement
+  applied only to the compiled accelerator
+
+### Fixed
+
+- `tests/test_release_surface.py` referenced an undefined `readme` variable and
+  failed under the strict profile; the assertions moved to the README test
+
+### Notes
+
+- eligible donors from a stock Packet Tracer 9.0.0 install go from **0 to 48**
+  under the default policy (270 under `upgradeable`); none of the 292 bundled
+  samples carry the previously-required exact build `9.0.0.0810`
+- one test profile, zero skips: 306 passed without a bridge, 307 with one
+  (previously 230 passed / 37 skipped, hiding one real failure)
+- `generate_ready` is still `0`. The remaining blocker is now the donor
+  graph-fit filter, which is reached and reports per-candidate rejection
+  reasons instead of being skipped
+- `package.json` stays at `0.2.3` until a publish decision is made
+
+## [0.2.4] - Unreleased candidate
+
+### Added
+
+- Examples Truth 2.0 proof-card and showcase-example surface for the post-`0.2.3` capability release
+- proof-readiness dashboard for ranking the next donor-backed promotion candidates
+- promotion queue artifact for IPv4 routing/management and L2 resiliency/BGP readiness work
+- local sample evidence board that summarizes user-supplied `.pkt/.pka` audit counts without committing raw samples
+- `0.2.4` release notes draft for the next product-hardening patch
+
+### Changed
+
+- examples gallery and examples index now distinguish showcase examples, proof cards, local evidence, and promotion candidates
+- current launch wording is being separated from historical `0.2.1`/`0.2.2` runbooks
+
+### Notes
+
+- this candidate does not enable broad generation
+- `generate_ready=0` remains intentional
+- `package.json` stays at `0.2.3` until a publish decision is made
+
 ## [0.2.3] - 2026-05-03
 
 ### Added

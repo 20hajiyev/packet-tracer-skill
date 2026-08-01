@@ -1,58 +1,65 @@
-# Twofish Bridge Setup
+# Twofish Engines
 
-This repository does not ship a prebuilt Twofish bridge binary by default.
+The Packet Tracer `.pkt` codec uses Twofish in EAX mode. Two engines live here.
 
-The Packet Tracer `.pkt` codec needs a local Twofish bridge at runtime for
-modern Packet Tracer 9.x encode/decode operations.
+## `twofish_pure.py` — the baseline (always available)
 
-## Supported loading paths
+A vendored pure-Python Twofish. Twofish is unpatented and uncopyrighted by
+design, so it can be implemented and shipped directly.
 
-The wrapper in `twofish.py` loads the bridge from one of these locations:
+- no compiled artifacts, no environment variables, no per-host setup
+- works on any supported Python (3.10+) and any OS
+- verified at import-time diagnostics against the three official test vectors
+  from section B.2 of the Twofish book (128/192/256-bit)
+- bit-identical to the compiled bridge; `tests/test_twofish_pure.py` asserts
+  this whenever both are present
+
+This is what `pkt_codec` uses unless a compiled bridge is found. Nothing has to
+be installed for `decode`, `inventory`, `edit`, or `generate` to work.
+
+Cost: roughly 14 µs per block. A typical 280 KB lab decodes in under a second;
+the largest labs seen so far (~2.8 MB) take about 12 seconds.
+
+## `twofish.py` — the optional accelerator
+
+A ctypes wrapper around a compiled `_twofish` C library. Roughly 12x faster than
+the pure engine, and worth setting up if you routinely process large labs or
+scan the whole sample corpus. It is never required.
+
+The wrapper loads the bridge from, in order:
 
 1. `PKT_TWOFISH_LIBRARY`
 2. directories listed in `PKT_TWOFISH_SEARCH_ROOTS`
-3. a sibling file in this folder named like:
-   - `_twofish*.pyd`
-   - `_twofish*.so`
-   - `_twofish*.dylib`
-   - `_twofish*.dll`
-
-## Recommended public-repo workflow
-
-- keep this repository free of prebuilt machine-specific binaries
-- keep the bridge local to your machine
-- preferred: place the bridge next to `scripts/vendor/twofish.py` inside the installed skill folder
-- optional: store the bridge elsewhere and point `PKT_TWOFISH_LIBRARY` at that local file
-- optional: store bridges in one or more local directories and set `PKT_TWOFISH_SEARCH_ROOTS`
+3. a sibling file in this folder named like `_twofish*.pyd` / `.so` / `.dylib` / `.dll`
 
 Example on Windows:
 
 ```powershell
-$env:PKT_TWOFISH_LIBRARY="$env:USERPROFILE\.codex\skills\pkt\scripts\vendor\_twofish.cp314-win_amd64.pyd"
+$env:PKT_TWOFISH_LIBRARY="C:\path\to\_twofish.cp314-win_amd64.pyd"
 ```
 
-Example for multiple local search roots:
+The compiled bridge is ABI-locked to one Python version. The current filename
+contract is `_twofish.cp314-win_amd64.pyd` (macOS `_twofish.cp314-macos*.dylib`,
+Linux `_twofish.cp314-linux*.so`). On any other Python version the accelerator is
+skipped and the pure engine is used instead — this is not an error.
 
-```powershell
-$env:PKT_TWOFISH_SEARCH_ROOTS="$env:USERPROFILE\.codex\skills\pkt\scripts\vendor;$env:USERPROFILE\pkt-bridges"
+## Which engine am I using?
+
+```bash
+python scripts/runtime_doctor.py
 ```
 
-## Supported runtime
-
-- supported Python runtime: `3.14.x`
-- current bridge filename: `_twofish.cp314-win_amd64.pyd`
-- recommended non-Windows naming contract:
-  - macOS: `_twofish.cp314-macos*.dylib`
-  - Linux: `_twofish.cp314-linux*.so`
-- other Python ABIs are not considered supported by this public setup
+Read `twofish_backend`: `pure_python` or `compiled`.
 
 ## Security and privacy
 
-- do not commit machine-specific binaries unless you have reviewed them
-- do not commit binaries that embed private paths, usernames, or internal build metadata
-- prefer rebuilding or sourcing the bridge in a reproducible way for your own machine
+- this repository ships no prebuilt machine-specific binaries
+- do not commit binaries that embed private paths, usernames, or build metadata
+- prefer rebuilding the bridge reproducibly for your own machine
 
-## Failure mode
+## Licensing
 
-If the bridge is missing, the wrapper raises an `ImportError` with setup guidance
-instead of silently loading a repo-shipped binary.
+`twofish_pure.py` is original work implemented from the published Twofish
+specification and is covered by this repository's licence. `twofish.py` derives
+from the BSD-3-Clause Python Twofish ctypes bindings; see
+`LICENSES/LICENSE.Twofish-BSD-3-Clause.txt`.

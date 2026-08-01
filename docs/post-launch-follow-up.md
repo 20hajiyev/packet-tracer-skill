@@ -2,10 +2,13 @@
 
 ## Immediate Follow-Up Items
 
-- complete GitHub launch ops from `docs/github-launch-ops-0.2.2.md`
-- publish one canonical donor proof artifact: `docs/campus-donor-proof.md`
-- publish one Home IoT donor proof artifact: `docs/home-iot-donor-proof.md`
-- publish one WAN/security donor proof artifact: `docs/wan-security-donor-proof.md`
+- keep the published `0.2.3` surface aligned across README, npm, changelog, release notes, proof docs, and examples
+- freeze the `Examples Truth 2.0` proof-card/gallery surface as the first `0.2.4` candidate batch
+- use `docs/proof-readiness-dashboard.md` and `references/proof-readiness-candidates.json` as the next engineering queue
+- keep canonical proof artifacts discoverable from README and examples:
+  - `docs/campus-donor-proof.md`
+  - `docs/home-iot-donor-proof.md`
+  - `docs/wan-security-donor-proof.md`
 - keep README, release notes, launch announcement, and GitHub metadata in sync
 
 ## Next Technical Proof Batch
@@ -24,13 +27,14 @@
 - treat runtime clarity as a product surface, not a debug detail
 - keep `what_currently_works`, `what_is_blocked`, and `best_next_fix` aligned with `doctor_summary`
 
-## Trigger Conditions for `0.2.2` or the Next Minor
+## Trigger Conditions for `0.2.4`
 
 - README / npm / GitHub wording drift
 - donor proof uncovers a concrete selector mismatch worth productizing
 - runtime doctor wording becomes ambiguous again
 - examples and public proof artifacts stop matching current behavior
 - selected donor refusal becomes too generic to explain the closest rejected donor class
+- proof-readiness candidates gain enough selected-donor evidence to justify promotion
 
 ## Next Integration Wave
 

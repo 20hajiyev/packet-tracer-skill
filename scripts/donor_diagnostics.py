@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import json
-from packet_tracer_env import inspect_packet_tracer_compatibility_donor
+from packet_tracer_env import get_donor_policy, inspect_packet_tracer_compatibility_donor
 
 
 def collect_donor_diagnostics() -> dict[str, object]:
@@ -15,6 +15,8 @@ def collect_donor_diagnostics() -> dict[str, object]:
         "donor_path": str(details.resolved_path) if details.resolved_path else "",
         "donor_version": details.donor_version or "",
         "donor_source": details.donor_source or "",
+        "donor_policy": get_donor_policy(),
+        "compatibility_tier": details.compatibility_tier,
         "status": details.status,
         "message": (
             f"{details.resolved_path} (version {details.donor_version})"

@@ -1,0 +1,352 @@
+{
+  "schema_version": "proof_readiness.v1",
+  "available": true,
+  "release_line": "0.2.4 candidate",
+  "dashboard_doc": "docs/proof-readiness-dashboard.md",
+  "policy": "Promotion candidates are planning truth only. A capability can move to donor_backed_ready only after explicit command shape, sample evidence, decode evidence, editor roundtrip, deterministic target resolution, and clean refusal behavior all exist.",
+  "generate_ready": 0,
+  "primary_candidates": [
+    {
+      "capability": "ospfv2",
+      "scenario_family": "ipv4_routing_management",
+      "current_status": "edit_proven",
+      "local_sample_count": 50,
+      "proof_doc": "docs/ipv4-routing-management-proof.md",
+      "next_safe_action": "Add proof-linked selected-donor readiness for explicit OSPFv2 IOS network commands.",
+      "promotion_blocker": "blocked_by_no_deterministic_target",
+      "explicit_command": "set R1 ospfv2 1 network 10.0.0.0 wildcard 0.0.0.255 area 0",
+      "required_evidence": [
+        "explicit_command_shape",
+        "parser_family_regression",
+        "decode_backed_sample_evidence",
+        "editor_roundtrip_test",
+        "deterministic_target_resolution",
+        "clean_ambiguity_refusal"
+      ],
+      "test_target": "tests/test_pkt_editor.py::requires_twofish explicit IOS roundtrip path",
+      "strict_gate": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q"
+    },
+    {
+      "capability": "eigrp_ipv4",
+      "scenario_family": "ipv4_routing_management",
+      "current_status": "edit_proven",
+      "local_sample_count": 22,
+      "proof_doc": "docs/ipv4-routing-management-proof.md",
+      "next_safe_action": "Add proof-linked readiness for explicit EIGRP IPv4 network commands with router target validation.",
+      "promotion_blocker": "blocked_by_no_deterministic_target",
+      "explicit_command": "set R1 eigrp ipv4 100 network 10.0.0.0 wildcard 0.0.0.255 no-auto-summary",
+      "required_evidence": [
+        "explicit_command_shape",
+        "parser_family_regression",
+        "decode_backed_sample_evidence",
+        "editor_roundtrip_test",
+        "deterministic_target_resolution",
+        "clean_ambiguity_refusal"
+      ],
+      "test_target": "tests/test_pkt_editor.py::requires_twofish explicit IOS roundtrip path",
+      "strict_gate": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q"
+    },
+    {
+      "capability": "ripv2",
+      "scenario_family": "ipv4_routing_management",
+      "current_status": "edit_proven",
+      "local_sample_count": 61,
+      "proof_doc": "docs/ipv4-routing-management-proof.md",
+      "next_safe_action": "Promote explicit RIPv2 IOS commands after selected donor and interface scope are locked.",
+      "promotion_blocker": "blocked_by_no_deterministic_target",
+      "explicit_command": "set R1 rip version 2 network 10.0.0.0 no-auto-summary",
+      "required_evidence": [
+        "explicit_command_shape",
+        "parser_family_regression",
+        "decode_backed_sample_evidence",
+        "editor_roundtrip_test",
+        "deterministic_target_resolution",
+        "clean_ambiguity_refusal"
+      ],
+      "test_target": "tests/test_pkt_editor.py::requires_twofish explicit IOS roundtrip path",
+      "strict_gate": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q"
+    },
+    {
+      "capability": "static_route",
+      "scenario_family": "ipv4_routing_management",
+      "current_status": "edit_proven",
+      "local_sample_count": 87,
+      "proof_doc": "docs/ipv4-routing-management-proof.md",
+      "next_safe_action": "Promote explicit static/default route commands where gateway and router target are deterministic.",
+      "promotion_blocker": "blocked_by_no_deterministic_target",
+      "explicit_command": "set R1 static-route 192.168.10.0/24 via 10.0.0.1",
+      "required_evidence": [
+        "explicit_command_shape",
+        "parser_family_regression",
+        "decode_backed_sample_evidence",
+        "editor_roundtrip_test",
+        "deterministic_target_resolution",
+        "clean_ambiguity_refusal"
+      ],
+      "test_target": "tests/test_pkt_editor.py::requires_twofish explicit IOS roundtrip path",
+      "strict_gate": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q"
+    },
+    {
+      "capability": "default_route",
+      "scenario_family": "ipv4_routing_management",
+      "current_status": "edit_proven",
+      "local_sample_count": 56,
+      "proof_doc": "docs/ipv4-routing-management-proof.md",
+      "next_safe_action": "Use the same selected-donor proof path as static_route, but keep broad routing design blocked.",
+      "promotion_blocker": "blocked_by_no_deterministic_target",
+      "explicit_command": "set R1 static-route 0.0.0.0/0 via 10.0.0.1",
+      "required_evidence": [
+        "explicit_command_shape",
+        "parser_family_regression",
+        "decode_backed_sample_evidence",
+        "editor_roundtrip_test",
+        "deterministic_target_resolution",
+        "clean_ambiguity_refusal"
+      ],
+      "test_target": "tests/test_pkt_editor.py::requires_twofish explicit IOS roundtrip path",
+      "strict_gate": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q"
+    },
+    {
+      "capability": "dhcp_relay",
+      "scenario_family": "ipv4_routing_management",
+      "current_status": "edit_proven",
+      "local_sample_count": 24,
+      "proof_doc": "docs/ipv4-routing-management-proof.md",
+      "next_safe_action": "Promote explicit helper-address edits only when interface and relay server are named or uniquely resolved.",
+      "promotion_blocker": "blocked_by_no_deterministic_target",
+      "explicit_command": "set R1 dhcp-relay interface GigabitEthernet0/0 helper 192.168.1.10",
+      "required_evidence": [
+        "explicit_command_shape",
+        "parser_family_regression",
+        "decode_backed_sample_evidence",
+        "editor_roundtrip_test",
+        "deterministic_target_resolution",
+        "clean_ambiguity_refusal"
+      ],
+      "test_target": "tests/test_pkt_editor.py::requires_twofish explicit IOS roundtrip path",
+      "strict_gate": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q"
+    },
+    {
+      "capability": "ssh_ios",
+      "scenario_family": "ipv4_routing_management",
+      "current_status": "edit_proven",
+      "local_sample_count": 27,
+      "proof_doc": "docs/ipv4-routing-management-proof.md",
+      "next_safe_action": "Promote explicit IOS SSH setup when router target, domain, username, and modulus are deterministic.",
+      "promotion_blocker": "blocked_by_no_deterministic_target",
+      "explicit_command": "set R1 ssh domain lab.local username admin password cisco123 modulus 1024",
+      "required_evidence": [
+        "explicit_command_shape",
+        "parser_family_regression",
+        "decode_backed_sample_evidence",
+        "editor_roundtrip_test",
+        "deterministic_target_resolution",
+        "clean_ambiguity_refusal"
+      ],
+      "test_target": "tests/test_pkt_editor.py::requires_twofish explicit IOS roundtrip path",
+      "strict_gate": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q"
+    },
+    {
+      "capability": "ntp_ios",
+      "scenario_family": "ipv4_routing_management",
+      "current_status": "edit_proven",
+      "local_sample_count": 9,
+      "proof_doc": "docs/ipv4-routing-management-proof.md",
+      "next_safe_action": "Promote explicit NTP server edits after selected-donor proof confirms config persistence.",
+      "promotion_blocker": "blocked_by_no_deterministic_target",
+      "explicit_command": "set R1 ntp server 192.168.1.20",
+      "required_evidence": [
+        "explicit_command_shape",
+        "parser_family_regression",
+        "decode_backed_sample_evidence",
+        "editor_roundtrip_test",
+        "deterministic_target_resolution",
+        "clean_ambiguity_refusal"
+      ],
+      "test_target": "tests/test_pkt_editor.py::requires_twofish explicit IOS roundtrip path",
+      "strict_gate": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q"
+    },
+    {
+      "capability": "syslog_ios",
+      "scenario_family": "ipv4_routing_management",
+      "current_status": "edit_proven",
+      "local_sample_count": 0,
+      "proof_doc": "docs/ipv4-routing-management-proof.md",
+      "next_safe_action": "Keep edit-proven until local decode-backed sample evidence exists for logging host lines.",
+      "promotion_blocker": "blocked_by_missing_decode_evidence",
+      "explicit_command": "set R1 syslog server 192.168.1.30",
+      "required_evidence": [
+        "explicit_command_shape",
+        "parser_family_regression",
+        "decode_backed_sample_evidence",
+        "editor_roundtrip_test",
+        "deterministic_target_resolution",
+        "clean_ambiguity_refusal"
+      ],
+      "test_target": "tests/test_pkt_editor.py::requires_twofish explicit IOS roundtrip path",
+      "strict_gate": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q"
+    }
+  ],
+  "secondary_candidates": [
+    {
+      "capability": "stp",
+      "scenario_family": "l2_resiliency_routing",
+      "current_status": "edit_proven",
+      "local_sample_count": 348,
+      "proof_doc": "docs/l2-resiliency-bgp-proof.md",
+      "next_safe_action": "Promote explicit STP mode/root commands after switch target and VLAN scope are deterministic.",
+      "promotion_blocker": "blocked_by_no_deterministic_target",
+      "explicit_command": "set SW1 stp mode rapid-pvst vlan 10 root primary",
+      "required_evidence": [
+        "explicit_command_shape",
+        "parser_family_regression",
+        "decode_backed_sample_evidence",
+        "editor_roundtrip_test",
+        "deterministic_target_resolution",
+        "clean_ambiguity_refusal"
+      ],
+      "test_target": "tests/test_pkt_editor.py::requires_twofish explicit IOS roundtrip path",
+      "strict_gate": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q"
+    },
+    {
+      "capability": "rstp",
+      "scenario_family": "l2_resiliency_routing",
+      "current_status": "edit_proven",
+      "local_sample_count": 348,
+      "proof_doc": "docs/l2-resiliency-bgp-proof.md",
+      "next_safe_action": "Use STP selected-donor proof path for rapid-pvst command shape.",
+      "promotion_blocker": "blocked_by_no_deterministic_target",
+      "explicit_command": "set SW1 stp mode rapid-pvst vlan 10 root primary",
+      "required_evidence": [
+        "explicit_command_shape",
+        "parser_family_regression",
+        "decode_backed_sample_evidence",
+        "editor_roundtrip_test",
+        "deterministic_target_resolution",
+        "clean_ambiguity_refusal"
+      ],
+      "test_target": "tests/test_pkt_editor.py::requires_twofish explicit IOS roundtrip path",
+      "strict_gate": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q"
+    },
+    {
+      "capability": "etherchannel",
+      "scenario_family": "l2_resiliency_routing",
+      "current_status": "edit_proven",
+      "local_sample_count": 7,
+      "proof_doc": "docs/l2-resiliency-bgp-proof.md",
+      "next_safe_action": "Promote explicit channel-group edits only when every interface target is named and unique.",
+      "promotion_blocker": "blocked_by_no_deterministic_target",
+      "explicit_command": "set SW1 etherchannel 1 mode active interfaces FastEthernet0/1 FastEthernet0/2",
+      "required_evidence": [
+        "explicit_command_shape",
+        "parser_family_regression",
+        "decode_backed_sample_evidence",
+        "editor_roundtrip_test",
+        "deterministic_target_resolution",
+        "clean_ambiguity_refusal"
+      ],
+      "test_target": "tests/test_pkt_editor.py::requires_twofish explicit IOS roundtrip path",
+      "strict_gate": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q"
+    },
+    {
+      "capability": "lacp",
+      "scenario_family": "l2_resiliency_routing",
+      "current_status": "edit_proven",
+      "local_sample_count": 7,
+      "proof_doc": "docs/l2-resiliency-bgp-proof.md",
+      "next_safe_action": "Promote active/passive LACP modes through the EtherChannel proof gate.",
+      "promotion_blocker": "blocked_by_no_deterministic_target",
+      "explicit_command": "set SW1 etherchannel 1 mode active interfaces FastEthernet0/1 FastEthernet0/2",
+      "required_evidence": [
+        "explicit_command_shape",
+        "parser_family_regression",
+        "decode_backed_sample_evidence",
+        "editor_roundtrip_test",
+        "deterministic_target_resolution",
+        "clean_ambiguity_refusal"
+      ],
+      "test_target": "tests/test_pkt_editor.py::requires_twofish explicit IOS roundtrip path",
+      "strict_gate": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q"
+    },
+    {
+      "capability": "pagp",
+      "scenario_family": "l2_resiliency_routing",
+      "current_status": "edit_proven",
+      "local_sample_count": 7,
+      "proof_doc": "docs/l2-resiliency-bgp-proof.md",
+      "next_safe_action": "Promote desirable/auto PAgP modes only after selected-donor interface validation.",
+      "promotion_blocker": "blocked_by_no_deterministic_target",
+      "explicit_command": "set SW1 etherchannel 1 mode desirable interfaces FastEthernet0/1 FastEthernet0/2",
+      "required_evidence": [
+        "explicit_command_shape",
+        "parser_family_regression",
+        "decode_backed_sample_evidence",
+        "editor_roundtrip_test",
+        "deterministic_target_resolution",
+        "clean_ambiguity_refusal"
+      ],
+      "test_target": "tests/test_pkt_editor.py::requires_twofish explicit IOS roundtrip path",
+      "strict_gate": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q"
+    },
+    {
+      "capability": "vtp",
+      "scenario_family": "l2_resiliency_routing",
+      "current_status": "edit_proven",
+      "local_sample_count": 5,
+      "proof_doc": "docs/l2-resiliency-bgp-proof.md",
+      "next_safe_action": "Promote explicit VTP domain/mode/version edits when switch target is deterministic.",
+      "promotion_blocker": "blocked_by_no_deterministic_target",
+      "explicit_command": "set SW1 vtp domain CAMPUS mode server version 2",
+      "required_evidence": [
+        "explicit_command_shape",
+        "parser_family_regression",
+        "decode_backed_sample_evidence",
+        "editor_roundtrip_test",
+        "deterministic_target_resolution",
+        "clean_ambiguity_refusal"
+      ],
+      "test_target": "tests/test_pkt_editor.py::requires_twofish explicit IOS roundtrip path",
+      "strict_gate": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q"
+    },
+    {
+      "capability": "dtp",
+      "scenario_family": "l2_resiliency_routing",
+      "current_status": "edit_proven",
+      "local_sample_count": 0,
+      "proof_doc": "docs/l2-resiliency-bgp-proof.md",
+      "next_safe_action": "Keep edit-proven until local decode-backed DTP sample evidence is found.",
+      "promotion_blocker": "blocked_by_missing_decode_evidence",
+      "explicit_command": "set SW1 dtp interface FastEthernet0/1 mode dynamic desirable",
+      "required_evidence": [
+        "explicit_command_shape",
+        "parser_family_regression",
+        "decode_backed_sample_evidence",
+        "editor_roundtrip_test",
+        "deterministic_target_resolution",
+        "clean_ambiguity_refusal"
+      ],
+      "test_target": "tests/test_pkt_editor.py::requires_twofish explicit IOS roundtrip path",
+      "strict_gate": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q"
+    },
+    {
+      "capability": "bgp",
+      "scenario_family": "l2_resiliency_routing",
+      "current_status": "edit_proven",
+      "local_sample_count": 2,
+      "proof_doc": "docs/l2-resiliency-bgp-proof.md",
+      "next_safe_action": "Promote explicit BGP neighbor/network edits only after ASN, neighbor, and network target validation are proof-linked.",
+      "promotion_blocker": "blocked_by_no_deterministic_target",
+      "explicit_command": "set R1 bgp 65001 neighbor 10.0.0.2 remote-as 65002 network 192.168.1.0 mask 255.255.255.0",
+      "required_evidence": [
+        "explicit_command_shape",
+        "parser_family_regression",
+        "decode_backed_sample_evidence",
+        "editor_roundtrip_test",
+        "deterministic_target_resolution",
+        "clean_ambiguity_refusal"
+      ],
+      "test_target": "tests/test_pkt_editor.py::requires_twofish explicit IOS roundtrip path",
+      "strict_gate": "PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q"
+    }
+  ]
+}

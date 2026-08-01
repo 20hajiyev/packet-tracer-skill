@@ -10,6 +10,10 @@ SCREENSHOTS_DIR = EXAMPLES_DIR / "screenshots"
 PREVIEWS_DIR = EXAMPLES_DIR / "previews"
 INDEX_PATH = EXAMPLES_DIR / "index.json"
 GALLERY_PATH = EXAMPLES_DIR / "gallery.md"
+PROOF_CARDS_PATH = EXAMPLES_DIR / "proof-cards.json"
+LOCAL_SAMPLE_EVIDENCE_PATH = EXAMPLES_DIR / "local-sample-evidence.json"
+LOCAL_SAMPLE_AUDIT_PATH = ROOT / "output" / "local-sample-audit.json"
+PROOF_READINESS_CANDIDATES_PATH = ROOT / "references" / "proof-readiness-candidates.json"
 
 
 TITLE_BY_FAMILY = {
@@ -80,6 +84,96 @@ def _manifest_files() -> list[Path]:
         for path in EXAMPLES_DIR.glob("*.inventory.json")
         if path.is_file()
     )
+
+
+def _load_proof_cards() -> list[dict[str, object]]:
+    if not PROOF_CARDS_PATH.exists():
+        return []
+    payload = json.loads(PROOF_CARDS_PATH.read_text(encoding="utf-8"))
+    cards = payload.get("proof_cards", []) if isinstance(payload, dict) else []
+    normalized: list[dict[str, object]] = []
+    for card in cards:
+        if not isinstance(card, dict):
+            continue
+        entry = dict(card)
+        entry.setdefault("schema_version", "examples.truth.v2")
+        entry.setdefault("artifact_type", "proof_card")
+        entry.setdefault("artifact_policy", {
+            "commit_pkt_binary": False,
+            "commit_inventory_json": False,
+            "commit_screenshots": False,
+            "raw_source_public": False,
+        })
+        entry.setdefault("try_command", entry.get("explicit_command", ""))
+        entry.setdefault("does_not_claim", entry.get("refusal_boundary", "No broad generate-ready support is claimed by this proof card."))
+        entry.setdefault(
+            "support_level_explanation",
+            f"{entry.get('support_level', 'report_supported')} is a proof-card support level, not broad topology generation.",
+        )
+        entry.setdefault("maturity_summary", {
+            "atlas_status": entry.get("support_level", "report_supported"),
+            "example_status": "proof_card",
+            "donor_backed_ready": entry.get("support_level") == "donor_backed_ready",
+            "generate_ready": False,
+        })
+        normalized.append(entry)
+    return normalized
+
+
+def _load_local_sample_evidence() -> dict[str, object]:
+    if LOCAL_SAMPLE_EVIDENCE_PATH.exists():
+        payload = json.loads(LOCAL_SAMPLE_EVIDENCE_PATH.read_text(encoding="utf-8"))
+        payload.setdefault("source", "examples/local-sample-evidence.json")
+        payload.setdefault("available", True)
+        return payload
+    if not LOCAL_SAMPLE_AUDIT_PATH.exists():
+        return {
+            "source": "output/local-sample-audit.json",
+            "available": False,
+            "summary": "No local sample audit artifact was found.",
+            "top_capabilities": [],
+        }
+    payload = json.loads(LOCAL_SAMPLE_AUDIT_PATH.read_text(encoding="utf-8"))
+    capabilities = payload.get("detected_config_capabilities", {})
+    top_capabilities = [
+        {
+            "capability": name,
+            "sample_count": details.get("sample_count", 0),
+            "examples": details.get("examples", [])[:3],
+        }
+        for name, details in sorted(
+            capabilities.items(),
+            key=lambda item: item[1].get("sample_count", 0),
+            reverse=True,
+        )[:12]
+        if isinstance(details, dict)
+    ]
+    return {
+        "source": "output/local-sample-audit.json",
+        "available": True,
+        "policy": "Local user-supplied samples are evidence inputs only, not curated donor truth or npm package content.",
+        "total_files": payload.get("total_files"),
+        "decode_success_count": payload.get("decode_success_count"),
+        "decode_fail_count": payload.get("decode_fail_count"),
+        "top_capabilities": top_capabilities,
+    }
+
+
+def _load_proof_readiness_candidates() -> dict[str, object]:
+    if not PROOF_READINESS_CANDIDATES_PATH.exists():
+        return {
+            "schema_version": "proof_readiness.v1",
+            "available": False,
+            "summary": "No proof-readiness candidate artifact was found.",
+            "primary_candidates": [],
+            "secondary_candidates": [],
+        }
+    payload = json.loads(PROOF_READINESS_CANDIDATES_PATH.read_text(encoding="utf-8"))
+    payload.setdefault("schema_version", "proof_readiness.v1")
+    payload.setdefault("available", True)
+    payload.setdefault("primary_candidates", [])
+    payload.setdefault("secondary_candidates", [])
+    return payload
 
 
 def _detect_screenshots(example_name: str) -> list[str]:
@@ -205,16 +299,18 @@ def _build_entry(manifest_path: Path) -> dict[str, object]:
     primary_capabilities = CAPABILITIES_BY_FAMILY.get(family, [])
     acceptance_excerpt = f"{acceptance_label} | donor={donor_origin} | capabilities={', '.join(primary_capabilities[:3])}"
     if family == "home_iot":
-        acceptance_excerpt += " | mode=donor-backed constrained-generate"
+        acceptance_excerpt += " | mode=donor-backed constrained edit"
     fixture_name = FIXTURE_BY_FAMILY.get(family)
     matrix_excerpt = f"{fixture_name or 'ad-hoc'} | {acceptance_label} | family={family}"
     if family == "home_iot":
-        parity_excerpt = "iot=generate-ready, iot_registration=donor-backed constrained-generate, wireless_ap=generate-ready"
+        parity_excerpt = "iot=known_working_example, iot_registration=donor_backed_ready, wireless_ap=known_working_example"
     else:
-        parity_excerpt = ", ".join(f"{cap}=generate-ready" for cap in primary_capabilities[:3]) if primary_capabilities else "no parity excerpt"
+        parity_excerpt = ", ".join(f"{cap}=known_working_example" for cap in primary_capabilities[:3]) if primary_capabilities else "no parity excerpt"
     decision_excerpt = f"decision={acceptance_label} | donor_origin={donor_origin}"
     runtime_excerpt = "runtime=donor-backed example artifact"
     return {
+        "schema_version": str(payload.get("schema_version") or "examples.truth.v2"),
+        "artifact_type": "showcase_example",
         "name": name,
         "title": TITLE_BY_FAMILY.get(family, name.replace("_", " ").title()),
         "scenario_family": family,
@@ -230,6 +326,18 @@ def _build_entry(manifest_path: Path) -> dict[str, object]:
         "parity_excerpt": parity_excerpt,
         "decision_excerpt": decision_excerpt,
         "runtime_excerpt": runtime_excerpt,
+        "artifact_policy": payload.get("artifact_policy") or {
+            "commit_pkt_binary": False,
+            "commit_inventory_json": True,
+            "commit_screenshots": bool(screenshots),
+            "raw_source_public": False,
+        },
+        "maturity_summary": payload.get("maturity_summary") or {
+            "atlas_status": "known_working_example",
+            "example_status": acceptance_label,
+            "donor_backed_ready": donor_origin == "donor-backed",
+            "generate_ready": False,
+        },
         "inventory_json": manifest_path.relative_to(ROOT).as_posix(),
         "screenshots": screenshots,
         "screenshot_count": len(screenshots),
@@ -241,21 +349,33 @@ def _build_entry(manifest_path: Path) -> dict[str, object]:
 
 
 def build_examples_index() -> dict[str, object]:
+    showcase_examples = [
+        _build_entry(path)
+        for path in _manifest_files()
+    ]
+    proof_cards = _load_proof_cards()
     return {
-        "curated_examples": [
-            _build_entry(path)
-            for path in _manifest_files()
-        ]
+        "schema_version": "examples.truth.v2",
+        "release_line": "0.2.4 candidate proof surface",
+        "support_truth": {
+            "generate_ready": 0,
+            "policy": "Example artifacts can be known-working, edit-proven, or donor-backed-ready without making broad generation ready.",
+        },
+        "showcase_examples": showcase_examples,
+        "proof_cards": proof_cards,
+        "local_sample_evidence": _load_local_sample_evidence(),
+        "proof_readiness_candidates": _load_proof_readiness_candidates(),
+        "curated_examples": showcase_examples,
     }
 
 
 def build_examples_gallery_markdown(payload: dict[str, object]) -> str:
     lines = [
-        "## Known Working Scenario Set",
+        "## Showcase Examples",
         "",
         "These examples are public, text-first proof artifacts derived from donor-backed workflows and aligned with the scenario fixture corpus.",
         "",
-        "`0.2.1` canonical public set:",
+        "`0.2.4` candidate examples surface, built on the published `0.2.3` capability release:",
         "",
         "- `campus`",
         "- `home_iot`",
@@ -270,6 +390,12 @@ def build_examples_gallery_markdown(payload: dict[str, object]) -> str:
         "- [campus donor proof](../docs/campus-donor-proof.md)",
         "- [home IoT donor proof](../docs/home-iot-donor-proof.md)",
         "- [WAN/security donor proof](../docs/wan-security-donor-proof.md)",
+        "",
+        "Support truth:",
+        "",
+        "- showcase examples are screenshot + inventory artifacts for known working donor-backed workflows",
+        "- proof cards are text-only evidence for explicit edit paths and donor-backed readiness",
+        "- atlas `generate_ready=0` remains intentional; these examples do not claim broad generation support",
         "",
         "| Title | Family | Capabilities | Image | Inventory |",
         "| --- | --- | --- | --- | --- |",
@@ -297,6 +423,73 @@ def build_examples_gallery_markdown(payload: dict[str, object]) -> str:
         ]
         if detail_images:
             lines.append(f"|  |  | extra visuals: {'; '.join(detail_images)} |  |  |")
+
+    proof_cards = payload.get("proof_cards") or []
+    if proof_cards:
+        lines.extend(
+            [
+                "",
+                "## 0.2.4 Candidate Proof Cards",
+                "",
+                "| Title | Family | Support | Proof | Boundary |",
+                "| --- | --- | --- | --- | --- |",
+            ]
+        )
+        for card in proof_cards:
+            proof_doc = str(card.get("proof_doc", ""))
+            proof_href = f"../{proof_doc}" if proof_doc.startswith("docs/") else proof_doc
+            proof_link = f"[proof]({proof_href})"
+            lines.append(
+                f"| {card['title']} | `{card['scenario_family']}` | `{card['support_level']}` | {proof_link} | {card['refusal_boundary']} |"
+            )
+            lines.append(f"|  |  | `{card['parity_excerpt']}` |  |  |")
+            lines.append(f"|  |  | try this command: `{card['try_command']}` |  |  |")
+            lines.append(f"|  |  | does not claim: {card['does_not_claim']} |  |  |")
+
+    local_evidence = payload.get("local_sample_evidence") or {}
+    if local_evidence.get("available"):
+        lines.extend(
+            [
+                "",
+                "## Local Sample Evidence Board",
+                "",
+                f"Local audit source: `{local_evidence['source']}`.",
+                "",
+                f"Audit summary: `{local_evidence.get('total_files')}` files, `{local_evidence.get('decode_success_count')}` decode successes, `{local_evidence.get('decode_fail_count')}` decode failures.",
+                "",
+                "This is local evidence only. It does not make user-supplied `.pkt/.pka` files public curated donors, and it does not enter the npm package.",
+                "",
+                "| Capability | Sample Count | Example Paths |",
+                "| --- | --- | --- |",
+            ]
+        )
+        for item in local_evidence.get("top_capabilities", []):
+            examples = "; ".join(item.get("examples", []))
+            lines.append(f"| `{item['capability']}` | {item['sample_count']} | {examples} |")
+
+    readiness = payload.get("proof_readiness_candidates") or {}
+    if readiness.get("available"):
+        lines.extend(
+            [
+                "",
+                "## Proof-Readiness Promotion Queue",
+                "",
+                "This queue connects proof cards, feature atlas status, and local sample evidence. It is a planning artifact, not a `generate_ready` claim.",
+                "",
+                f"Dashboard: [proof-readiness dashboard](../{readiness.get('dashboard_doc', 'docs/proof-readiness-dashboard.md')})",
+                "",
+                "| Priority | Capability | Family | Current Status | Explicit Command | Next Safe Action | Blocker |",
+                "| --- | --- | --- | --- | --- | --- | --- |",
+            ]
+        )
+        for priority, candidates in (
+            ("primary", readiness.get("primary_candidates", [])),
+            ("secondary", readiness.get("secondary_candidates", [])),
+        ):
+            for candidate in candidates:
+                lines.append(
+                    f"| `{priority}` | `{candidate['capability']}` | `{candidate['scenario_family']}` | `{candidate['current_status']}` | `{candidate.get('explicit_command', '')}` | {candidate['next_safe_action']} | `{candidate['promotion_blocker']}` |"
+                )
 
     missing = [entry for entry in payload["curated_examples"] if not entry.get("screenshots")]
     if missing:

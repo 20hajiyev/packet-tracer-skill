@@ -1,10 +1,20 @@
 {
+  "schema_version": "examples.truth.v2",
   "example_name": "complex_campus_master_edit_v4",
+  "artifact_type": "showcase_example",
   "source_mode": "donor-backed edit",
   "scenario_family": "campus",
-  "public_repo_policy": {
+  "artifact_policy": {
     "commit_pkt_binary": false,
-    "commit_inventory_json": true
+    "commit_inventory_json": true,
+    "commit_screenshots": true,
+    "raw_source_public": false
+  },
+  "maturity_summary": {
+    "atlas_status": "known_working_example",
+    "example_status": "known_working_example",
+    "donor_backed_ready": true,
+    "generate_ready": false
   },
   "artifact_paths": {
     "screenshot": "examples/screenshots/complex_campus_master_edit_v4.png",

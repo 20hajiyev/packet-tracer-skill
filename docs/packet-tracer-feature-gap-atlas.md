@@ -10,7 +10,7 @@ It is intentionally conservative:
 - `donor_backed_ready` requires selected-donor evidence or a validated proof-linked explicit edit gate with sample, decode, and roundtrip evidence.
 - `generate_ready` requires acceptance-backed generate behavior.
 
-The atlas does not claim that every Packet Tracer feature is generate-ready. It turns missing or under-modelled Packet Tracer features into an auditable backlog before any broad config mutation is opened.
+The atlas does not claim that every Packet Tracer feature is `generate_ready`. It turns missing or under-modelled Packet Tracer features into an auditable backlog before any broad config mutation is opened.
 
 ## Remote Sample Evidence
 
@@ -39,7 +39,7 @@ IPv6 tunneling, ISATAP, prefix delegation, and AAAA DNS remain report-first unti
 
 ## Second Edit-Proven Wave
 
-The second promotion wave is `l2_security_monitoring`. The following subset is edit-proven for explicit commands, but still not broad generate-ready:
+The second promotion wave is `l2_security_monitoring`. The following subset is edit-proven for explicit commands, but still not broad `generate_ready`:
 
 - DHCP snooping
 - Dynamic ARP Inspection
@@ -210,8 +210,8 @@ is evidence input, not a public curated donor registry.
 ## Current Feature Families
 
 - `ipv6_routing`: SLAAC, DHCPv6, prefix delegation, AAAA DNS, IPv6 tunneling, ISATAP, OSPFv3, EIGRP IPv6, RIPng, HSRP; OSPFv3, EIGRP IPv6, RIPng, and HSRP are donor-backed ready for explicit edit paths.
-- `ipv4_routing_management`: OSPFv2, EIGRP IPv4, RIPv2, static/default routes, DHCP relay, static/dynamic NAT, PAT, SSH, NTP, and syslog; explicit IOS text edits are edit-proven, but not donor-backed-ready or generate-ready.
-- `l2_resiliency_routing`: BGP, STP/RSTP, EtherChannel, LACP/PAgP, VTP, and DTP; explicit IOS text edits are edit-proven, but not donor-backed-ready or generate-ready.
+- `ipv4_routing_management`: OSPFv2, EIGRP IPv4, RIPv2, static/default routes, DHCP relay, static/dynamic NAT, PAT, SSH, NTP, and syslog; explicit IOS text edits are edit-proven, but not donor-backed ready or `generate_ready`.
+- `l2_resiliency_routing`: BGP, STP/RSTP, EtherChannel, LACP/PAgP, VTP, and DTP; explicit IOS text edits are edit-proven, but not donor-backed ready or `generate_ready`.
 - `l2_security_monitoring`: DHCP snooping, DAI, 802.1X/NAC, LLDP, REP, SNMP, NetFlow, SPAN/RSPAN, QoS, port security; dot1x is donor-backed ready for explicit IOS line edits, while QoS is edit-proven.
 - `wan_security_edge`: VPN crypto-map skeleton, IPSec transform-set, GRE tunnel basics, PPP serial encapsulation, CBAC/ZFW router IOS edits, security-edge evidence, multilayer evidence.
 - `security_edge_deepening`: ASA ACL/NAT, ASA service policy, clientless VPN, CBAC, ZFW, sniffer, IPSec variants; router ZFW is donor-backed ready, while CBAC is edit-proven.

@@ -47,14 +47,39 @@ Another mixed case:
 - that still means the checkout is only partially ready as a packaged repo surface
 - docs should continue saying `validated with external bridge override` rather than implying repo-local readiness
 
-## Bridge Resolution
+## Twofish Engine
 
-- `repo_local`
-  A repo-local vendor bridge is resolved.
-- `external_env`
-  A bridge is only available through an external environment path.
-- `missing`
-  No usable bridge is resolved.
+The cipher is no longer a runtime blocker. `scripts/vendor/twofish_pure.py` is a
+vendored pure-Python Twofish, verified against the official test vectors at
+diagnostic time, so `decode`, `inventory`, `edit`, and `generate` are available
+on a clean checkout with no binaries and no environment variables.
+
+`twofish_backend` reports which engine is active:
+
+- `pure_python`
+  The vendored repo-local engine. Always available. This is the baseline.
+- `compiled`
+  A `_twofish` C bridge resolved from `PKT_TWOFISH_LIBRARY`,
+  `PKT_TWOFISH_SEARCH_ROOTS`, or `scripts/vendor/`. Optional, roughly 12x faster
+  on large labs, and bit-identical to the pure engine.
+
+`bridge_resolution` describes only where the *optional accelerator* came from.
+It no longer downgrades `runtime_grade`, and `external_env` is not a blocker.
+
+## Test Profiles
+
+There is one gate. The suite runs the same way with or without a compiled
+bridge, and nothing is skipped for lack of one:
+
+```
+python -m pytest tests -q
+```
+
+`PKT_REQUIRE_TWOFISH_TESTS=1` is still honoured for hosts that want to assert a
+compiled accelerator is present, but it is no longer needed to prove real
+`.pkt` decode/edit works.
+
+The doctor payload exposes this as `runtime_gate_status` and repeats the most useful user-facing answer in `user_summary`. Consumers should show `user_summary.status`, `user_summary.message`, and `user_summary.next_best_action` before dumping the full diagnostic JSON.
 
 ## Publish-Preview Policy
 

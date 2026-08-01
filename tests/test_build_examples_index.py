@@ -31,11 +31,14 @@ def test_build_examples_index_detects_existing_screenshot() -> None:
     assert campus["acceptance_excerpt"].startswith("known_working_example | donor=donor-backed")
     assert campus["fixture_name"] == "campus_core_complex"
     assert "campus_core_complex" in campus["matrix_excerpt"]
-    assert "management_vlan=generate-ready" in campus["parity_excerpt"]
+    assert "management_vlan=known_working_example" in campus["parity_excerpt"]
     assert "decision=known_working_example" in campus["decision_excerpt"]
     assert "runtime=donor-backed example artifact" == campus["runtime_excerpt"]
     assert campus["donor_origin"] == "donor-backed"
     assert campus["primary_capabilities"] == campus["capabilities"]
+    assert campus["schema_version"] == "examples.truth.v2"
+    assert campus["artifact_type"] == "showcase_example"
+    assert campus["maturity_summary"]["generate_ready"] is False
 
     home_iot = next(entry for entry in payload["curated_examples"] if entry["name"] == "home_iot_cli_edit_v1")
     assert home_iot["screenshot"] == "examples/screenshots/home_iot_cli_edit_v1.png"
@@ -46,8 +49,8 @@ def test_build_examples_index_detects_existing_screenshot() -> None:
     assert home_iot["acceptance_rank"] == 3
     assert home_iot["fixture_name"] == "home_iot_complex"
     assert "capabilities=iot, iot_registration" in home_iot["acceptance_excerpt"]
-    assert "mode=donor-backed constrained-generate" in home_iot["acceptance_excerpt"]
-    assert "iot_registration=donor-backed constrained-generate" in home_iot["parity_excerpt"]
+    assert "mode=donor-backed constrained edit" in home_iot["acceptance_excerpt"]
+    assert "iot_registration=donor_backed_ready" in home_iot["parity_excerpt"]
 
     service_heavy = next(entry for entry in payload["curated_examples"] if entry["name"] == "service_heavy_cli_edit_v1")
     assert service_heavy["screenshot"] == "examples/screenshots/service_heavy_cli_edit_v1.png"
@@ -63,6 +66,17 @@ def test_build_examples_index_detects_existing_screenshot() -> None:
     assert service_heavy["fixture_name"] == "service_heavy_complex"
     assert "server_dns" in service_heavy["acceptance_excerpt"]
 
+    assert len(payload["proof_cards"]) == 7
+    for card in payload["proof_cards"]:
+        assert card["try_command"]
+        assert card["does_not_claim"]
+        assert card["support_level_explanation"]
+    assert payload["support_truth"]["generate_ready"] == 0
+    assert payload["local_sample_evidence"]["total_files"] == 367
+    assert payload["proof_readiness_candidates"]["release_line"] == "0.2.4 candidate"
+    assert len(payload["proof_readiness_candidates"]["primary_candidates"]) == 9
+    assert len(payload["proof_readiness_candidates"]["secondary_candidates"]) == 8
+
 
 def test_checked_in_examples_index_matches_builder() -> None:
     expected = build_examples_index()
@@ -73,7 +87,7 @@ def test_checked_in_examples_index_matches_builder() -> None:
 def test_examples_gallery_markdown_contains_curated_entries() -> None:
     payload = build_examples_index()
     gallery = build_examples_gallery_markdown(payload)
-    assert "## Known Working Scenario Set" in gallery
+    assert "## Showcase Examples" in gallery
     assert "aligned with the scenario fixture corpus" in gallery
     assert "Complex Campus" in gallery
     assert "Home IoT" in gallery
@@ -84,8 +98,19 @@ def test_examples_gallery_markdown_contains_curated_entries() -> None:
     assert "[screenshot](screenshots/service_heavy_cli_edit_v1.png)" in gallery
     assert "known_working_example | donor=donor-backed" in gallery
     assert "campus_core_complex | known_working_example | family=campus" in gallery
-    assert "management_vlan=generate-ready" in gallery
-    assert "iot_registration=donor-backed constrained-generate" in gallery
+    assert "management_vlan=known_working_example" in gallery
+    assert "iot_registration=donor_backed_ready" in gallery
+    assert "## 0.2.4 Candidate Proof Cards" in gallery
+    assert "IPv4 Routing / NAT / IOS Management" in gallery
+    assert "Security Edge CBAC/ZFW" in gallery
+    assert "Local Sample Evidence Board" in gallery
+    assert "Proof-Readiness Promotion Queue" in gallery
+    assert "proof-readiness dashboard" in gallery
+    assert "`ospfv2`" in gallery
+    assert "`bgp`" in gallery
+    assert "try this command: `set R1 ospfv2 1 network" in gallery
+    assert "does not claim:" in gallery
+    assert "generate-ready" not in gallery
     assert "decision=known_working_example | donor_origin=donor-backed" in gallery
     assert "runtime=donor-backed example artifact" in gallery
     assert "extra visuals: [detail 1](screenshots/service_heavy_cli_edit_v1_dhcp.png); [detail 2](screenshots/service_heavy_cli_edit_v1_dns.png)" in gallery

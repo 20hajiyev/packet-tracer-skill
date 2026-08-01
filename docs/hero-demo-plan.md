@@ -2,7 +2,7 @@
 
 ## Goal
 
-Prepare one conservative hero demo flow for the `0.2.1` public preview surface without implying self-contained runtime readiness.
+Prepare one conservative hero demo flow for the current `0.2.3` capability release and the next `0.2.4` candidate surface without implying self-contained runtime readiness.
 
 ## Prompt
 

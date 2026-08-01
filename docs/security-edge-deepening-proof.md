@@ -1,6 +1,6 @@
 # Security Edge Deepening Proof
 
-This proof records the `0.2.3` candidate router-based security edge edit-proven subset. The supported surface is IOS line-based CBAC/ZFW configuration on an explicitly named router. ASA GUI/internal mutation, clientless VPN, and broad security topology generation remain blocked.
+This proof records the published `0.2.3` router-based security edge edit-proven subset and the `0.2.4` candidate proof-readiness context. The supported surface is IOS line-based CBAC/ZFW configuration on an explicitly named router. ASA GUI/internal mutation, clientless VPN, and broad security topology generation remain blocked.
 
 ## Explicit Commands
 

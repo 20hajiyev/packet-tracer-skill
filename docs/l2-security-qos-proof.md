@@ -1,6 +1,6 @@
 # L2 Security and QoS Proof
 
-This proof records the `0.2.3` candidate L2 security/QoS edit-proven subset. It is intentionally narrow: the skill can append deterministic IOS-style switch configuration lines for explicitly named targets, but it does not synthesize a full NAC or QoS design from a broad prompt.
+This proof records the published `0.2.3` L2 security/QoS edit-proven subset and the `0.2.4` candidate proof-readiness context. It is intentionally narrow: the skill can append deterministic IOS-style switch configuration lines for explicitly named targets, but it does not synthesize a full NAC or QoS design from a broad prompt.
 
 ## Explicit Commands
 

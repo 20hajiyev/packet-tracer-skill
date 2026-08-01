@@ -1,0 +1,439 @@
+# `packet-tracer-skill` 0.3.0 Improvement Plan — Unblock the Product
+
+> Written 2026-08-01 after a fresh empirical audit of the repo, the local Packet
+> Tracer 9.0.0 install, and the full bundled sample corpus. This plan supersedes
+> the `0.2.4` "UX freeze + guided proof workflow" direction.
+>
+> **Status: Phases 0, 1 and 2 are implemented and verified.** Phase 1.2 (the 18
+> undecodable samples) and Phases 3–5 remain open. See §8 for what landed.
+
+---
+
+## 1. Executive Summary
+
+The repo is 22,875 lines of Python with 267 tests, 14 proof documents, a feature
+atlas of 87 features, a proof-readiness dashboard, and a curated donor registry.
+
+And `generate_ready` is `0`. It has been `0` for the entire `0.2.x` line.
+
+The `0.2.x` work assumed that was a *capability* problem — that more donors, more
+proof cards, more readiness waves, and better refusal messaging would eventually
+move features up the support ladder. **That assumption is wrong.** The audit below
+shows `generate_ready=0` is produced by two mechanical defects, both fixable in
+days, not quarters:
+
+1. The runtime depends on a **compiled C binary that is not in the repo and cannot
+   be shipped on npm**. Every operation except `validate_open` reports `blocked`
+   on a clean checkout — including on this machine, which has a working Packet
+   Tracer 9.0 install.
+2. The donor version gate is an **exact build-string equality check** against
+   `9.0.0.0810`. Zero of the 292 Cisco sample saves bundled with Packet Tracer 9.0
+   carry that build string. The gate is arithmetically unsatisfiable against the
+   corpus the architecture is designed to consume.
+
+Neither defect is visible from inside the current test suite, because the tests
+that would catch them are skipped by default, and a large share of the remaining
+tests assert on **prose strings inside markdown files** rather than behavior.
+
+`0.3.0` should stop adding surface and start removing the blockers.
+
+---
+
+## 2. Evidence
+
+Everything in this section was executed against this checkout on 2026-08-01.
+
+### 2.1 The runtime is blocked by a misplaced file, not by a missing capability
+
+Clean checkout, no environment overrides:
+
+```
+runtime_grade      : partially_ready
+capability_impact  : inventory=blocked  decode=blocked  edit=blocked
+                     generate=blocked   validate_open=ready
+twofish_load_status: missing
+donor_status       : missing  ("candidates found, but none could be decoded")
+```
+
+The same command, with `PKT_TWOFISH_LIBRARY` pointed at a `_twofish.cp314-win_amd64.pyd`
+that already exists in a sibling scratch folder (`tmp_twofish/`):
+
+```
+twofish_load_status: ok
+donor_status       : ok        donor_version = 9.0.0.0810
+capability_impact  : inventory=ready  decode=ready  edit=ready
+                     generate=ready   validate_open=ready
+runtime_grade      : partially_ready   <-- unchanged, by policy only
+```
+
+Every capability flips to `ready`. `runtime_grade` stays `partially_ready`
+**solely** because `bridge_resolution == "external_env"`, which is a rule the repo
+imposes on itself in `docs/runtime-truth.md` — not a technical limitation.
+
+The implication: `docs/runtime-truth.md`, the `bridge_resolution` field, the
+`default gate` / `strict gate` split in `tests/conftest.py`, and a meaningful part
+of the README exist to *narrate* a blocker whose entire cause is that a 100 KB
+compiled artifact lives in the wrong directory and cannot legally ride along in an
+npm tarball.
+
+### 2.2 The donor version gate cannot be satisfied
+
+Decoded all 292 `.pkt` files under
+`C:\Program Files\Cisco Packet Tracer 9.0.0\saves` and extracted `<VERSION>`:
+
+| Version family | Count |
+|---|---:|
+| 7.x | 137 |
+| 6.x | 58 |
+| **9.0.0.x** | **48** |
+| 8.x | 27 |
+| 5.x | 4 |
+| decode failure | 18 |
+| **9.0.0.0810 (the required build)** | **0** |
+
+The 48 files in the 9.0 family carry `9.0.0.0000`, `9.0.0.4178`, `9.0.0.0112`, and
+`9.0.0.0172`. **None** carry `9.0.0.0810`.
+
+`9.0.0.0810` appears only in files *saved by this machine's own Packet Tracer*
+(the seven labs in `~/Downloads` all report `9.0.0.0810`).
+
+The gate itself is a single string comparison, in exactly two places:
+
+```python
+# scripts/packet_tracer_env.py:310 and :339
+if donor_version != target_version:
+    ...  status="version_mismatch"
+```
+
+So the documented architecture — *"installed Packet Tracer sample saves are the
+primary prototype source"* (`SKILL.md`) — is wired to a donor pool that its own
+gate rejects 100% of. `SKILL.md` even names the FTP sample as the preferred donor;
+that file is `5.3.0.0011`.
+
+This is the actual reason `generate_ready=0`. No amount of donor curation, proof
+cards, or promotion queues can move it while this gate stands.
+
+### 2.3 The test suite is currently red, and nobody knows
+
+Strict profile with the bridge resolved:
+
+```
+PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q
+→ 1 failed, 266 passed
+```
+
+```
+tests/test_release_surface.py:311: NameError: name 'readme' is not defined
+```
+
+This was introduced in the last `0.2.4` batch. It shipped because that session
+could not run `pytest` and validated with syntax checks and CLI smokes instead.
+The default profile hides it: without the bridge the suite reports green with 37
+skips, and this particular test is inside the skipped-adjacent surface.
+
+### 2.4 A large share of the test suite tests prose, not behavior
+
+`tests/test_release_surface.py` is 436 lines and reads largely like this:
+
+```python
+assert "Fifth Donor-Backed Edit Readiness Wave" in feature_gap_atlas
+assert "closest rejected donor class" in follow_up
+assert "try this command: `set R1 ospfv2 1 network" in gallery
+assert "does not make dot1x or QoS `generate_ready`" in l2_security_qos_proof
+```
+
+These assert that specific marketing sentences exist in specific markdown files.
+They cannot fail when the product breaks and cannot pass when the product is
+fixed — they only fail when someone edits prose. They are the reason the docs
+have calcified into 14 near-duplicate "proof" files that no one can safely
+consolidate.
+
+### 2.5 The codec cannot read 6% of the corpus
+
+18 of 292 bundled samples fail with `EAX authentication tag verification failed`,
+across all version families (`HTTPS.pkt`, `TFTP.pkt`, `QoS.pkt`, `SNMP_Router.pkt`,
+`Outside_Nat.pkt`, …). `pkt_codec.py` implements only `*_pkt_modern`. There is at
+least one additional container variant in the wild that the codec does not model —
+and several of those files cover exactly the capabilities the feature atlas lists
+as unproven (QoS, SNMP, NAT, TFTP).
+
+### 2.6 Structural debt
+
+| File | Lines | Note |
+|---|---:|---|
+| `scripts/generate_pkt.py` | 4,361 | CLI + planner + validator + reporter + 40-key JSON assembly |
+| `scripts/coverage_matrix.py` | 1,812 | |
+| `scripts/pkt_editor.py` | 1,703 | |
+| `scripts/intent_parser.py` | 1,657 | |
+| `scripts/pkt_builder.py` | **15** | `SKILL.md` presents this as "builds Packet Tracer XML from a blueprint" |
+
+`--explain-plan` returns a **40-key** top-level JSON object. `user_summary` was
+added in `0.2.4` to make that legible, which is treating the symptom.
+
+Outside the repo, the working directory holds 22 abandoned scratch directories
+(`pkt_impl`, `pkt_skill_work`, `pkt_skill_test3`, `tmp-skill-bootstrap-2`, …)
+totalling ~160 MB, three of which contain the only copies of the Twofish binary
+the product needs.
+
+---
+
+## 3. Diagnosis
+
+> The `0.2.x` line optimized **honesty about being blocked** instead of
+> **being unblocked**. Every mechanism added — runtime grades, proof cards,
+> readiness waves, refusal messaging, the promotion queue — is a high-quality
+> answer to "why can't I generate?" None of them change the answer.
+
+Three false blockers, in dependency order:
+
+| # | False blocker | Real cause | Cost to fix |
+|---|---|---|---|
+| B1 | "Runtime is not repo-local ready" | ctypes dependency on an unshippable C extension | ~1 day |
+| B2 | "No compatible donor exists" | exact-build string equality on `<VERSION>` | ~1 day |
+| B3 | "Features are not proven" | tests assert prose; no behavioral acceptance corpus | ~3 days |
+
+B1 gates B2 (you cannot read a donor's version without the codec). B2 gates B3
+(you cannot prove generation without an eligible donor). All three gate every
+feature in the atlas.
+
+---
+
+## 4. Plan
+
+### Phase 0 — Stop the bleeding *(half a day)*
+
+- **P0.1** Fix `tests/test_release_surface.py:311` (`readme` undefined). Repo is red.
+- **P0.2** Add a CI job that runs the **strict** profile with a resolved bridge, so
+  a red suite can never again be reported as green.
+- **P0.3** Move the workspace scratch directories under a single ignored
+  `.scratch/` root, or delete them. Preserve `tmp_twofish/` until Phase 1 lands —
+  it currently holds a load-bearing artifact.
+
+Exit: `pytest -q` green in both profiles; `git status` clean.
+
+### Phase 1 — Make the runtime self-contained *(1–2 days)*
+
+**P1.1 Vendor a pure-Python Twofish.**
+Twofish is unpatented and public-domain by design; a correct pure-Python
+implementation is ~250 lines (key schedule + MDS/RS matrices + h-function + 16
+Feistel rounds). Ship it as `scripts/vendor/twofish_pure.py`, verified against the
+three official Twofish book vectors (128/192/256-bit) already present in
+`vendor_twofish.py::self_test`.
+
+`pkt_codec._twofish_cls()` becomes: try the compiled bridge (fast path, keep it if
+present) → fall back to pure Python. No environment variable required for
+correctness; the binary becomes an optional accelerator.
+
+Performance is the only real risk. A 2.5 MB lab decodes to ~2.5 MB of XML ≈ 160k
+blocks; EAX costs roughly 2 block-ops per block (CTR + OMAC), so ~320k Twofish
+block encryptions. Budget: pure Python at ~20–40 µs/block ⇒ 6–13 s per file.
+Mitigations, in order: precompute the key-dependent S-box as four 256-entry
+`int` tables at key-schedule time (the key is a constant `0x89 * 16`, so this can
+be computed **once, ever, and frozen into the module as a literal table**); operate
+on `int.from_bytes` words rather than per-byte; keep the compiled bridge as the
+opt-in fast path for bulk corpus scans.
+
+**P1.2 Model the second container variant.**
+Investigate the 18 EAX failures. Hypothesis order: (a) a different key/IV for
+pre-8.x saves, (b) a stage-2 variant, (c) `.pka`-style activity wrapper. Add
+`decode_pkt_auto()` that tries known variants and reports which matched.
+
+**P1.3 Delete the ceremony that B1 created.**
+Once the codec always works: remove `bridge_resolution`, collapse the default/strict
+test profiles into one, and reduce `docs/runtime-truth.md` to a short note about
+Packet Tracer installation requirements. This deletes code, docs, and test surface.
+
+Exit: `python scripts/runtime_doctor.py` on a clean checkout with no env vars set
+reports `decode=ready`, `inventory=ready`, `edit=ready`. Zero skipped tests.
+
+### Phase 2 — Make the donor gate satisfiable *(1 day)*
+
+**P2.1 Replace exact-build equality with a compatibility ladder.**
+Introduce one function, used by both call sites in `packet_tracer_env.py`:
+
+```python
+def donor_compatibility(donor_version: str, target_version: str) -> Compatibility:
+    """exact | same_minor | same_major | upgradeable | incompatible"""
+```
+
+Policy proposal (configurable via `PACKET_TRACER_DONOR_POLICY`):
+
+| Tier | Meaning | Default |
+|---|---|---|
+| `exact` | build strings identical | accept |
+| `same_minor` | `9.0.0.*` — same schema generation, different build | **accept (new)** |
+| `same_major` | `9.*` | accept with a recorded assumption |
+| `upgradeable` | `6.x`–`8.x`; Packet Tracer upgrades these on open | accept only behind `--allow-legacy-donor` |
+| `incompatible` | `5.x` and below | reject |
+
+Effect on this machine: eligible bundled donors go **0 → 48** immediately, with no
+new donor curation and no external downloads.
+
+**P2.2 Validate the policy empirically, not by assertion.**
+Round-trip each of the 48 `9.0.0.x` donors: decode → re-encode → byte-compare, then
+decode → mutate → encode → open in Packet Tracer via the existing `--validate-open`
+path. A donor is *eligible* only if Packet Tracer actually opens the mutated output.
+That replaces the current curated-registry-by-declaration with measurement.
+
+**P2.3 Retire the version-freeze language.**
+`SKILL.md`'s "do not downgrade", "do not use a legacy fallback", "stop with a
+blocking error instead of switching versions" rules were correct defenses against
+the 5.3 fallback bug. With a real compatibility ladder they become
+counterproductive. Rewrite as: *donor tier is chosen by policy, recorded in the
+plan output, and surfaced as an assumption.*
+
+Exit: `--explain-plan` for the standard campus prompt selects a donor and reports
+`allow_generate: true` for at least one scenario family.
+
+### Phase 3 — Prove generation with a real acceptance corpus *(3–4 days)*
+
+**P3.1 Build a golden corpus.** 12–15 prompts spanning the archetypes the atlas
+already names (campus/core, router-on-a-stick, DHCP, wireless, home IoT, service
+heavy). For each: prompt → generated `.pkt` → decoded XML snapshot → an
+`--validate-open` result.
+
+**P3.2 Replace prose assertions with corpus assertions.** Delete the ~200
+`assert "<sentence>" in <markdown>` checks in `test_release_surface.py` and friends.
+Keep only structural doc checks (links resolve, no absolute user paths, no
+mojibake). Every deleted prose assertion is replaced, where it mattered, by a
+corpus case.
+
+**P3.3 Promote features on evidence.** A feature reaches `generate_ready` when a
+corpus case that exercises it opens cleanly in Packet Tracer. `feature_atlas.py`
+reads corpus results instead of hand-maintained JSON status fields.
+
+Exit: `generate_ready > 0`, backed by files that Packet Tracer opens.
+
+### Phase 4 — Shrink the surface *(2–3 days, can run parallel to Phase 3)*
+
+- **P4.1** Split `generate_pkt.py` (4,361 lines) into `cli.py` (argparse + dispatch
+  only), `planner.py`, `donor_selection.py`, `reporting.py`. No behavior change; the
+  40-key JSON contract is preserved verbatim and locked by a schema test.
+- **P4.2** Either implement `pkt_builder.py` as `SKILL.md` describes, or delete it
+  and correct `SKILL.md`. Right now the documented "XML builder" is a 15-line
+  passthrough to `pkt_transformer`.
+- **P4.3** Collapse the 14 `docs/*-proof.md` files into one generated
+  `docs/capability-evidence.md`, emitted by the corpus runner. Proof documents
+  should be *output*, not hand-written input.
+- **P4.4** Nest the JSON contract: `{plan, donor, decision, diagnostics, guidance}`
+  instead of 40 flat keys. Keep a flat view behind `--flat-json` for one release.
+
+### Phase 5 — Make it pleasant to use *(2 days)*
+
+The user-facing complaint underneath all of this is *"I don't know what to type,
+and I don't know why it said no."*
+
+- **P5.1** One verb-first CLI: `pkt doctor`, `pkt plan "<prompt>"`,
+  `pkt build "<prompt>" -o lab.pkt`, `pkt edit lab.pkt "<prompt>"`,
+  `pkt inspect lab.pkt`. The current interface is a single script with ~30 flags.
+- **P5.2** Human output by default, `--json` for machines. Today it is the reverse,
+  which is why `user_summary` had to be bolted onto the JSON.
+- **P5.3** First-run bootstrap: on first invocation, detect Packet Tracer, pick a
+  donor, cache the choice in `~/.pkt/config.json`, and print what it found. No
+  environment variables in the happy path.
+- **P5.4** Refusals become actionable: not *"blocked by runtime, donor, or bridge
+  readiness"* (three possibilities), but *"Donor `FTP.pkt` is version 5.3.0.0011.
+  Run `pkt doctor --list-donors` — 48 compatible donors are available."*
+
+---
+
+## 5. Sequencing and Risk
+
+```
+P0 ──► P1 ──► P2 ──► P3 ──► generate_ready > 0
+              │
+              └────► P4 (parallel, mechanical)
+                     P5 (parallel, after P2)
+```
+
+| Risk | Likelihood | Mitigation |
+|---|---|---|
+| Pure-Python Twofish too slow for 6 MB labs | medium | frozen S-box tables; keep compiled bridge as opt-in accelerator; measure before committing |
+| `9.0.0.x` donors are not actually schema-compatible | medium | P2.2 measures with real Packet Tracer opens instead of assuming |
+| Deleting prose tests loses a real invariant | low | replace with structural link/encoding checks; the behavioral ones move to the corpus |
+| `generate_pkt.py` split breaks a consumer | low | JSON schema test locks the contract before the split |
+
+## 6. What This Plan Deliberately Does Not Do
+
+- Does not add a new Packet Tracer capability wave.
+- Does not add proof documents, dashboards, or readiness queues — it removes them.
+- Does not publish to npm. Publishing is a separate decision after Phase 3.
+- Does not adopt PTBuilder live deploy or external donor imports.
+
+## 7. Success Criteria for `0.3.0` (targets)
+
+<a id="section-8"></a>
+
+## 8. Implementation Log
+
+### Landed
+
+**P0.1** — `tests/test_release_surface.py:311` referenced an undefined `readme`.
+The three assertions moved into the README test, where the variable exists.
+
+**P1.1** — `scripts/vendor/twofish_pure.py`: pure-Python Twofish, ~300 lines.
+Key-dependent S-box and MDS multiply folded into four 256-entry word tables at
+key-schedule time; round function written longhand to avoid CPython call
+overhead; `g(rol32(r1,8))` folded into permuted lookups so the rotate never
+happens. Measured 20.4 → 13.8 µs/block after inlining.
+
+Verification: all three official test vectors pass, and 300 random
+key/block pairs across 128/192/256-bit keys are bit-identical to the compiled
+bridge. Real labs round-trip semantically (`decode(encode(decode(x))) == decode(x)`):
+a 279 KB lab in 0.65 s, a 2.8 MB lab in 12.6 s.
+
+`pkt_codec._twofish_cls()` now prefers the compiled bridge and falls back to the
+pure engine, exposing the choice through `twofish_backend()`.
+
+Note: the cipher runs over the *qCompressed* payload, not the raw XML, so the
+runtime cost is far below the estimate in §5 — a 6.2 MB XML lab is only a 2.8 MB
+cipher input.
+
+**P1.3** — `bridge_resolution=external_env` no longer downgrades `runtime_grade`
+or raises `using_external_bridge_only`. Python minimum relaxed from exactly 3.14
+to 3.10+, since the ABI pin belonged to the accelerator alone. `runtime-truth.md`
+rewritten around `twofish_backend`. The two test profiles collapsed into one:
+nothing is skipped for lack of a bridge.
+
+**P2.1** — `donor_compatibility()` / `donor_tier_is_accepted()` /
+`get_donor_policy()` in `packet_tracer_env.py` replace the two exact-equality
+checks. Candidate scanning now prefers the strictest qualifying tier rather than
+the first match, and rejection messages name the tier, the policy, and the
+setting that would accept the donor.
+
+### Measured Effect
+
+| | Before | After |
+|---|---|---|
+| Clean checkout, no env vars | `decode/inventory/edit/generate` all **blocked** | all **ready**, `runtime_grade=ready` |
+| Eligible bundled donors (default policy) | **0** of 292 | **48** of 292 (270 under `upgradeable`) |
+| Test suite, no bridge | 230 passed, 37 skipped, 1 hidden failure | **306 passed, 1 skipped** |
+| Test suite, with bridge | 266 passed, 1 failed | **307 passed, 0 skipped** |
+| Required setup | compiled `.pyd` + 2 env vars | none |
+
+### Still Open
+
+- **P1.2** — 18 of 292 bundled samples still fail EAX tag verification. A second
+  container variant is unmodelled.
+- **P3–P5** — unchanged from the plan above.
+- **The real blocker is now visible.** With a compatible donor resolved and no
+  intent gaps, `--explain-plan` reaches donor selection and reports
+  `filtered: 19` with concrete reasons: *"donor graph has no reusable link pairs
+  for the requested topology"*, *"sample reuses too little of the requested link
+  skeleton"*. Before these changes that layer was never reached. The graph-fit
+  heuristics in `_filter_candidates_for_blueprint` are the next thing to fix.
+- **A reporting bug worth fixing early.** When the intent plan has blocking gaps,
+  donor evaluation is skipped entirely, but `scenario_generate_decision` still
+  reports `what_failed: "donor selection"` with `candidate_counts` all zero. The
+  user is told the donor failed when the prompt was actually incomplete.
+
+## 9. Original Success Criteria
+
+1. Clean checkout, no environment variables, no compiled binary: `decode`,
+   `inventory`, and `edit` all report `ready`.
+2. One test profile. Zero skipped tests. Green.
+3. At least 40 eligible donors discovered from a stock Packet Tracer 9.0 install.
+4. `generate_ready >= 5`, each backed by a `.pkt` that Packet Tracer opens.
+5. `generate_pkt.py` under 1,000 lines.
+6. `docs/` under 8 hand-written files.
+7. A new user reaches a generated, opening `.pkt` in **one** command.

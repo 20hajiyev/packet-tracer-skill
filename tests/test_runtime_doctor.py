@@ -79,6 +79,10 @@ def test_collect_runtime_doctor_windows_ready(monkeypatch) -> None:
     assert payload["why_it_is_blocked"] == "No runtime blocker is currently active."
     assert payload["best_next_fix"] == "No immediate fix is required."
     assert payload["runtime_grade"] == "ready"
+    assert payload["runtime_gate_status"]["strict_gate_ready"] is True
+    assert "PKT_REQUIRE_TWOFISH_TESTS=1" in payload["runtime_gate_status"]["strict_gate_command"]
+    assert payload["user_summary"]["status"] == "ready"
+    assert payload["user_summary"]["next_best_action"] == payload["best_next_fix"]
     assert "Runtime is ready." in payload["doctor_summary"]
     assert "Ready operations: inventory, decode, edit, generate, validate_open." in payload["doctor_summary"]
     assert payload["bridge_resolution"] == "repo_local"
@@ -145,6 +149,9 @@ def test_collect_runtime_doctor_linux_reports_windows_first_runtime(monkeypatch)
     assert "no local Twofish bridge is resolved" in payload["why_it_is_blocked"]
     assert payload["best_next_fix"] == "Fix the donor path first so inventory/edit/generate can use a compatible 9.0 donor."
     assert payload["runtime_grade"] == "blocked"
+    assert payload["runtime_gate_status"]["strict_gate_ready"] is False
+    assert payload["user_summary"]["status"] == "blocked"
+    assert payload["user_summary"]["runtime_gate_status"]["strict_gate_ready"] is False
     assert "Runtime is blocked." in payload["doctor_summary"]
     assert "Blocked operations:" in payload["doctor_summary"]
     assert payload["bridge_resolution"] == "missing"
@@ -193,18 +200,18 @@ def test_collect_runtime_doctor_reports_external_bridge_resolution(monkeypatch) 
 
     payload = runtime_doctor.collect_runtime_doctor()
 
-    assert payload["runtime_grade"] == "partially_ready"
+    # An externally-resolved compiled bridge is an optional accelerator, not a
+    # downgrade: the vendored pure-Python engine is the repo-local baseline, so
+    # using the fast path from outside the checkout does not block anything.
     assert payload["bridge_resolution"] == "external_env"
     assert payload["bridge_path_source"] == "env"
+    assert payload["runtime_grade"] == "ready"
+    assert payload["runtime_blockers"] == []
+    assert payload["runtime_gate_status"]["strict_gate_ready"] is True
     assert payload["what_currently_works"] == "Currently working operations: inventory, decode, edit, generate, validate_open."
     assert payload["what_is_blocked"] == "No runtime operations are currently blocked."
-    assert "external bridge override" in payload["why_it_is_blocked"]
-    assert payload["best_next_fix"] == "Move the external bridge into the repo-local vendor path if you need a self-contained runtime claim."
-    assert "Runtime operations are ready" in payload["doctor_summary"]
-    assert "external environment" in payload["doctor_summary"]
-    assert "repo-local vendor bridge" in payload["bridge_recommendation"]
-    assert "rely on an external bridge path" in payload["runtime_contract_notes"]
-    assert "using_external_bridge_only" in payload["runtime_blockers"]
+    assert "using_external_bridge_only" not in payload["runtime_blockers"]
+    assert "accelerator" in payload["bridge_recommendation"]
 
 
 def test_collect_runtime_doctor_reports_validate_open_only_partial_state(monkeypatch) -> None:
@@ -244,6 +251,8 @@ def test_collect_runtime_doctor_reports_validate_open_only_partial_state(monkeyp
     payload = runtime_doctor.collect_runtime_doctor()
 
     assert payload["runtime_grade"] == "partially_ready"
+    assert payload["runtime_gate_status"]["strict_gate_ready"] is False
+    assert payload["user_summary"]["status"] == "partially_ready"
     assert payload["ready_operations"] == ["validate_open"]
     assert "inventory" in payload["blocked_operations"]
     assert "decode" in payload["blocked_operations"]

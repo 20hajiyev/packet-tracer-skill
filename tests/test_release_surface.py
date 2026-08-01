@@ -32,9 +32,11 @@ def test_release_docs_and_trust_files_exist() -> None:
         ROOT / "docs" / "l2-security-qos-proof.md",
         ROOT / "docs" / "security-edge-deepening-proof.md",
         ROOT / "docs" / "generate-ready-pilot-design.md",
+        ROOT / "docs" / "proof-readiness-dashboard.md",
         ROOT / "docs" / "packet-tracer-feature-gap-atlas.md",
         ROOT / "docs" / "discovery-keywords.md",
         ROOT / "docs" / "github-launch-ops-0.2.2.md",
+        ROOT / "docs" / "github-launch-ops-0.2.3.md",
         ROOT / "docs" / "publish-preview-roadmap.md",
         ROOT / "docs" / "github-metadata.md",
         ROOT / "docs" / "hero-demo-plan.md",
@@ -42,6 +44,9 @@ def test_release_docs_and_trust_files_exist() -> None:
         ROOT / "docs" / "post-launch-follow-up.md",
         ROOT / "docs" / "release-notes-0.2.2.md",
         ROOT / "docs" / "release-notes-0.2.3.md",
+        ROOT / "docs" / "release-notes-0.2.4.md",
+        ROOT / "pytest.ini",
+        ROOT / "references" / "proof-readiness-candidates.json",
         ROOT / ".github" / "workflows" / "ci.yml",
         ROOT / ".github" / "ISSUE_TEMPLATE" / "bug_report.yml",
         ROOT / ".github" / "ISSUE_TEMPLATE" / "feature_request.yml",
@@ -66,10 +71,11 @@ def test_readme_highlights_release_and_runtime_contracts() -> None:
     assert "bridge_resolution" in readme
     assert "references/curated-donor-registry.json" in readme
     assert "references/scenario-fixture-corpus.json" in readme
-    assert "docs/release-notes-0.2.2.md" in readme
     assert "docs/release-notes-0.2.3.md" in readme
+    assert "docs/release-notes-0.2.4.md" in readme
     assert "docs/hero-demo-plan.md" in readme
-    assert "docs/github-launch-ops-0.2.2.md" in readme
+    assert "docs/github-launch-ops-0.2.3.md" in readme
+    assert "docs/proof-readiness-dashboard.md" in readme
     assert "docs/campus-donor-proof.md" in readme
     assert "docs/home-iot-donor-proof.md" in readme
     assert "docs/wan-security-donor-proof.md" in readme
@@ -109,6 +115,10 @@ def test_readme_highlights_release_and_runtime_contracts() -> None:
     assert "output/local-sample-audit.json" in readme
     assert "Bu repo Cisco Packet Tracer 9.x `.pkt` faylları" in readme
     assert "generate_ready=0" in readme
+    assert "The next candidate line is `0.2.4`" in readme
+    assert "user_summary" in readme
+    assert "next_best_action" in readme
+    assert "proof_card_refs" in readme
 
 
 def test_package_metadata_is_publish_ready() -> None:
@@ -125,9 +135,12 @@ def test_package_metadata_is_publish_ready() -> None:
         "CITATION.cff",
         "SECURITY.md",
         "CODE_OF_CONDUCT.md",
+        "pytest.ini",
         "bin/packet-tracer-skill.js",
         "scripts/*.py",
         "examples/screenshots/*.png",
+        "examples/proof-cards.json",
+        "examples/local-sample-evidence.json",
         "docs/campus-donor-proof.md",
         "docs/home-iot-donor-proof.md",
         "docs/wan-security-donor-proof.md",
@@ -140,11 +153,14 @@ def test_package_metadata_is_publish_ready() -> None:
         "docs/l2-security-qos-proof.md",
         "docs/security-edge-deepening-proof.md",
         "docs/generate-ready-pilot-design.md",
+        "docs/proof-readiness-dashboard.md",
         "docs/packet-tracer-feature-gap-atlas.md",
+        "docs/github-launch-ops-0.2.3.md",
         "docs/github-launch-ops-0.2.2.md",
         "docs/post-launch-follow-up.md",
         "docs/release-notes-0.2.2.md",
         "docs/release-notes-0.2.3.md",
+        "docs/release-notes-0.2.4.md",
         "docs/runtime-truth.md",
     } <= files
     assert scripts["test"] == "python -m pytest tests -q"
@@ -168,10 +184,12 @@ def test_ci_workflow_runs_examples_build_and_tests() -> None:
 def test_launch_prep_docs_are_decision_complete() -> None:
     release_notes = (ROOT / "docs" / "release-notes-0.2.3.md").read_text(encoding="utf-8")
     historical_release_notes = (ROOT / "docs" / "release-notes-0.2.2.md").read_text(encoding="utf-8")
+    candidate_release_notes = (ROOT / "docs" / "release-notes-0.2.4.md").read_text(encoding="utf-8")
     hero_demo = (ROOT / "docs" / "hero-demo-plan.md").read_text(encoding="utf-8")
     launch_announcement = (ROOT / "docs" / "launch-announcement-0.2.2.md").read_text(encoding="utf-8")
     metadata = (ROOT / "docs" / "github-metadata.md").read_text(encoding="utf-8")
     launch_ops = (ROOT / "docs" / "github-launch-ops-0.2.2.md").read_text(encoding="utf-8")
+    current_launch_ops = (ROOT / "docs" / "github-launch-ops-0.2.3.md").read_text(encoding="utf-8")
     donor_proof = (ROOT / "docs" / "campus-donor-proof.md").read_text(encoding="utf-8")
     home_iot_proof = (ROOT / "docs" / "home-iot-donor-proof.md").read_text(encoding="utf-8")
     wan_security_proof = (ROOT / "docs" / "wan-security-donor-proof.md").read_text(encoding="utf-8")
@@ -184,6 +202,8 @@ def test_launch_prep_docs_are_decision_complete() -> None:
     ipv4_routing_management_proof = (ROOT / "docs" / "ipv4-routing-management-proof.md").read_text(encoding="utf-8")
     security_edge_deepening_proof = (ROOT / "docs" / "security-edge-deepening-proof.md").read_text(encoding="utf-8")
     generate_ready_pilot = (ROOT / "docs" / "generate-ready-pilot-design.md").read_text(encoding="utf-8")
+    proof_readiness_dashboard = (ROOT / "docs" / "proof-readiness-dashboard.md").read_text(encoding="utf-8")
+    proof_readiness_candidates = json.loads((ROOT / "references" / "proof-readiness-candidates.json").read_text(encoding="utf-8"))
     feature_gap_atlas = (ROOT / "docs" / "packet-tracer-feature-gap-atlas.md").read_text(encoding="utf-8")
     follow_up = (ROOT / "docs" / "post-launch-follow-up.md").read_text(encoding="utf-8")
     gallery = (ROOT / "examples" / "gallery.md").read_text(encoding="utf-8")
@@ -193,6 +213,15 @@ def test_launch_prep_docs_are_decision_complete() -> None:
     assert "Windows-first runtime" in release_notes
     assert "external Twofish bridge override" in release_notes
     assert "0.2.2" in historical_release_notes
+    assert "0.2.4" in candidate_release_notes
+    assert "Examples Truth 2.0" in candidate_release_notes
+    assert "Proof Readiness Dashboard" in proof_readiness_dashboard
+    assert "blocked_by_no_deterministic_target" in proof_readiness_dashboard
+    assert proof_readiness_candidates["release_line"] == "0.2.4 candidate"
+    assert proof_readiness_candidates["generate_ready"] == 0
+    assert proof_readiness_candidates["primary_candidates"][0]["capability"] == "ospfv2"
+    assert proof_readiness_candidates["primary_candidates"][0]["explicit_command"].startswith("set R1 ospfv2")
+    assert "deterministic_target_resolution" in proof_readiness_candidates["primary_candidates"][0]["required_evidence"]
     assert "complex_campus_master_edit_v4.png" in hero_demo
     assert "--explain-plan" in hero_demo
     assert "alt text:" in hero_demo
@@ -201,8 +230,12 @@ def test_launch_prep_docs_are_decision_complete() -> None:
     assert "Final About Text" in metadata
     assert "Final Topics" in metadata
     assert "complex_campus_master_edit_v4.png" in metadata
+    assert "v0.2.3" in metadata
+    assert "docs/release-notes-0.2.4.md" in metadata
     assert "v0.2.2" in launch_ops
     assert "docs/release-notes-0.2.2.md" in launch_ops
+    assert "v0.2.3" in current_launch_ops
+    assert "docs/release-notes-0.2.3.md" in current_launch_ops
     assert "selection_failure_type=viable_donor_found_but_acceptance_weak" in donor_proof
     assert "best_rejected_donor_class=campus/core" in donor_proof
     assert "primary_rejection_code=layout_reuse_too_weak" in donor_proof
@@ -210,7 +243,7 @@ def test_launch_prep_docs_are_decision_complete() -> None:
     assert "What This Does Not Prove" in donor_proof
     assert "generalized campus generation can still be donor-limited" in donor_proof
     assert "the refusal should be read as donor-limited campus semantics" in donor_proof
-    assert "donor-backed constrained-generate" in home_iot_proof
+    assert "donor-backed constrained edit/readiness" in home_iot_proof
     assert "What This Proves" in home_iot_proof
     assert "What This Does Not Prove" in home_iot_proof
     assert "WAN/security edge" in wan_security_proof
@@ -268,13 +301,20 @@ def test_launch_prep_docs_are_decision_complete() -> None:
     assert "Eighth Donor-Backed Edit Readiness Wave" in feature_gap_atlas
     assert "Third Edit-Proven Wave" in feature_gap_atlas
     assert "--feature-gap-report" in feature_gap_atlas
-    assert "Trigger Conditions for `0.2.2` or the Next Minor" in follow_up
+    assert "Trigger Conditions for `0.2.4`" in follow_up
+    assert "proof-readiness candidates" in follow_up
     assert "closest rejected donor class" in follow_up
     assert "close shorthand campus family fidelity before broadening scenario scope" in follow_up
     assert "Home IoT" in follow_up
     assert "wan_security_edge" in follow_up
     assert "what_currently_works" in (ROOT / "docs" / "runtime-truth.md").read_text(encoding="utf-8")
     assert "best_next_fix" in (ROOT / "docs" / "runtime-truth.md").read_text(encoding="utf-8")
+    # The Twofish engine is repo-local and unconditional. runtime-truth.md must
+    # keep documenting that, and must not reintroduce a bridge prerequisite.
+    runtime_truth = (ROOT / "docs" / "runtime-truth.md").read_text(encoding="utf-8")
+    assert "twofish_backend" in runtime_truth
+    assert "pure_python" in runtime_truth
+    assert "no binaries and no environment variables" in runtime_truth
     assert "registry entry exists" in (ROOT / "docs" / "curated-donor-registry.md").read_text(encoding="utf-8")
     assert "docs/home-iot-donor-proof.md" in (ROOT / "docs" / "curated-donor-registry.md").read_text(encoding="utf-8")
     assert "docs/wan-security-donor-proof.md" in (ROOT / "docs" / "curated-donor-registry.md").read_text(encoding="utf-8")
@@ -284,14 +324,74 @@ def test_launch_prep_docs_are_decision_complete() -> None:
     assert "remote-sample-audit.json" in (ROOT / "docs" / "release-checklist.md").read_text(encoding="utf-8")
     assert "local-sample-audit.json" in (ROOT / "docs" / "release-checklist.md").read_text(encoding="utf-8")
     assert "no raw `.pkt`, `.pka`, or remote cache files" in (ROOT / "docs" / "release-checklist.md").read_text(encoding="utf-8")
-    assert "canonical public set" in gallery
+    assert "proof-readiness dashboard exists" in (ROOT / "docs" / "release-checklist.md").read_text(encoding="utf-8")
+    assert "0.2.4 Candidate Proof Cards" in gallery
+    assert "Local Sample Evidence Board" in gallery
+    assert "Proof-Readiness Promotion Queue" in gallery
+    assert "try this command: `set R1 ospfv2 1 network" in gallery
+    assert "does not claim:" in gallery
     assert "complex campus screenshot" in gallery
     assert "campus donor proof" in gallery
     assert "WAN/security donor proof" in gallery
-    assert "canonical public set" in examples_readme
+    assert "Examples Truth 2.0" in examples_readme
+    assert "showcase_example" in examples_readme
+    assert "proof_card" in examples_readme
     assert "..\\docs\\campus-donor-proof.md" in examples_readme
     assert "..\\docs\\home-iot-donor-proof.md" in examples_readme
     assert "..\\docs\\wan-security-donor-proof.md" in examples_readme
+    assert "..\\docs\\proof-readiness-dashboard.md" in examples_readme
+    assert "0.2.1 public preview" not in gallery
+    assert "0.2.1 public preview" not in examples_readme
+    assert "generate-ready" not in gallery
+    assert "constrained-generate" not in gallery
+
+
+def test_examples_truth_model_is_decision_complete() -> None:
+    index = json.loads((ROOT / "examples" / "index.json").read_text(encoding="utf-8"))
+    proof_cards = json.loads((ROOT / "examples" / "proof-cards.json").read_text(encoding="utf-8"))
+
+    assert index["schema_version"] == "examples.truth.v2"
+    assert index["release_line"] == "0.2.4 candidate proof surface"
+    assert index["support_truth"]["generate_ready"] == 0
+    assert len(index["showcase_examples"]) == 3
+    assert len(index["proof_cards"]) == 7
+    assert len(proof_cards["proof_cards"]) == 7
+    assert index["local_sample_evidence"]["total_files"] == 367
+    assert index["local_sample_evidence"]["decode_success_count"] == 366
+    assert index["local_sample_evidence"]["decode_fail_count"] == 1
+    assert index["proof_readiness_candidates"]["release_line"] == "0.2.4 candidate"
+    assert index["proof_readiness_candidates"]["generate_ready"] == 0
+    assert len(index["proof_readiness_candidates"]["primary_candidates"]) == 9
+    assert len(index["proof_readiness_candidates"]["secondary_candidates"]) == 8
+    assert index["proof_readiness_candidates"]["primary_candidates"][0]["explicit_command"].startswith("set R1 ospfv2")
+
+    required_docs = {
+        "docs/ipv4-routing-management-proof.md",
+        "docs/l2-resiliency-bgp-proof.md",
+        "docs/l2-security-qos-proof.md",
+        "docs/security-edge-deepening-proof.md",
+        "docs/voice-collaboration-proof.md",
+        "docs/automation-controller-proof.md",
+        "docs/industrial-programming-proof.md",
+    }
+    assert {card["proof_doc"] for card in index["proof_cards"]} == required_docs
+
+    for entry in [*index["showcase_examples"], *index["proof_cards"]]:
+        assert entry["schema_version"] == "examples.truth.v2"
+        assert entry["artifact_type"] in {"showcase_example", "proof_card"}
+        assert entry["maturity_summary"]["generate_ready"] is False
+        assert entry["artifact_policy"]["commit_pkt_binary"] is False
+        assert entry["artifact_policy"]["raw_source_public"] is False
+
+    for manifest_path in (ROOT / "examples").glob("*.inventory.json"):
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        assert manifest["schema_version"] == "examples.truth.v2"
+        assert manifest["artifact_type"] == "showcase_example"
+        assert manifest["artifact_policy"]["commit_pkt_binary"] is False
+        assert manifest["artifact_policy"]["commit_inventory_json"] is True
+        assert manifest["artifact_policy"]["commit_screenshots"] is True
+        assert manifest["artifact_policy"]["raw_source_public"] is False
+        assert manifest["maturity_summary"]["generate_ready"] is False
 
 
 def test_public_docs_do_not_leak_local_paths_or_mojibake() -> None:

@@ -1,6 +1,6 @@
 # Release Checklist
 
-Target release surface: `0.2.3` capability proof/readiness release.
+Target release surface: `0.2.4` candidate product-hardening patch on top of the published `0.2.3` capability release.
 
 ## Product Contract
 
@@ -20,6 +20,12 @@ python .\scripts\generate_pkt.py --parity-report "campus with VLAN DHCP ACL"
 python .\scripts\runtime_doctor.py
 ```
 
+Runtime profile:
+
+- default `python -m pytest tests -q` may skip `requires_twofish` tests when no local bridge is resolved
+- strict release runtime gate must set `PKT_REQUIRE_TWOFISH_TESTS=1` and resolve `PKT_TWOFISH_LIBRARY` or `PKT_TWOFISH_SEARCH_ROOTS`
+- `PKT_REQUIRE_TWOFISH_TESTS=1 python -m pytest tests -q` must pass before publishing any release that claims strict `.pkt` runtime proof
+
 ## Package Audit
 
 - `package.json` description matches current product scope
@@ -36,10 +42,13 @@ python .\scripts\runtime_doctor.py
 - local `pkt_examples` files remain local evidence only; no raw `.pkt`, `.pka`, local audit cache, or user-supplied corpus files are packaged
 - examples index and gallery were rebuilt
 - screenshots are intentional and non-sensitive
-- changelog entry is updated for `0.2.3`
-- release notes source exists: `docs/release-notes-0.2.3.md`
+- changelog entry is updated for the candidate release
+- release notes source exists: `docs/release-notes-0.2.4.md`
+- proof-readiness dashboard exists: `docs/proof-readiness-dashboard.md`
+- proof-readiness candidates exist: `references/proof-readiness-candidates.json`
 - hero demo plan exists: `docs/hero-demo-plan.md`
-- GitHub launch ops runbook exists: `docs/github-launch-ops-0.2.2.md`
+- current GitHub launch ops runbook exists: `docs/github-launch-ops-0.2.3.md`
+- historical GitHub launch ops runbooks remain archived and current metadata points at the published release
 - canonical donor proof exists: `docs/campus-donor-proof.md`
 - hero visual is selected: `examples/screenshots/complex_campus_master_edit_v4.png`
 - runtime truth docs match current `runtime_grade` and `bridge_resolution` semantics

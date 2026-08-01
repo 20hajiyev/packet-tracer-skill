@@ -15,15 +15,40 @@ NEW_KEY = bytes([0x89]) * 16
 NEW_IV = bytes([0x10]) * 16
 
 
+_TWOFISH_CLS: type["Twofish"] | None = None
+_TWOFISH_BACKEND = ""
+
+
 def _twofish_cls() -> type["Twofish"]:
+    """Resolve a Twofish engine.
+
+    The compiled ctypes bridge is preferred when present because it is ~12x
+    faster, but it is optional: the vendored pure-Python implementation is
+    always available, so decode/edit/generate work on a clean checkout with no
+    binaries and no environment variables.
+    """
+    global _TWOFISH_CLS, _TWOFISH_BACKEND
+    if _TWOFISH_CLS is not None:
+        return _TWOFISH_CLS
+
     try:
-        from vendor.twofish import Twofish
-    except ImportError as exc:
-        raise ImportError(
-            "Packet Tracer modern codec requires a local Twofish bridge. "
-            "Set PKT_TWOFISH_LIBRARY or place a local _twofish binary next to scripts/vendor/twofish.py."
-        ) from exc
+        from vendor.twofish import Twofish  # compiled accelerator
+
+        _TWOFISH_BACKEND = "compiled"
+    except Exception:
+        from vendor.twofish_pure import Twofish  # always-available fallback
+
+        _TWOFISH_BACKEND = "pure_python"
+
+    _TWOFISH_CLS = Twofish
     return Twofish
+
+
+def twofish_backend() -> str:
+    """Return `compiled` or `pure_python` for the engine actually in use."""
+    if _TWOFISH_CLS is None:
+        _twofish_cls()
+    return _TWOFISH_BACKEND
 
 
 def qcompress(xml_bytes: bytes) -> bytes:

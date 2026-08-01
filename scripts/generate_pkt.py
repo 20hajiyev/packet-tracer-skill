@@ -49,7 +49,9 @@ from sample_catalog import ReferencePattern, SampleCandidate, SampleDescriptor, 
 from sample_selector import rank_curated_donor_samples, rank_reference_samples, rank_samples, select_best_sample
 from workspace_repair import inspect_donor_coherence, inspect_workspace_integrity, validate_donor_coherence, validate_workspace_integrity
 
-FIXTURE_CORPUS_PATH = Path(__file__).resolve().parents[1] / "references" / "scenario-fixture-corpus.json"
+ROOT = Path(__file__).resolve().parents[1]
+FIXTURE_CORPUS_PATH = ROOT / "references" / "scenario-fixture-corpus.json"
+PROOF_CARDS_PATH = ROOT / "examples" / "proof-cards.json"
 RUNTIME_CLEANUP_MODE = "donor_preserve_runtime"
 SAFE_OPEN_COMPATIBILITY_MODE = "safe_open_strict_9_0"
 PRESERVED_VISUAL_SECTIONS = [
@@ -607,7 +609,7 @@ def _summarize_candidate_pool(
     diagnostics: list[dict[str, object]],
     preferred_archetypes: list[str] | None = None,
 ) -> dict[str, object]:
-    counts = {"selected": 0, "rejected": 0, "filtered": 0}
+    counts = {"selected": 0, "rejected": 0, "filtered": 0, "deprioritized": 0}
     top_rejection_reasons: list[str] = []
     best_adjusted_score: int | None = None
     best_layout_reuse_score: int | None = None
@@ -647,6 +649,20 @@ def _summarize_candidate_pool(
         "primary_rejection_code": primary_rejection_code,
         "primary_rejection_layer": primary_rejection_layer,
     }
+
+
+# Assumptions the planner records when it picks link speeds the user never asked
+# for. A defaulted value is a preference, not a requirement, so it must never be
+# the reason a donor is rejected.
+DEFAULTED_LINK_WIRING_ASSUMPTIONS = (
+    "Defaulted host links to FastEthernet.",
+    "Defaulted switch uplinks to GigabitEthernet.",
+)
+
+
+def _link_wiring_was_defaulted(plan: IntentPlan) -> bool:
+    used = set(plan.assumptions_used)
+    return any(assumption in used for assumption in DEFAULTED_LINK_WIRING_ASSUMPTIONS)
 
 
 def _primary_rejection_code(rejection_reasons: list[str]) -> str | None:
@@ -829,6 +845,129 @@ def _critical_parity_counts(critical_entries: list[dict[str, object]]) -> dict[s
     }
 
 
+@lru_cache(maxsize=1)
+def _proof_cards_by_family() -> dict[str, list[dict[str, object]]]:
+    if not PROOF_CARDS_PATH.exists():
+        return {}
+    payload = json.loads(PROOF_CARDS_PATH.read_text(encoding="utf-8"))
+    cards = payload.get("proof_cards", []) if isinstance(payload, dict) else []
+    grouped: dict[str, list[dict[str, object]]] = defaultdict(list)
+    for card in cards:
+        if not isinstance(card, dict):
+            continue
+        family = str(card.get("scenario_family") or "").strip()
+        if not family:
+            continue
+        grouped[family].append(
+            {
+                "title": card.get("title"),
+                "support_level": card.get("support_level"),
+                "proof_doc": card.get("proof_doc"),
+                "try_command": card.get("try_command") or card.get("explicit_command"),
+                "does_not_claim": card.get("does_not_claim") or card.get("refusal_boundary"),
+            }
+        )
+    return dict(grouped)
+
+
+def _proof_card_refs_for_family(family: object) -> list[dict[str, object]]:
+    return _proof_cards_by_family().get(str(family or "").strip(), [])
+
+
+def _first_recommended_action(entries: list[dict[str, object]]) -> str | None:
+    return next(
+        (str(entry.get("recommended_next_action")) for entry in entries if str(entry.get("recommended_next_action") or "").strip()),
+        None,
+    )
+
+
+def _support_level_explanation(*, critical_generate_ready: int, critical_donor_ready: int, critical_supported: int, critical_mismatches: int) -> str:
+    if critical_generate_ready > 0:
+        return "At least one critical capability is generate-ready, but scenario-level generation still depends on donor/runtime acceptance."
+    if critical_donor_ready > 0:
+        return "Some critical capabilities have donor-backed edit readiness; this is not broad topology generation."
+    if critical_supported > 0 and critical_mismatches > 0:
+        return "Critical capabilities are recognized, but they remain report-only, edit-only, donor-limited, or acceptance-gated."
+    if critical_supported > 0:
+        return "Critical capabilities are recognized for this scenario, but no generate-ready claim is made."
+    return "No critical scenario capabilities are generate-ready; use --explain-plan for donor/runtime/refusal detail."
+
+
+def _parity_user_summary(result: dict[str, object]) -> dict[str, object]:
+    family = result.get("scenario_family")
+    critical_supported = int(result.get("critical_parity_supported_count", 0) or 0)
+    critical_donor_ready = int(result.get("critical_parity_donor_backed_ready_count", 0) or 0)
+    critical_generate_ready = int(result.get("critical_parity_generate_ready_count", 0) or 0)
+    critical_mismatches = int(result.get("critical_parity_mismatch_count", 0) or 0)
+    critical_entries = list(result.get("critical_capability_parity", []) or [])
+    mismatches = list(result.get("critical_parity_mismatches", []) or [])
+    explanation = _support_level_explanation(
+        critical_generate_ready=critical_generate_ready,
+        critical_donor_ready=critical_donor_ready,
+        critical_supported=critical_supported,
+        critical_mismatches=critical_mismatches,
+    )
+    if critical_generate_ready > 0:
+        status = "has_generate_ready_capability"
+    elif critical_donor_ready > 0:
+        status = "donor_backed_edit_ready"
+    elif critical_supported > 0:
+        status = "recognized_but_not_generate_ready"
+    else:
+        status = "not_generate_ready"
+    next_best_action = _first_recommended_action(mismatches) or _first_recommended_action(critical_entries)
+    if not next_best_action:
+        next_best_action = "Run --explain-plan for donor selection, runtime, and refusal details."
+    return {
+        "status": status,
+        "message": explanation,
+        "next_best_action": next_best_action,
+        "critical_counts": {
+            "supported": critical_supported,
+            "donor_backed_ready": critical_donor_ready,
+            "generate_ready": critical_generate_ready,
+            "mismatches": critical_mismatches,
+        },
+        "proof_card_refs": _proof_card_refs_for_family(family),
+    }
+
+
+def _explain_user_summary(result: dict[str, object]) -> dict[str, object]:
+    summary = dict(result.get("scenario_acceptance_summary") or {})
+    decision = dict(result.get("scenario_generate_decision") or {})
+    family = summary.get("family") or decision.get("family")
+    generate_state = str(summary.get("generate_state") or ("allowed" if decision.get("allow_generate") else "blocked"))
+    readiness = str(summary.get("readiness_status") or "")
+    blocking_layer = summary.get("blocking_layer") or decision.get("blocking_layer")
+    next_best_action = (
+        summary.get("next_best_action")
+        or next((step for step in list(summary.get("remediation_steps", []) or []) if str(step).strip()), None)
+        or "Run --doctor and --parity-report to identify runtime, donor, and support blockers."
+    )
+    if generate_state == "allowed":
+        status = "ready_with_current_constraints"
+        message = "The plan passed current donor/runtime gates for the detected scenario."
+    elif blocking_layer == "runtime":
+        status = "blocked_by_runtime"
+        message = "Generation is blocked by Packet Tracer runtime, donor, or Twofish bridge readiness."
+    elif blocking_layer == "donor":
+        status = "blocked_by_donor_selection"
+        message = "Generation is blocked because no selected donor currently satisfies the prompt safely."
+    elif readiness == "unsupported":
+        status = "blocked_by_capability"
+        message = "The prompt asks for capabilities that are not generate-ready for this scenario."
+    else:
+        status = "blocked_by_acceptance_or_proof"
+        message = "The prompt is recognized, but strict acceptance, donor, or proof gates are not satisfied."
+    return {
+        "status": status,
+        "message": message,
+        "next_best_action": next_best_action,
+        "support_level_explanation": "Feature recognition, edit proof, donor-backed readiness, and generate readiness are separate support levels.",
+        "proof_card_refs": _proof_card_refs_for_family(family),
+    }
+
+
 def _selected_donor_summary(
     diagnostics: list[dict[str, object]],
     donor_archetype: DonorArchetypePlan | None = None,
@@ -903,6 +1042,7 @@ def _filter_candidates_for_blueprint(
     required_link_count = len(list(blueprint.get("links", [])))
     required_capabilities = {str(item) for item in list(blueprint.get("capabilities", []))}
     viable: list[SampleCandidate] = []
+    deprioritized: list[SampleCandidate] = []
     filtered_diagnostics: list[dict[str, object]] = []
     for candidate in candidates:
         fit = build_donor_graph_fit(candidate.sample, blueprint)
@@ -935,6 +1075,12 @@ def _filter_candidates_for_blueprint(
         if adjusted_total_score <= 0:
             filter_reasons.append("acceptance penalty reduced the donor score below zero")
         if filter_reasons:
+            # This is a cheap heuristic, not the transformer. It may reorder the
+            # pool but it must never remove a candidate: only
+            # `_evaluate_donor_prune_candidates` rejects, because only it actually
+            # executes the transform and can therefore be right. Letting the whole
+            # pool through costs about 110 ms per donor decode.
+            deprioritized.append(candidate)
             filtered_diagnostics.append(
                 {
                     "relative_path": candidate.sample.relative_path,
@@ -948,13 +1094,14 @@ def _filter_candidates_for_blueprint(
                     "sample_archetypes": sample_archetypes,
                     "archetype_match_score": archetype_match_score,
                     "archetype_match_reasons": archetype_reasons,
-                    "status": "filtered",
+                    "status": "deprioritized",
                     "rejection_reasons": [*filter_reasons, *penalty_reasons],
                 }
             )
             continue
         viable.append(candidate)
-    return viable, filtered_diagnostics
+    # Heuristic-preferred candidates are tried first; the rest still get their turn.
+    return [*viable, *deprioritized], filtered_diagnostics
 
 
 def _rerank_candidates_for_blueprint(candidates: list[SampleCandidate], blueprint: dict[str, object]) -> list[SampleCandidate]:
@@ -2199,7 +2346,12 @@ def _target_groups_from_blueprint(plan: IntentPlan, blueprint: dict[str, object]
             switch = next((device for device in switches if str(device.get("group") or "") == group_name), None)
             if switch is None:
                 continue
-            members = [device for device in devices if str(device.get("group") or "") == group_name and _device_kind(device) != "Switch"]
+            members = [
+                device
+                for device in devices
+                if str(device.get("group") or "") == group_name
+                and _fallback_group_member_type(_device_kind(device))
+            ]
             result.append({"group_name": group_name, "switch": switch, "members": members})
         return result
     groups: list[dict[str, object]] = []
@@ -2211,14 +2363,19 @@ def _target_groups_from_blueprint(plan: IntentPlan, blueprint: dict[str, object]
         right_name = str(link["b"]["dev"])
         left_type = _device_kind(by_name.get(left_name, {}))
         right_type = _device_kind(by_name.get(right_name, {}))
-        if left_type == "Switch" and right_type != "Switch":
+        # Group membership must use the same predicate as `_collect_donor_groups`.
+        # Routers are deliberately excluded: they are matched separately against
+        # the donor router (see `target_router` / `donor_router` below). Counting a
+        # router as a group member too made every target group demand a router that
+        # no donor group can ever supply, which rejected every candidate donor.
+        if left_type == "Switch" and _fallback_group_member_type(right_type):
             host_assignment[right_name] = left_name
-        elif right_type == "Switch" and left_type != "Switch":
+        elif right_type == "Switch" and _fallback_group_member_type(left_type):
             host_assignment[left_name] = right_name
     switch_names = list(switch_map)
     fallback_index = 0
     for device in devices:
-        if _device_kind(device) == "Switch":
+        if not _fallback_group_member_type(_device_kind(device)):
             continue
         assigned_switch = host_assignment.get(str(device["name"]))
         if assigned_switch is None and switch_names:
@@ -2597,16 +2754,40 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
             continue
         existing_ports = [str(port) for port in existing.get("ports", [])]
         existing_media = str(existing.get("media", ""))
-        if not (
-            len(existing_ports) >= 2
-            and sorted(existing_ports[:2]) == sorted(desired_ports)
-            and existing_media == desired_media
-        ):
-            link_reuse_gaps.append(
-                f"Open-first mode requires donor link reuse for {desired_left} <-> {desired_right}; "
-                f"donor ports/media are {existing_ports[:2]} / {existing_media}, requested {desired_ports} / {desired_media}."
-            )
+        ports_match = len(existing_ports) >= 2 and sorted(existing_ports[:2]) == sorted(desired_ports)
+        media_matches = existing_media == desired_media
+        if ports_match and media_matches:
             continue
+        # A port or media value the user never asked for must not reject a donor.
+        # When the planner defaulted it, the donor's own wiring is the better
+        # answer: adopt it and record the adaptation as an assumption.
+        if _link_wiring_was_defaulted(adapted_plan):
+            if len(existing_ports) >= 2:
+                # `existing_ports` is in the donor's own from/to order, which does
+                # not have to match the blueprint's a/b order. Align by device name
+                # (after renaming) or the two ends get swapped, which shows up later
+                # as a spurious `port_reassignment` unsafe mutation.
+                donor_from = rename_map.get(str(existing.get("from", "")), str(existing.get("from", "")))
+                if donor_from == desired_left:
+                    left_port, right_port = existing_ports[0], existing_ports[1]
+                else:
+                    left_port, right_port = existing_ports[1], existing_ports[0]
+                link["a"]["port"] = left_port
+                link["b"]["port"] = right_port
+            if existing_media:
+                link["media"] = existing_media
+            adaptation = (
+                f"Adopted donor wiring for {desired_left} <-> {desired_right}: "
+                f"ports {existing_ports[:2]}, media {existing_media or 'donor default'}."
+            )
+            if adaptation not in adapted_plan.assumptions_used:
+                adapted_plan.assumptions_used.append(adaptation)
+            continue
+        link_reuse_gaps.append(
+            f"Open-first mode requires donor link reuse for {desired_left} <-> {desired_right}; "
+            f"donor ports/media are {existing_ports[:2]} / {existing_media}, requested {desired_ports} / {desired_media}."
+        )
+        continue
     if link_reuse_gaps:
         for gap in link_reuse_gaps:
             if gap not in adapted_plan.blocking_gaps:
@@ -3676,6 +3857,10 @@ def _explain_plan_payload(
     result["fixture_registry_version"] = _load_fixture_corpus().get("fixture_registry_version", "unknown")
     result["fixture_expectation_status"] = fixture_status
     result["fixture_expectation_gaps"] = fixture_gaps
+    result["user_summary"] = _explain_user_summary(result)
+    result["next_best_action"] = result["user_summary"]["next_best_action"]
+    result["support_level_explanation"] = result["user_summary"]["support_level_explanation"]
+    result["proof_card_refs"] = result["user_summary"]["proof_card_refs"]
     return result
 
 
@@ -3920,6 +4105,10 @@ def parity_report(
         **_parity_counts(list(payload.get("capability_parity", []))),
         **_critical_parity_counts(critical_capability_parity),
     }
+    result["user_summary"] = _parity_user_summary(result)
+    result["next_best_action"] = result["user_summary"]["next_best_action"]
+    result["support_level_explanation"] = result["user_summary"]["message"]
+    result["proof_card_refs"] = result["user_summary"]["proof_card_refs"]
     _write_json_artifact(result, acceptance_json_out)
     print(json.dumps(result, indent=2, ensure_ascii=False))
 

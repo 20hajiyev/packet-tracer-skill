@@ -1,11 +1,20 @@
 {
+  "schema_version": "examples.truth.v2",
   "example_name": "home_iot_cli_edit_v1",
+  "artifact_type": "showcase_example",
   "source_mode": "donor-backed edit",
   "scenario_family": "home_iot",
-  "public_repo_policy": {
+  "artifact_policy": {
     "commit_pkt_binary": false,
     "commit_inventory_json": true,
-    "commit_screenshot": false
+    "commit_screenshots": true,
+    "raw_source_public": false
+  },
+  "maturity_summary": {
+    "atlas_status": "donor_backed_ready",
+    "example_status": "known_working_example",
+    "donor_backed_ready": true,
+    "generate_ready": false
   },
   "artifact_paths": {
     "inventory_json": "examples/home_iot_cli_edit_v1.inventory.json",
