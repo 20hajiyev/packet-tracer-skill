@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import re
 import unicodedata
 from dataclasses import asdict, dataclass, field
@@ -1299,6 +1301,27 @@ def _extract_programming_ops(prompt: str) -> list[dict[str, object]]:
     return ops
 
 
+def strict_vlan_assignment() -> bool:
+    """Refuse instead of defaulting host-to-VLAN distribution."""
+    return (os.getenv("PACKET_TRACER_STRICT_VLAN_ASSIGNMENT") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def distribute_hosts_across_vlans(host_count: int, vlan_ids: list[int]) -> dict[int, int]:
+    """Spread hosts across VLANs as evenly as possible, remainder to the first.
+
+    6 hosts over VLAN 10/20/30 gives 2/2/2; 7 gives 3/2/2. VLANs beyond the host
+    count are still created, they just start empty — an empty VLAN is a valid
+    configuration and more useful than a refusal.
+    """
+    if host_count <= 0 or not vlan_ids:
+        return {}
+    base, remainder = divmod(host_count, len(vlan_ids))
+    return {
+        vlan_id: base + (1 if index < remainder else 0)
+        for index, vlan_id in enumerate(vlan_ids)
+    }
+
+
 def parse_intent(prompt: str) -> IntentPlan:
     pkt_path_match = re.search(r"([A-Za-z]:\\[^\"\n]+?\.pkt)\b", prompt, flags=re.IGNORECASE)
     pkt_path = pkt_path_match.group(1) if pkt_path_match else None
@@ -1606,7 +1629,20 @@ def parse_intent(prompt: str) -> IntentPlan:
             host_vlan_assignment[vlan_id] = host_vlan_assignment.get(vlan_id, 0) + int(group["devices"].get("PC", 0))
         assumptions_used.append("Assigned each department's PCs to the matching VLAN order.")
     if vlan_ids and pc_count and not host_vlan_assignment and not any(op["op"] == "set_access_port" for op in switch_ops):
-        blocking_gaps.append("Host-to-VLAN assignment is missing. Specify how many PCs belong to each VLAN.")
+        # "3 switch, 6 PC, VLAN 10/20/30" has an obvious reading: two hosts per
+        # VLAN. Refusing was inconsistent with the branch directly above, which
+        # already assigns department PCs to VLANs by order, and with the planner
+        # defaulting port speeds, cable types, addressing and the VLAN IDs
+        # themselves. Set PACKET_TRACER_STRICT_VLAN_ASSIGNMENT=1 to refuse instead.
+        if strict_vlan_assignment():
+            blocking_gaps.append("Host-to-VLAN assignment is missing. Specify how many PCs belong to each VLAN.")
+        else:
+            host_vlan_assignment.update(distribute_hosts_across_vlans(pc_count, vlan_ids))
+            spread = ", ".join(f"VLAN {vlan_id}: {count}" for vlan_id, count in host_vlan_assignment.items())
+            assumptions_used.append(
+                f"Distributed {pc_count} PCs evenly across {len(vlan_ids)} VLANs ({spread}). "
+                "Say how many PCs belong to each VLAN to override."
+            )
     if vlan_ids and not device_requirements.get("Switch", 0) and not any(device.get("type") == "Switch" for device in devices):
         blocking_gaps.append("VLAN planning requires at least one switch.")
     if department_groups and vlan_ids and len(vlan_ids) < len(department_groups):

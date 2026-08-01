@@ -562,6 +562,37 @@ def _canonical_port_name(port_name: str) -> str:
     return lowered
 
 
+def port_capacity(device: ET.Element) -> dict[str, int]:
+    """How many FastEthernet and GigabitEthernet interfaces a device really has.
+
+    `_port_address_for_name` is a MEM_ADDR lookup, not an existence test: it
+    returns None whenever the donor's port nodes carry no address, which is
+    common. Using it to decide whether a port exists made every port look
+    missing, and inventing `GigabitEthernet0/3` on a 2960-24TT produced a file
+    Packet Tracer refused to open.
+    """
+    nodes = _port_nodes(device)
+    return {
+        "FastEthernet": sum(1 for node in nodes if "FastEthernet" in node.findtext("TYPE", "")),
+        "GigabitEthernet": sum(1 for node in nodes if "GigabitEthernet" in node.findtext("TYPE", "")),
+    }
+
+
+def port_exists(device: ET.Element, port_name: str) -> bool:
+    """Whether `port_name` names an interface this device actually has."""
+    canonical = _canonical_port_name(port_name)
+    for kind, count in port_capacity(device).items():
+        if not canonical.startswith(kind):
+            continue
+        index = _parse_port_index(canonical)
+        if index is None:
+            return canonical == kind or canonical == f"{kind}0"
+        if _device_type(device) == "Router":
+            return 0 <= index < count
+        return 0 < index <= count
+    return False
+
+
 def _port_address_for_name(device: ET.Element, port_name: str) -> str | None:
     canonical = _canonical_port_name(port_name)
     fast_nodes = [port for port in _port_nodes(device) if "FastEthernet" in port.findtext("TYPE", "")]

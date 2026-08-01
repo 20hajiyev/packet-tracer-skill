@@ -287,7 +287,7 @@ def _make_safe_open_plan():
     return plan
 
 
-def test_prepare_generation_plan_keeps_blocking_gap_for_missing_vlan_assignment() -> None:
+def test_prepare_generation_plan_defaults_missing_vlan_assignment() -> None:
     plan = prepare_generation_plan(
         parse_intent(
             "3 dene switch ve 6 komputer ve 1 router "
@@ -297,7 +297,8 @@ def test_prepare_generation_plan_keeps_blocking_gap_for_missing_vlan_assignment(
         )
     )
     assert "core_switch" == plan.topology_requirements["uplink_topology"]
-    assert plan.blocking_gaps
+    assert plan.blocking_gaps == []
+    assert plan.host_vlan_assignment == {10: 2, 20: 2, 30: 2}
 
 
 def test_edit_from_prompt_forces_edit_mode_and_pkt_path(tmp_path: Path) -> None:
@@ -363,7 +364,9 @@ def test_build_prompt_blueprint_synthesizes_core_switch_topology() -> None:
     assert any(op["op"] == "set_access_port" for op in plan.switch_ops)
 
 
-def test_build_prompt_blueprint_raises_on_incomplete_plan() -> None:
+def test_build_prompt_blueprint_raises_on_incomplete_plan(monkeypatch) -> None:
+    """Strict mode still refuses rather than assuming a host distribution."""
+    monkeypatch.setenv("PACKET_TRACER_STRICT_VLAN_ASSIGNMENT", "1")
     try:
         build_prompt_blueprint(parse_intent("2 switch 4 komputer vlanlarda 10 20"))
     except PlanningError as exc:
@@ -371,6 +374,14 @@ def test_build_prompt_blueprint_raises_on_incomplete_plan() -> None:
         assert exc.plan.blueprint_plan
     else:
         raise AssertionError("Expected PlanningError for incomplete VLAN assignment")
+
+
+def test_build_prompt_blueprint_defaults_vlan_assignment_by_default() -> None:
+    blueprint, plan = build_prompt_blueprint(parse_intent("2 switch 4 komputer vlanlarda 10 20"))
+
+    assert plan.blocking_gaps == []
+    assert plan.host_vlan_assignment == {10: 2, 20: 2}
+    assert blueprint["devices"]
 
 
 def test_generate_from_prompt_writes_blueprint_on_refusal(tmp_path: Path, monkeypatch) -> None:
@@ -757,18 +768,35 @@ def test_safe_open_profile_blocks_department_link_mutations_until_cumulative_acc
         generate_pkt_module.apply_plan_operations = original_apply
 
     assert profiled_plan.compatibility_profile["mode"] == "safe_open_strict_9_0"
-    # Inventing new structure stays blocked; pruning does not. Removing a donor
-    # link is `link_prune`, which is how donor-prune generation works at all.
-    assert "link_rewrite" in profiled_plan.blocked_mutations
+    # Pruning and building links are both how donor-prune generation works, and
+    # both were verified against real Packet Tracer opens. What stays blocked is
+    # the physical/wireless/end-device surface that has not been verified.
+    assert profiled_plan.blocked_mutations == []
+    assert "link_rewrite" not in profiled_plan.blocked_mutations
     assert "port_reassignment" not in profiled_plan.blocked_mutations
     assert "link_prune" not in profiled_plan.blocked_mutations
     assert profiled_plan.acceptance_stage_plan
     assert any(stage["stage_name"] == "link_remove_only" for stage in profiled_plan.acceptance_stage_plan)
     assert any(stage["stage_name"] == "link_add_only" for stage in profiled_plan.acceptance_stage_plan)
     assert all(
-        op["op"] in {"rename_device", "reflow_layout", "prune_device", "remove_link"}
+        op["op"] in {"rename_device", "reflow_layout", "prune_device", "remove_link", "set_link"}
         for op in safe_plan.edit_operations
     )
+
+
+def test_reuse_strategy_still_blocks_link_rewrite(monkeypatch) -> None:
+    """`PACKET_TRACER_LINK_STRATEGY=reuse` keeps the conservative profile."""
+    monkeypatch.setenv("PACKET_TRACER_LINK_STRATEGY", "reuse")
+    donor_root = _make_safe_open_root()
+    plan = _make_safe_open_plan()
+    original_apply = generate_pkt_module.apply_plan_operations
+    try:
+        generate_pkt_module.apply_plan_operations = lambda donor_root_arg, stage_plan: donor_root_arg
+        _, profiled_plan = _apply_safe_open_profile(donor_root, plan)
+    finally:
+        generate_pkt_module.apply_plan_operations = original_apply
+
+    assert "link_rewrite" in profiled_plan.blocked_mutations
 
 
 def test_safe_open_profile_allows_rename_layout_and_config_only() -> None:

@@ -76,6 +76,46 @@ performed only to read `<VERSION>`.
   an edited file is re-read rather than served stale. Only immutable bytes are
   cached; callers still get their own tree to mutate.
 
+### Topologies are no longer limited to the donor's own
+
+Reuse-only wiring meant a chain donor could never satisfy a star request:
+`3 switch, 6 PC, VLAN 10/20/30` was refused with "this donor does not contain
+that device-to-device link". Missing links are now built with the same
+`set_link` operation the edit path uses (`PACKET_TRACER_LINK_STRATEGY=reuse`
+restores the old behaviour).
+
+This needed three fixes, and the first attempt was rejected by Packet Tracer
+outright — the two-tier verification caught it as `process_exited` rather than
+reporting a false success:
+
+- ports are claimed once. Adopting donor wiring for one link while planning
+  another from the blueprint put two cables on `SW1 GigabitEthernet0/2`.
+- alternatives are checked against the device's real interfaces. Incrementing
+  the index invented `GigabitEthernet0/3` on a 2960-24TT, and Packet Tracer
+  refused the whole file as "not compatible with this version".
+- when gigabit is exhausted the allocator falls back to FastEthernet, which is
+  what an engineer would do. A core switch with three uplinks and two gigabit
+  ports is a real constraint, not an impossible topology.
+
+`port_exists` and `port_capacity` count real interfaces. `_port_address_for_name`
+could not serve as the existence test: it is a MEM_ADDR lookup that returns
+None whenever the donor's port nodes carry no address, which made every port
+look missing.
+
+Verified: 3-switch VLAN star on a chain donor opened in 10.1 s; the simple case
+still opens in 10.4 s. `structural_check` now also fails on duplicate port use.
+
+### Host-to-VLAN distribution is defaulted, not refused
+
+"3 switch, 6 PC, VLAN 10/20/30" reads as two hosts per VLAN. The planner refused
+it while already defaulting port speeds, cable types, addressing and the VLAN IDs
+themselves — and while the branch directly above already assigned department PCs
+to VLANs by order. Hosts are now spread evenly with the split recorded as an
+assumption. `PACKET_TRACER_STRICT_VLAN_ASSIGNMENT=1` restores the refusal.
+
+The rule existed in both `intent_parser` and `generate_pkt`; it now lives only in
+the parser.
+
 ### Leftover donor devices are now deleted
 
 Spares were renamed `UNUSED-*` / `*-SPARE-*` and moved offscreen rather than

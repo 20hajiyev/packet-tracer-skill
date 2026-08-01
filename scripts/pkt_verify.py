@@ -146,17 +146,38 @@ def structural_check(pkt_path: str | Path, expected_devices: int | None = None) 
 
     # Every link must land on a device that exists. A dangling endpoint is the
     # classic way a pruned donor stops opening.
+    #
+    # Ports must also be used at most once: one physical interface cannot carry
+    # two cables. A generated link that reuses an occupied port produces a lab
+    # that looks plausible and is wired wrongly.
+    occupied_ports: dict[tuple[str, str], int] = {}
     for index, link in enumerate(links):
         cable = link.find("./CABLE")
         if cable is None:
             report.failures.append(f"link {index} has no CABLE element")
             continue
+        endpoints: list[str] = []
         for end in ("FROM", "TO"):
             ref = cable.findtext(end) or ""
             if not ref:
                 report.failures.append(f"link {index} has an empty {end} reference")
             elif ref not in ref_to_name:
                 report.failures.append(f"link {index} {end} references unknown device {ref!r}")
+            else:
+                endpoints.append(ref_to_name[ref])
+
+        ports = [(port.text or "").strip() for port in cable.findall("PORT")][:2]
+        for device_name, port_name in zip(endpoints, ports):
+            if not port_name:
+                continue
+            key = (device_name, port_name)
+            previous = occupied_ports.get(key)
+            if previous is not None:
+                report.failures.append(
+                    f"port {device_name} {port_name} is used by both link {previous} and link {index}"
+                )
+            else:
+                occupied_ports[key] = index
 
     if expected_devices is not None and report.device_count != expected_devices:
         report.warnings.append(

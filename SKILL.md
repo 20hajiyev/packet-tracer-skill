@@ -226,8 +226,11 @@ If the user does not specify details:
 - The bundled template library is intentionally minimal in v1
 - Imported external sample roots are reference-only unless you explicitly promote them
 - Prompt generation in the default path is donor-prune based, not full synthetic rebuild
-- If VLANs are requested for end hosts but host-to-VLAN distribution is not provided,
-  the skill returns `blocking_gaps` instead of guessing and generating an unsafe `.pkt`
+- Host-to-VLAN distribution is defaulted to an even split when not given, and the
+  split is reported as an assumption. `PACKET_TRACER_STRICT_VLAN_ASSIGNMENT=1`
+  refuses instead
+- Links the donor lacks are built rather than refused. `PACKET_TRACER_LINK_STRATEGY=reuse`
+  restricts generation to the donor's own topology
 - Manual validation in Packet Tracer is still required before claiming a topology
   is fully compatible with the Cisco application
 

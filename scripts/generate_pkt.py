@@ -28,7 +28,7 @@ from coverage_matrix import (
     select_capability_matrix_hits,
 )
 from feature_atlas import build_feature_gap_report
-from intent_parser import IntentPlan, parse_intent
+from intent_parser import IntentPlan, distribute_hosts_across_vlans, parse_intent, strict_vlan_assignment
 from packet_tracer_env import (
     donor_compatibility,
     donor_tier_is_accepted,
@@ -41,7 +41,7 @@ from packet_tracer_env import (
 from pkt_builder import build_packet_tracer_xml
 from pkt_codec import decode_pkt_file, decode_pkt_modern, encode_pkt_modern
 from pkt_editor import apply_plan_operations, decode_pkt_to_root, edit_pkt_file, inventory_devices, inventory_links, inventory_root
-from pkt_transformer import transform_from_blueprint
+from pkt_transformer import port_exists, transform_from_blueprint
 import pkt_verify
 import usage_ledger
 from remote_search import (
@@ -1776,16 +1776,31 @@ def _compatibility_profile() -> CompatibilityProfile:
     )
 
 
+def _allowed_mutations() -> list[str]:
+    """Allowed mutation categories for the active strategies."""
+    allowed = list(SAFE_OPEN_ALLOWED_MUTATIONS)
+    if _link_strategy() == "create":
+        allowed.append("link_rewrite")
+    return allowed
+
+
+def _blocked_mutations() -> list[str]:
+    allowed = set(_allowed_mutations())
+    return [category for category in SAFE_OPEN_BLOCKED_MUTATIONS if category not in allowed]
+
+
 def _safe_open_plan(plan: IntentPlan) -> tuple[IntentPlan, list[str]]:
     safe_plan = _empty_plan_like(plan)
     blocked: list[str] = []
+    allowed_mutations = _allowed_mutations()
+    blocked_mutations = _blocked_mutations()
     for bucket_name, operation in _bucket_operations(plan):
         category = _operation_category(bucket_name, operation)
-        if category in SAFE_OPEN_ALLOWED_MUTATIONS:
+        if category in allowed_mutations:
             getattr(safe_plan, bucket_name).append(copy.deepcopy(operation))
         elif category == "verification_only":
             continue
-        elif category in SAFE_OPEN_BLOCKED_MUTATIONS:
+        elif category in blocked_mutations:
             blocked.append(category)
         else:
             blocked.append("workspace_physical_mutation")
@@ -2548,6 +2563,28 @@ def _unexpected_workspace_issues(donor_root: ET.Element, generated_root: ET.Elem
     return [issue for issue in generated_result.blocking_issues if issue not in donor_issue_set]
 
 
+LINK_STRATEGIES = ("reuse", "create")
+DEFAULT_LINK_STRATEGY = "create"
+
+
+def _link_strategy() -> str:
+    """Whether a requested link the donor lacks may be built.
+
+    `reuse` only rewires links the donor already has, so the achievable
+    topologies are exactly the donor's own — a chain donor could never satisfy a
+    star request. `create` builds the missing link with the same `set_link`
+    operation the edit path uses, and is the default because it was verified
+    against real Packet Tracer opens: a 3-switch VLAN star built on a chain
+    donor opened in 10.1s, and the simple single-switch case still opens.
+
+    The failure mode is naming a port the device does not have, which makes
+    Packet Tracer reject the whole file as "not compatible with this version".
+    `port_exists` and the structural port-conflict check both guard it.
+    """
+    raw = (os.getenv("PACKET_TRACER_LINK_STRATEGY") or "").strip().lower()
+    return raw if raw in LINK_STRATEGIES else DEFAULT_LINK_STRATEGY
+
+
 SPARE_STRATEGIES = ("park", "prune")
 DEFAULT_SPARE_STRATEGY = "prune"
 
@@ -2580,6 +2617,47 @@ def _switch_carrying_router_uplink(
     return None
 
 
+def _switch_hops_from_router(
+    kinds: dict[str, str],
+    links: list[dict[str, object]],
+) -> dict[str, int]:
+    """Hop count from the nearest router to each switch, over switch links.
+
+    A campus donor is usually a chain or a star rooted at the router, and so is
+    the requested topology. Ranking both sides by distance from the router lines
+    the two up without needing subgraph isomorphism.
+    """
+    adjacency: dict[str, set[str]] = {}
+    roots: set[str] = set()
+    for link in links:
+        left, right = str(link.get("from") or ""), str(link.get("to") or "")
+        left_kind, right_kind = kinds.get(left), kinds.get(right)
+        if left_kind == "Switch" and right_kind == "Switch":
+            adjacency.setdefault(left, set()).add(right)
+            adjacency.setdefault(right, set()).add(left)
+        elif left_kind == "Router" and right_kind == "Switch":
+            roots.add(right)
+        elif right_kind == "Router" and left_kind == "Switch":
+            roots.add(left)
+
+    switches = {name for name, kind in kinds.items() if kind == "Switch"}
+    if not roots:
+        return {name: 0 for name in switches}
+
+    hops = {name: 1 for name in roots}
+    frontier = list(roots)
+    while frontier:
+        current = frontier.pop(0)
+        for neighbour in adjacency.get(current, ()):  # noqa: B007
+            if neighbour not in hops:
+                hops[neighbour] = hops[current] + 1
+                frontier.append(neighbour)
+
+    # Switches with no path to a router sort last.
+    unreachable = len(switches) + 1
+    return {name: hops.get(name, unreachable) for name in switches}
+
+
 def _align_donor_groups_to_targets(
     donor_groups: list[dict[str, object]],
     target_groups: list[dict[str, object]],
@@ -2587,44 +2665,69 @@ def _align_donor_groups_to_targets(
     donor_links: list[dict[str, object]],
     blueprint: dict[str, object],
 ) -> list[dict[str, object]]:
-    """Put the donor's router-facing switch group where the target expects it.
+    """Order donor switch groups to match the requested switch topology.
 
-    Groups were previously zipped in name order, so a target switch carrying the
-    router uplink could be matched to a donor switch that has no router link at
-    all. The plan then asked for a Router-Switch link the donor "did not contain",
-    even when the donor did contain one on a different switch.
+    Groups were zipped in name order, which broke two ways. A target switch
+    carrying the router uplink could be matched to a donor switch with no router
+    link, and in a multi-switch chain the requested `SW1 <-> SW2` could land on
+    two donor switches that are not adjacent. Both produced the same misleading
+    refusal: the donor "does not contain that device-to-device link", when it did
+    contain it, on different switches.
+
+    `Senan_K231.pkt` is Router-Mertebe3-Mertebe2-Mertebe1. Name order gave
+    SW2 -> Mertebe 1, so `SW1 <-> SW2` mapped to a pair with no link. Distance
+    ordering gives SW1/SW2/SW3 -> Mertebe 3/2/1, which follows the real chain.
     """
     if len(donor_groups) < 2 or not target_groups:
         return donor_groups
 
     donor_kinds = {str(device["name"]): _device_kind(device) for device in donor_devices}
-    donor_uplink_switch = _switch_carrying_router_uplink(donor_kinds, donor_links)
-    if donor_uplink_switch is None:
-        return donor_groups
-
     blueprint_kinds = {str(device["name"]): _device_kind(device) for device in blueprint.get("devices", [])}
     blueprint_links = [
         {"from": str(link["a"]["dev"]), "to": str(link["b"]["dev"])}
         for link in blueprint.get("links", [])
     ]
-    target_uplink_switch = _switch_carrying_router_uplink(blueprint_kinds, blueprint_links)
-    if target_uplink_switch is None:
+
+    donor_hops = _switch_hops_from_router(donor_kinds, donor_links)
+    target_hops = _switch_hops_from_router(blueprint_kinds, blueprint_links)
+    if not donor_hops or not target_hops:
         return donor_groups
 
-    donor_index = next(
-        (index for index, group in enumerate(donor_groups) if str(group["switch"]["name"]) == donor_uplink_switch),
-        None,
+    target_order = [
+        str(group["switch"]["name"])
+        for group in sorted(
+            target_groups,
+            key=lambda group: (
+                target_hops.get(str(group["switch"]["name"]), 0),
+                _name_sort_key(str(group["switch"]["name"])),
+            ),
+        )
+    ]
+    ranked_donors = sorted(
+        donor_groups,
+        key=lambda group: (
+            donor_hops.get(str(group["switch"]["name"]), 0),
+            _name_sort_key(str(group["switch"]["name"])),
+        ),
     )
-    target_index = next(
-        (index for index, group in enumerate(target_groups) if str(group["switch"]["name"]) == target_uplink_switch),
-        None,
-    )
-    if donor_index is None or target_index is None or donor_index == target_index:
-        return donor_groups
 
-    reordered = list(donor_groups)
-    reordered.insert(target_index, reordered.pop(donor_index))
-    return reordered
+    # `target_groups` is consumed in its own order, so map back into it.
+    position_of_target = {
+        str(group["switch"]["name"]): index for index, group in enumerate(target_groups)
+    }
+    aligned: list[dict[str, object] | None] = [None] * len(donor_groups)
+    leftovers = list(ranked_donors)
+    for rank, target_name in enumerate(target_order):
+        if rank >= len(ranked_donors):
+            break
+        slot = position_of_target.get(target_name)
+        if slot is None or slot >= len(aligned):
+            continue
+        aligned[slot] = ranked_donors[rank]
+        leftovers.remove(ranked_donors[rank])
+
+    spare = iter(leftovers)
+    return [group if group is not None else next(spare) for group in aligned]
 
 
 def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, object], compat_donor: Path) -> tuple[IntentPlan, DonorArchetypePlan]:
@@ -2903,6 +3006,55 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
             adapted_plan.edit_operations.append({"op": "remove_link", "a": {"dev": left_name}, "b": {"dev": right_name}})
             removed_pairs.add(pair)
     link_reuse_gaps: list[str] = []
+    # One physical interface carries one cable. Adopting donor wiring for some
+    # links while planning others from the blueprint can land two cables on the
+    # same port, which produces a lab that looks right and is wired wrongly.
+    claimed_ports: set[tuple[str, str]] = set()
+
+    donor_device_by_target = {
+        rename_map.get(str(device.findtext("./ENGINE/NAME") or ""), str(device.findtext("./ENGINE/NAME") or "")): device
+        for device in donor_root.findall(".//DEVICES/DEVICE")
+    }
+
+    def claim_port(device_name: str, port_name: str) -> str:
+        """Return `port_name` if free, otherwise the next free port that exists.
+
+        Alternatives are validated against the donor device via
+        `port_exists`, which counts the device's real interfaces.
+        Incrementing the index blindly invented ports like `GigabitEthernet0/3`
+        on a 2960-24TT, which has only two gigabit interfaces; Packet Tracer
+        rejected the whole file as incompatible.
+        """
+        if not port_name:
+            return port_name
+        if (device_name, port_name) not in claimed_ports:
+            claimed_ports.add((device_name, port_name))
+            return port_name
+
+        device = donor_device_by_target.get(device_name)
+        match = re.match(r"^(.*?)(\d+)$", port_name)
+        if device is None or not match:
+            return port_name
+
+        stems = [match.group(1)]
+        # A 2960-24TT has two gigabit interfaces. A core switch wanting three
+        # uplinks must put one on FastEthernet, which is what an engineer would
+        # do rather than declare the topology impossible.
+        if "gigabit" in match.group(1).lower():
+            stems.append("FastEthernet0/")
+        start = int(match.group(2))
+        for stem in stems:
+            first = start if stem != match.group(1) else start + 1
+            for index in range(first, first + 48):
+                candidate = f"{stem}{index}"
+                if (device_name, candidate) in claimed_ports:
+                    continue
+                if not port_exists(device, candidate):
+                    break  # ran past the ports this device actually has
+                claimed_ports.add((device_name, candidate))
+                return candidate
+        return port_name
+
     for link in blueprint.get("links", []):
         desired_left = str(link["a"]["dev"])
         desired_right = str(link["b"]["dev"])
@@ -2911,9 +3063,32 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
         desired_ports = [str(link["a"]["port"]), str(link["b"]["port"])]
         desired_media = str(link.get("media", "straight-through"))
         if existing is None:
+            # Reuse-only means the skill can only ever rebuild topologies the
+            # donor already has: a chain donor can never satisfy a star request.
+            # Creating the missing link uses the same `set_link` machinery the
+            # edit path already relies on.
+            if _link_strategy() == "create":
+                left_port = claim_port(desired_left, desired_ports[0])
+                right_port = claim_port(desired_right, desired_ports[1])
+                adapted_plan.edit_operations.append(
+                    {
+                        "op": "set_link",
+                        "a": {"dev": desired_left, "port": left_port},
+                        "b": {"dev": desired_right, "port": right_port},
+                        "media": desired_media,
+                    }
+                )
+                creation = (
+                    f"Created donor link {desired_left} <-> {desired_right}; "
+                    "the donor did not contain this device-to-device link."
+                )
+                if creation not in adapted_plan.assumptions_used:
+                    adapted_plan.assumptions_used.append(creation)
+                continue
             link_reuse_gaps.append(
                 f"Open-first mode cannot create new donor link pair {desired_left} <-> {desired_right}; "
-                "this donor does not contain that device-to-device link."
+                "this donor does not contain that device-to-device link. "
+                "Set PACKET_TRACER_LINK_STRATEGY=create to build it instead."
             )
             continue
         existing_ports = [str(port) for port in existing.get("ports", [])]
@@ -2921,6 +3096,8 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
         ports_match = len(existing_ports) >= 2 and sorted(existing_ports[:2]) == sorted(desired_ports)
         media_matches = existing_media == desired_media
         if ports_match and media_matches:
+            claim_port(desired_left, desired_ports[0])
+            claim_port(desired_right, desired_ports[1])
             continue
         # A port or media value the user never asked for must not reject a donor.
         # When the planner defaulted it, the donor's own wiring is the better
@@ -2936,8 +3113,8 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
                     left_port, right_port = existing_ports[0], existing_ports[1]
                 else:
                     left_port, right_port = existing_ports[1], existing_ports[0]
-                link["a"]["port"] = left_port
-                link["b"]["port"] = right_port
+                link["a"]["port"] = claim_port(desired_left, left_port)
+                link["b"]["port"] = claim_port(desired_right, right_port)
             if existing_media:
                 link["media"] = existing_media
             adaptation = (
@@ -3523,9 +3700,18 @@ def prepare_generation_plan(plan: IntentPlan) -> IntentPlan:
         enriched.assumptions_used.append("Defaulted switch uplinks to GigabitEthernet.")
 
     if enriched.vlan_ids and enriched.device_requirements.get("PC", 0) and not enriched.host_vlan_assignment and not any(op["op"] == "set_access_port" for op in enriched.switch_ops):
-        gap = "Host-to-VLAN assignment is missing. Specify how many PCs belong to each VLAN."
-        if gap not in enriched.blocking_gaps:
-            enriched.blocking_gaps.append(gap)
+        # The parser owns this decision (`intent_parser.distribute_hosts_across_vlans`).
+        # Keeping a second copy here is what produced the class of bug this repo
+        # kept hitting, so this branch only mirrors the parser's strict mode.
+        if strict_vlan_assignment():
+            gap = "Host-to-VLAN assignment is missing. Specify how many PCs belong to each VLAN."
+            if gap not in enriched.blocking_gaps:
+                enriched.blocking_gaps.append(gap)
+        else:
+            enriched.host_vlan_assignment = distribute_hosts_across_vlans(
+                int(enriched.device_requirements.get("PC", 0)),
+                enriched.vlan_ids,
+            )
 
     if any(cap in enriched.capabilities for cap in ["vlan", "trunk"]) or enriched.vlan_ids:
         for capability in ["vlan", "trunk", "access_port"]:

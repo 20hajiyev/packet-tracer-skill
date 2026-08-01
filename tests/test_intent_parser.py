@@ -100,7 +100,19 @@ def test_parse_azerbaijani_natural_prompt_and_blocking_gap() -> None:
     assert plan.vlan_ids == [10, 20, 30]
     assert plan.uplink_intent == "gigabit"
     assert plan.host_link_intent == "fastethernet"
-    assert plan.blocking_gaps
+    # 6 PCs over 3 VLANs reads as two per VLAN. The planner defaults it and says
+    # so, the way it already defaults ports, addressing and the VLAN IDs.
+    assert plan.blocking_gaps == []
+    assert plan.host_vlan_assignment == {10: 2, 20: 2, 30: 2}
+    assert any("Distributed 6 PCs evenly" in item for item in plan.assumptions_used)
+
+
+def test_strict_mode_still_refuses_missing_vlan_assignment(monkeypatch) -> None:
+    monkeypatch.setenv("PACKET_TRACER_STRICT_VLAN_ASSIGNMENT", "1")
+
+    plan = parse_intent("3 dene switch ve 6 komputer ve 1 router vlanlarda 10,20,30")
+
+    assert any("Host-to-VLAN assignment is missing" in gap for gap in plan.blocking_gaps)
 
 
 def test_parse_department_prompt_builds_groups_and_assumptions() -> None:
