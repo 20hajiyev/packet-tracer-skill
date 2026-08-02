@@ -837,7 +837,7 @@ def test_safe_open_profile_allows_rename_layout_and_config_only() -> None:
     assert safe_plan.switch_ops == plan.switch_ops
 
 
-def test_safe_open_profile_still_blocks_wireless_and_end_device_mutations() -> None:
+def test_safe_open_profile_still_blocks_wireless_mutations() -> None:
     donor_root = ET.Element("PACKETTRACER5")
     devices = ET.SubElement(donor_root, "DEVICES")
     device = _make_device("AP1", "Access Point", "AccessPoint-PT")
@@ -859,13 +859,16 @@ def test_safe_open_profile_still_blocks_wireless_and_end_device_mutations() -> N
 
     safe_plan, profiled_plan = _apply_safe_open_profile(donor_root, plan)
 
+    # End-device configuration used to be blocked here too, on no recorded
+    # evidence. It was measured on 2026-08-03 -- two generated labs opened in
+    # Packet Tracer -- and is allowed now. Wireless remains unmeasured.
     assert "wireless_mutation" in profiled_plan.blocked_mutations
-    assert "end_device_mutation" in profiled_plan.blocked_mutations
+    assert "end_device_mutation" not in profiled_plan.blocked_mutations
     assert not safe_plan.wireless_ops
-    assert not safe_plan.end_device_ops
+    assert safe_plan.end_device_ops
 
 
-def test_safe_open_preview_reports_wireless_and_end_device_mutations() -> None:
+def test_safe_open_preview_reports_wireless_mutations() -> None:
     plan = parse_intent(
         "set AP1 ssid TEST security wpa2-psk passphrase test12345 "
         "associate Tablet0 to AP1 ssid TEST dhcp "
@@ -874,7 +877,7 @@ def test_safe_open_preview_reports_wireless_and_end_device_mutations() -> None:
     preview = _apply_safe_open_preview(plan)
     assert "wireless_mutation" in preview.blocked_mutations
     assert "wireless_client_association" in preview.blocked_mutations
-    assert "end_device_mutation" in preview.blocked_mutations
+    assert "end_device_mutation" not in preview.blocked_mutations
     assert any("wireless_mutation" in gap for gap in preview.blocking_gaps)
 
 

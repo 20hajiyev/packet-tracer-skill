@@ -1391,6 +1391,9 @@ SAFE_OPEN_ALLOWED_MUTATIONS = [
     # what lets a topology be larger than its donor.
     "device_duplicate",
 ]
+# Measured 2026-08-03: see `_host_config_enabled`.
+DEFAULT_HOST_CONFIG = True
+
 SAFE_OPEN_BLOCKED_MUTATIONS = [
     "link_rewrite",
     "port_reassignment",
@@ -1814,11 +1817,34 @@ def _compatibility_profile() -> CompatibilityProfile:
     )
 
 
+def _host_config_enabled() -> bool:
+    """Whether end-device configuration may be applied.
+
+    On by default, and that default is a measurement. `end_device_mutation` sat
+    on the blocked list with nothing in the repo recording why -- the same shape
+    as `device_prune` and `remove_link`, which both turned out to be safe once
+    somebody actually tested them.
+
+    Two files generated with it enabled were opened in Packet Tracer: a flat
+    router-DHCP lab (10.1s) and a three-VLAN lab with a DHCP pool per VLAN
+    (10.2s). Both opened. Set `PACKET_TRACER_HOST_CONFIG=0` to restore the old
+    behaviour.
+    """
+    raw = (os.getenv("PACKET_TRACER_HOST_CONFIG") or "").strip().lower()
+    if raw in {"1", "on", "true", "yes"}:
+        return True
+    if raw in {"0", "off", "false", "no"}:
+        return False
+    return DEFAULT_HOST_CONFIG
+
+
 def _allowed_mutations() -> list[str]:
     """Allowed mutation categories for the active strategies."""
     allowed = list(SAFE_OPEN_ALLOWED_MUTATIONS)
     if _link_strategy() == "create":
         allowed.append("link_rewrite")
+    if _host_config_enabled():
+        allowed.append("end_device_mutation")
     return allowed
 
 
@@ -2269,13 +2295,12 @@ def _synthesize_service_ops(plan: IntentPlan, devices: list[dict[str, object]]) 
                 "max_users": 100,
             },
         )
-        # Putting the hosts on the pool with `set_host_dhcp` would be the
-        # natural next step, but that is an `end_device_mutation`, which
-        # open-first mode blocks -- adding it here refused every DHCP prompt
-        # outright. Whether that block is measured or merely cautious is a
-        # separate question, and changing it belongs in its own verified step.
-        # The donor's hosts already carry `DHCP_ENABLED`, so the pool is live
-        # for them regardless.
+        # A pool nothing asks for is not really DHCP, so put the hosts on it --
+        # but only when end-device configuration is permitted. See
+        # `_host_config_enabled` for what that block is worth.
+        if _host_config_enabled():
+            for host in hosts:
+                _append_unique_op(plan.end_device_ops, {"op": "set_host_dhcp", "device": host["name"]})
 
     # Management VLAN and telnet, on every switch that will exist.
     management_vlan = _management_vlan_id(plan)

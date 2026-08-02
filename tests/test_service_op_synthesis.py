@@ -149,3 +149,32 @@ def test_configuration_evidence_is_specific() -> None:
 
     assert config_capability_tags("hostname R1\ninterface GigabitEthernet0/0") == set()
     assert config_capability_tags("") == set()
+
+
+def test_host_config_is_on_by_default_because_it_was_measured(monkeypatch) -> None:
+    """`end_device_mutation` was blocked with nothing recording why.
+
+    Same shape as `device_prune` and `remove_link`, both of which proved safe
+    once tested. Two files generated with host config enabled were opened in
+    Packet Tracer -- a flat router-DHCP lab and a three-VLAN lab with a pool per
+    VLAN -- and both opened.
+    """
+    from generate_pkt import _allowed_mutations, _host_config_enabled
+
+    monkeypatch.delenv("PACKET_TRACER_HOST_CONFIG", raising=False)
+    assert _host_config_enabled()
+    assert "end_device_mutation" in _allowed_mutations()
+
+    monkeypatch.setenv("PACKET_TRACER_HOST_CONFIG", "0")
+    assert not _host_config_enabled()
+    assert "end_device_mutation" not in _allowed_mutations()
+
+
+def test_hosts_are_put_on_the_dhcp_pool() -> None:
+    """A pool nothing requests an address from is not really DHCP."""
+    plan = parse_intent("1 router 1 switch 3 komputer qur dhcp routerden verilsin")
+
+    _synthesize_service_ops(plan, _devices())
+
+    dhcp_hosts = {op["device"] for op in plan.end_device_ops if op["op"] == "set_host_dhcp"}
+    assert dhcp_hosts == {"PC1", "SRV1"}

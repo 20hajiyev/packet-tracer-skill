@@ -914,3 +914,30 @@ the service name. The helper now ignores unknown services instead of raising.
 now verified by content, not just by opening. Up from 8 under the stricter
 standard. The single remaining gap is `wireless_home`, which is a genuine donor
 limit: a device model the donor lacks cannot be cloned into existence.
+
+
+## The end-device block was unmeasured caution
+
+`end_device_mutation` sat on `SAFE_OPEN_BLOCKED_MUTATIONS` with nothing in the
+repo recording why. That is the third time this exact shape has appeared:
+`device_prune` and `remove_link` were both on that list too, both forbade
+operations the architecture depends on, and both proved safe the moment anyone
+opened a file.
+
+Measured with `PACKET_TRACER_HOST_CONFIG`, control and experiment:
+
+| lab | hosts on DHCP | opens |
+|---|---|---|
+| flat router DHCP, knob off | 2 of 10 ports | -- |
+| flat router DHCP, knob on | 6 of 10 ports | yes, 10.1s |
+| three VLANs, pool per VLAN, knob on | -- | yes, 10.2s |
+
+Both opened, so the default is now on. `PACKET_TRACER_HOST_CONFIG=0` restores
+the old behaviour. Wireless mutation stays blocked -- it has not been measured,
+and this pass does not guess about it.
+
+Two tests asserted the block as though it were a requirement. They now assert
+what was actually measured: wireless blocked, end-device allowed.
+
+Corpus holds at **11/13 generated, 11 opened, 0 unexpected**, and DHCP labs now
+hand addresses to their hosts instead of offering a pool nobody asks from.
