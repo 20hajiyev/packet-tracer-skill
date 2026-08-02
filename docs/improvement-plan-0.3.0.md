@@ -558,17 +558,29 @@ reading the error Packet Tracer actually gave:
 After those, the physical workspace validates and the error returns to the
 generic "not compatible with this version".
 
-### Still open
+### Resolved: operation order
 
-`four_switch` now *generates* — 14 devices, 12 links, structurally clean — but
-the file does not open. The XML-level experiment proved a duplicated group can
-open, so the generator's version differs from it in some way not yet identified.
+The generator's duplicate differed from the working experiment in *when* it ran.
+The experiment duplicated a group after every other mutation, from a device
+already carrying its final name. The generator duplicated first, from donor
+names, and renamed the copy afterwards — which Packet Tracer refused.
 
-Group duplication is therefore **off by default**
-(`PACKET_TRACER_GROUP_DUPLICATION=1` enables it). A file that looks generated and
-will not open is worse than an honest refusal, so the corpus stays at 4
-generated, 3 donor-limited, 0 unexpected rather than reporting a fifth success
-that is not one.
+Moving duplication to the end exposed three further mismatches, each visible
+once the order was right:
 
-The next step is to diff the generator's duplicated group against the hand-built
-XML experiment that opened, since one of them works and the other does not.
+1. The hosts being cloned were chosen by donor name, and those particular hosts
+   were on the same plan's prune list. The clone copied devices about to be
+   deleted.
+2. The seed was picked as the donor group with the most members, which maps onto
+   the core switch — the one that ends up carrying no hosts at all. The seed has
+   to be chosen by *surviving* hosts, at emit time.
+3. The clone's uplink was emitted by the earlier link pass, so it ran before the
+   clone existed and did nothing. The new switch had hosts and no path to the
+   rest of the topology.
+
+**`four_switch` now opens in 10.4 s** — four switches built on a three-switch
+donor, 14 devices, 12 links, fully connected. Group duplication is on by
+default; `PACKET_TRACER_GROUP_DUPLICATION=off` restricts topologies to the
+donor's own switch count.
+
+Corpus: 5 generated, 2 donor-limited, 1 correct refusal, 0 unexpected.

@@ -201,3 +201,29 @@ def test_only_infrastructure_links_may_be_created() -> None:
     assert not _link_may_be_created("Switch", "PC")
     assert not _link_may_be_created("Server", "Switch")
     assert not _link_may_be_created("", "Switch")
+
+
+def test_group_duplication_is_on_by_default(monkeypatch) -> None:
+    """Verified: a four-switch topology on a three-switch donor opens in 10.4s.
+
+    The operation order is what made it work — duplicating last, from a device
+    already carrying its final name — so this default encodes a measurement, not
+    a preference.
+    """
+    from generate_pkt import _group_duplication_enabled
+
+    monkeypatch.delenv("PACKET_TRACER_GROUP_DUPLICATION", raising=False)
+    assert _group_duplication_enabled()
+
+    monkeypatch.setenv("PACKET_TRACER_GROUP_DUPLICATION", "off")
+    assert not _group_duplication_enabled()
+
+
+def test_blueprint_device_kind_lookup() -> None:
+    from generate_pkt import _device_kind_of_blueprint
+
+    blueprint = {"devices": [{"name": "SW4", "type": "Switch"}, {"name": "PC3", "type": "PC"}]}
+
+    assert _device_kind_of_blueprint(blueprint, "SW4") == "Switch"
+    assert _device_kind_of_blueprint(blueprint, "PC3") == "PC"
+    assert _device_kind_of_blueprint(blueprint, "absent") == ""

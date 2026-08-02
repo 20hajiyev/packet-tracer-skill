@@ -53,8 +53,7 @@ CORPUS: tuple[CorpusCase, ...] = (
     CorpusCase(
         "four_switch",
         "4 switch 1 router 8 komputer qur",
-        expects="donor_limited",
-        note="no eligible donor has four switch groups",
+        note="four switches on a three-switch donor; needs group duplication",
     ),
     CorpusCase("server_lan", "1 router 1 switch 2 komputer 1 server qur"),
     CorpusCase(

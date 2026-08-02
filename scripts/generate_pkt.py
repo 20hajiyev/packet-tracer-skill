@@ -2599,13 +2599,20 @@ def _link_may_be_created(left_kind: str, right_kind: str) -> bool:
 def _group_duplication_enabled() -> bool:
     """Whether a switch group may be duplicated to exceed the donor's size.
 
-    Off until a duplicated group is verified to open. The mechanism works —
-    duplicating a group at the XML level opens in Packet Tracer — but the
-    generator's version still produces a file Packet Tracer refuses, and this
-    repo treats a file that will not open as worse than an honest refusal.
-    `PACKET_TRACER_GROUP_DUPLICATION=1` enables it for development.
+    On by default: verified against a real Packet Tracer open. A four-switch
+    topology built by duplicating a group on a three-switch donor opens in
+    10.4 s.
+
+    The operation order is what made it work. Duplicating first and renaming the
+    copy afterwards produced a file Packet Tracer refused; duplicating last,
+    from a device already carrying its final name and with final host names,
+    matches the arrangement the donor already has.
+
+    `PACKET_TRACER_GROUP_DUPLICATION=off` restricts topologies to the donor's
+    own switch count again.
     """
-    return (os.getenv("PACKET_TRACER_GROUP_DUPLICATION") or "").strip().lower() in {"1", "true", "yes", "on"}
+    raw = (os.getenv("PACKET_TRACER_GROUP_DUPLICATION") or "").strip().lower()
+    return raw not in {"0", "off", "false", "no"}
 
 
 def _cross_group_borrowing_enabled() -> bool:
@@ -2655,6 +2662,13 @@ def _spare_strategy() -> str:
     """
     raw = (os.getenv("PACKET_TRACER_SPARE_STRATEGY") or "").strip().lower()
     return raw if raw in SPARE_STRATEGIES else DEFAULT_SPARE_STRATEGY
+
+
+def _device_kind_of_blueprint(blueprint: dict[str, object], device_name: str) -> str:
+    for device in blueprint.get("devices", []):
+        if str(device.get("name")) == device_name:
+            return _device_kind(device)
+    return ""
 
 
 def _device_kind_by_name(group: dict[str, object], host_name: str) -> str:
@@ -2908,20 +2922,43 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
         # arrives with a usable port layout.
         # `donor_groups` grows inside this loop, so the base length must be
         # captured first or the target index walks off the end.
+        pending_duplications: list[dict[str, object]] = []
         base_group_count = len(donor_groups)
         shortfall = len(target_groups) - base_group_count
         seed_group = max(donor_groups, key=lambda group: len(group.get("members", [])))
         seed_name = str(seed_group["switch"]["name"])
-        seed_hosts = [str(member["name"]) for member in seed_group.get("members", [])]
+        seed_members = list(seed_group.get("members", []))
         for index in range(shortfall):
             duplicate_name = f"{seed_name}-COPY{index + 1}"
-            target_switch = target_groups[base_group_count + index]["switch"]
-            adapted_plan.edit_operations.append(
+            target_group = target_groups[base_group_count + index]
+            target_switch = target_group["switch"]
+            # Clone only what the target group actually needs, by kind. Cloning
+            # the whole seed group meant copying six devices — including servers
+            # — to use two, and every extra clone is another device to prune and
+            # another way for the copy to differ from the original.
+            wanted_by_kind: dict[str, int] = {}
+            for member in target_group.get("members", []):
+                kind = _device_kind(member)
+                wanted_by_kind[kind] = wanted_by_kind.get(kind, 0) + 1
+            seed_hosts: list[str] = []
+            for kind, count in wanted_by_kind.items():
+                matching = [
+                    str(member["name"])
+                    for member in seed_members
+                    if _device_kind(member) == kind
+                ]
+                seed_hosts.extend(matching[:count])
+            # Emitted after the rename/prune pass, not here. The verified
+            # experiment duplicated a group *after* all other mutations, from a
+            # device already carrying its final name; duplicating first and then
+            # renaming the copy is a different operation order and produced a
+            # file Packet Tracer refused.
+            pending_duplications.append(
                 {
-                    "op": "duplicate_group",
-                    "device": seed_name,
-                    "new_name": duplicate_name,
-                    "hosts": seed_hosts,
+                    "seed": seed_name,
+                    "new_name": str(target_switch["name"]),
+                    "wanted": dict(wanted_by_kind),
+                    "target_hosts": [str(m["name"]) for m in target_group.get("members", [])],
                     "x": int(target_switch.get("x", 0)),
                     "y": int(target_switch.get("y", 0)),
                 }
@@ -3412,6 +3449,67 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
             if gap not in adapted_plan.blocking_gaps:
                 adapted_plan.blocking_gaps.append(gap)
         raise PlanningError("Prompt plan is incomplete; generation was skipped.", adapted_plan)
+
+    parked_set = set(parked_devices)
+    for pending in locals().get("pending_duplications", []) or []:
+        seed_final = rename_map.get(str(pending["seed"]), str(pending["seed"]))
+        # Clone the hosts that actually survive on the seed switch, under their
+        # final names. Cloning by donor name copied devices this very plan was
+        # about to delete.
+        # Pick the seed by what survives, not by donor membership. The richest
+        # donor group can map onto the core switch, which ends up carrying no
+        # hosts at all — cloning that gives an empty group.
+        def kept_hosts_of(group: dict[str, object]) -> list[str]:
+            names: list[str] = []
+            for member in group.get("members", []):
+                final = rename_map.get(str(member["name"]), "")
+                if final and final not in parked_set:
+                    names.append(final)
+            return names
+
+        candidates = [
+            (kept_hosts_of(group), group)
+            for group in donor_groups
+            if str(group["switch"]["name"]) in rename_map
+        ]
+        kept_hosts, best_group = max(candidates, key=lambda item: len(item[0]), default=([], None))
+        if best_group is not None:
+            seed_final = rename_map.get(str(best_group["switch"]["name"]), seed_final)
+        needed = sum(int(count) for count in dict(pending["wanted"]).values())
+        adapted_plan.edit_operations.append(
+            {
+                "op": "duplicate_group",
+                "device": seed_final,
+                "new_name": str(pending["new_name"]),
+                "hosts": kept_hosts[:needed],
+                "new_hosts": [str(name) for name in pending["target_hosts"]][:needed],
+                "x": int(pending["x"]),
+                "y": int(pending["y"]),
+            }
+        )
+        # The clone's uplink has to be built after the clone exists. The
+        # link-reuse pass ran earlier and its `set_link` for this pair was a
+        # no-op, which left the new switch with hosts but no path to the rest
+        # of the topology.
+        new_switch = str(pending["new_name"])
+        for link in blueprint.get("links", []):
+            left, right = str(link["a"]["dev"]), str(link["b"]["dev"])
+            if new_switch not in (left, right):
+                continue
+            other = right if left == new_switch else left
+            if not _link_may_be_created(
+                _device_kind_of_blueprint(blueprint, left),
+                _device_kind_of_blueprint(blueprint, right),
+            ):
+                continue
+            adapted_plan.edit_operations.append(
+                {
+                    "op": "set_link",
+                    "a": {"dev": left, "port": str(link["a"]["port"])},
+                    "b": {"dev": right, "port": str(link["b"]["port"])},
+                    "media": str(link.get("media", "straight-through")),
+                }
+            )
 
     _resolve_port_conflicts(
         adapted_plan,

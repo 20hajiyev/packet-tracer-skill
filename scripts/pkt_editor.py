@@ -931,6 +931,7 @@ def _duplicate_group(
     host_names: list[str],
     x: int,
     y: int,
+    new_host_names: list[str] | None = None,
 ) -> None:
     """Copy a switch together with its hosts and the links between them.
 
@@ -964,7 +965,10 @@ def _duplicate_group(
             continue
         # Do not embed the source host's name: workspace validation matches by
         # substring, so `SW-COPY1-Admin` read as the pruned `Admin` still present.
-        new_host_name = f"{new_switch_name}-H{offset + 1}"
+        if new_host_names and offset < len(new_host_names):
+            new_host_name = new_host_names[offset]
+        else:
+            new_host_name = f"{new_switch_name}-H{offset + 1}"
         _duplicate_host_for_group(root, host_name, new_host_name, x + offset * 90, y + 140)
         new_host = _find_device(root, new_host_name)
         if new_host is None:
@@ -1930,6 +1934,7 @@ def apply_plan_operations(root: ET.Element, plan: IntentPlan) -> ET.Element:
                 [str(name) for name in operation.get("hosts", [])],
                 int(operation.get("x", 0)),
                 int(operation.get("y", 0)),
+                [str(name) for name in operation.get("new_hosts", [])] or None,
             )
             continue
         if operation["op"] == "duplicate_device":
