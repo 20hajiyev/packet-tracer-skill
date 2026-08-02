@@ -76,6 +76,38 @@ performed only to read `<VERSION>`.
   an edited file is re-read rather than served stale. Only immutable bytes are
   cached; callers still get their own tree to mutate.
 
+### First open-verified generation set, and what it disproved
+
+Running the corpus with real Packet Tracer opens produced the first evidence-backed
+readiness numbers — and immediately contradicted two things this repo believed.
+
+**Cross-group device borrowing does not work.** A target switch needing more
+hosts than its aligned donor switch carries was allowed to borrow from other
+donor groups. Every corpus case that borrowed failed to open (4, 5 and 7 hosts);
+every case that stayed within its donor group's own hosts opened (2 and 3).
+Moving a device between switch groups leaves state this code does not fix up.
+Borrowing is off by default now; `PACKET_TRACER_CROSS_GROUP_BORROW=1` re-enables
+it for experiments. A refusal beats a file that looks generated and will not open.
+
+**Coverage reporting is not base-donor eligibility.** The version policy was
+applied to `_existing_ranked_candidates`, which feeds both. Under the `exact`
+default every bundled sample vanished and campus prompts started refusing with
+"critical capability coverage is still missing" — for coverage sitting in the
+catalogue all along. A sample proves a capability whether or not it can serve as
+a generation base, so the policy now applies only in `_base_donor_candidates`.
+Generation also got 4x faster as a side effect: 6-7 s per case instead of 24-50 s,
+because the base pool is small while coverage still sees everything.
+
+Refusal messages no longer suggest loosening the donor policy. Loosening was
+measured to produce files Packet Tracer refuses, so the advice walked users into
+a broken state that looked like progress. When the running build is unknown the
+message asks for the one action that helps: save any lab from Packet Tracer once,
+which is what teaches the skill its build.
+
+Corpus now: **4 generate and open, 3 donor-limited, 1 correct refusal, 0
+unexpected.** `refused_donor_limited` is a distinct status so a sound request the
+local donor cannot serve stays countable without being mistaken for a defect.
+
 ### A corpus runner, and the five defects it found immediately
 
 `scripts/corpus_runner.py` runs a set of prompts end to end and records what

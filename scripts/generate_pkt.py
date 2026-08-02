@@ -169,24 +169,32 @@ def _compat_donor_details() -> tuple[Path | None, str | None]:
 
 
 def _existing_ranked_candidates(ranked: list[SampleCandidate]) -> list[SampleCandidate]:
-    """Keep candidates that exist on disk and pass the donor version policy.
+    """Candidates that exist on disk. No version filter.
 
-    Donor-prune generation builds the output on the *selected sample* donor, so
-    the output inherits that sample's `<VERSION>`. Without this check the sample
-    catalogue was ungated while only the compatibility donor was version-checked,
-    and a 9.0-targeted run could emit a 6.1 file.
+    These feed capability and coverage reporting, which asks "what is possible
+    with Packet Tracer" — a sample proves a capability whether or not it can
+    serve as a generation base. Filtering here made every bundled sample vanish
+    under the `exact` policy, and campus prompts started refusing with
+    "critical capability coverage is still missing" even though the coverage was
+    right there in the catalogue.
+    """
+    return [candidate for candidate in ranked if Path(candidate.sample.path).exists()]
+
+
+def _base_donor_candidates(ranked: list[SampleCandidate]) -> list[SampleCandidate]:
+    """Candidates usable as the base a generated lab is built from.
+
+    Donor-prune inherits the base's `<VERSION>`, and Packet Tracer refuses a
+    file whose build differs from its own, so this is where the version policy
+    belongs — and only here.
     """
     target_version = get_packet_tracer_target_version()
     policy = get_donor_policy()
-    kept: list[SampleCandidate] = []
-    for candidate in ranked:
-        if not Path(candidate.sample.path).exists():
-            continue
-        tier = donor_compatibility(candidate.sample.version, target_version)
-        if not donor_tier_is_accepted(tier, policy):
-            continue
-        kept.append(candidate)
-    return kept
+    return [
+        candidate
+        for candidate in ranked
+        if donor_tier_is_accepted(donor_compatibility(candidate.sample.version, target_version), policy)
+    ]
 
 
 def _compat_donor_candidate() -> SampleCandidate | None:
@@ -263,7 +271,11 @@ def _rank_generation_donors(
     )
     ordered: list[SampleCandidate] = []
     seen_paths: set[str] = set()
-    for bucket in [[candidate] if (candidate := _compat_donor_candidate()) is not None else [], cisco_ranked, curated_ranked]:
+    for bucket in [
+        [candidate] if (candidate := _compat_donor_candidate()) is not None else [],
+        _base_donor_candidates(cisco_ranked),
+        _base_donor_candidates(curated_ranked),
+    ]:
         for donor_candidate in bucket:
             key = str(Path(donor_candidate.sample.path).resolve()).lower()
             if key in seen_paths:
@@ -2563,6 +2575,16 @@ def _unexpected_workspace_issues(donor_root: ET.Element, generated_root: ET.Elem
     return [issue for issue in generated_result.blocking_issues if issue not in donor_issue_set]
 
 
+def _cross_group_borrowing_enabled() -> bool:
+    """Whether a target switch may take hosts from another donor switch group.
+
+    Off by default: verified against real Packet Tracer opens, borrowed devices
+    produce a file Packet Tracer refuses. Set
+    `PACKET_TRACER_CROSS_GROUP_BORROW=1` to experiment with it.
+    """
+    return (os.getenv("PACKET_TRACER_CROSS_GROUP_BORROW") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 LINK_STRATEGIES = ("reuse", "create")
 DEFAULT_LINK_STRATEGY = "create"
 
@@ -2973,6 +2995,17 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
             unclaimed_by_type.setdefault(_device_kind(member), []).append(member)
 
     def borrow(device_type: str, count: int) -> list[dict[str, object]]:
+        # Measured: files built with borrowed devices are rejected by Packet
+        # Tracer as "not compatible with this version". Every corpus case whose
+        # target switch needed more hosts than its aligned donor switch had
+        # failed to open (4, 5 and 7 hosts), and every case that stayed within
+        # the donor group's own hosts opened (2 and 3). Moving a device between
+        # switch groups evidently leaves state this code does not fix up.
+        #
+        # A refusal beats a file that looks generated and will not open, so
+        # borrowing is off unless explicitly asked for.
+        if not _cross_group_borrowing_enabled():
+            return []
         pool = unclaimed_by_type.get(device_type, [])
         taken, unclaimed_by_type[device_type] = pool[:count], pool[count:]
         return taken
@@ -3002,9 +3035,11 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
             if len(wanted) > len(available):
                 total_shortfall = len(wanted) - len(available)
                 gap = (
-                    f"Compatibility donor has only {len(available)} {device_type} device(s) available for "
-                    f"{target_group['group_name']}; requested {len(wanted)} (short by {total_shortfall}). "
-                    "Donor devices are pooled across switch groups, so this is the whole donor's capacity."
+                    f"Donor switch group '{donor_group['group_name']}' has {len(available)} "
+                    f"{device_type} device(s); {target_group['group_name']} needs {len(wanted)} "
+                    f"(short by {total_shortfall}). A generated lab reuses the hosts already attached "
+                    "to a donor switch, so pick a prompt that fits, or save a Packet Tracer lab with "
+                    f"at least {len(wanted)} {device_type} device(s) on one switch and use it as the donor."
                 )
                 if gap not in adapted_plan.blocking_gaps:
                     adapted_plan.blocking_gaps.append(gap)

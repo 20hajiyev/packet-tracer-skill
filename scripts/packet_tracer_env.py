@@ -134,12 +134,41 @@ def donor_tier_is_accepted(tier: str, policy: str | None = None) -> bool:
     return COMPATIBILITY_TIERS.index(tier) <= COMPATIBILITY_TIERS.index(policy)
 
 
+def build_is_known(target_version: str | None = None) -> bool:
+    """Whether the running Packet Tracer build is known, not just its release.
+
+    An install directory yields `9.0.0` — a release. Only a lab the install
+    saved carries the build (`9.0.0.0810`), and Packet Tracer refuses to open
+    anything generated from a donor with a different build.
+    """
+    # `None` means "detect it"; an empty string means "known to be unknown".
+    resolved = get_packet_tracer_target_version() if target_version is None else target_version
+    return len(_version_fields(resolved)) >= 4
+
+
+def save_a_lab_hint() -> str:
+    return (
+        "Open Packet Tracer, then File > Save As and save any lab (an empty one is fine) "
+        "into Documents, Downloads or Desktop. That file carries your exact Packet Tracer "
+        "build, which is what generated labs must match."
+    )
+
+
 def describe_donor_rejection(donor_version: str, target_version: str, tier: str, policy: str) -> str:
     if tier == "incompatible":
         return (
             f"version {donor_version} is not compatible with target {target_version} "
             f"(Packet Tracer does not reliably upgrade saves older than "
             f"{MINIMUM_UPGRADEABLE_MAJOR}.x)"
+        )
+    if policy == "exact":
+        # Do not offer a looser policy here. Loosening was measured to produce
+        # files Packet Tracer refuses to open, so suggesting it would walk the
+        # user into a broken state that looks like progress.
+        return (
+            f"version {donor_version} does not match your Packet Tracer build {target_version}. "
+            "A generated lab must be built from a donor your own Packet Tracer saved. "
+            + save_a_lab_hint()
         )
     return (
         f"version {donor_version} is tier '{tier}' against target {target_version}, "

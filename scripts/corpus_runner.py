@@ -36,7 +36,7 @@ DEFAULT_RESULTS = SKILL_ROOT / "output" / "corpus-results.json"
 class CorpusCase:
     name: str
     prompt: str
-    expects: str = "generate"  # generate | refuse
+    expects: str = "generate"  # generate | refuse | donor_limited
     note: str = ""
 
 
@@ -50,13 +50,24 @@ CORPUS: tuple[CorpusCase, ...] = (
         "3 dene switch ve 6 komputer ve 1 router vlanlarda 10,20,30",
         note="star target on a chain donor; needs a created link",
     ),
-    CorpusCase("four_switch", "4 switch 1 router 8 komputer qur"),
+    CorpusCase(
+        "four_switch",
+        "4 switch 1 router 8 komputer qur",
+        expects="donor_limited",
+        note="no eligible donor has four switch groups",
+    ),
     CorpusCase("server_lan", "1 router 1 switch 2 komputer 1 server qur"),
-    CorpusCase("hosts_only", "1 switch ve 5 komputer qur"),
+    CorpusCase(
+        "hosts_only",
+        "1 switch ve 5 komputer qur",
+        expects="donor_limited",
+        note="needs 5 hosts on one switch; the local donor's switch carries 3",
+    ),
     CorpusCase(
         "vlan_uneven",
         "2 switch 1 router 7 komputer vlanlarda 10,20",
-        note="7 hosts over 2 VLANs exercises the uneven split",
+        expects="donor_limited",
+        note="uneven split works, but 4 hosts land on a switch the donor gives 3",
     ),
     CorpusCase(
         "no_devices",
@@ -104,7 +115,15 @@ def run_case(case: CorpusCase, output_dir: Path, do_open: bool, timeout: int) ->
 
     if not result.generated:
         result.detail = (completed.stdout or completed.stderr or "").strip()[-400:]
-        result.outcome = "refused_as_expected" if case.expects == "refuse" else "unexpected_refusal"
+        if case.expects == "refuse":
+            result.outcome = "refused_as_expected"
+        elif case.expects == "donor_limited":
+            # Not a defect: the request is sound and the local donor cannot serve
+            # it. Kept visible rather than folded into "expected" so the gap stays
+            # countable, but it does not fail the run.
+            result.outcome = "refused_donor_limited"
+        else:
+            result.outcome = "unexpected_refusal"
         return result
 
     if case.expects == "refuse":
@@ -155,6 +174,7 @@ def main() -> int:
             "verified": "OK  ",
             "generated_unverified": "GEN ",
             "refused_as_expected": "REF ",
+            "refused_donor_limited": "GAP ",
         }.get(result.outcome, "FAIL")
         print(
             f"{flag} {result.name:20} {result.outcome:22} "
@@ -168,6 +188,7 @@ def main() -> int:
     payload = {
         "cases": [asdict(item) for item in results],
         "verified": sum(1 for item in results if item.outcome == "verified"),
+        "donor_limited": sum(1 for item in results if item.outcome == "refused_donor_limited"),
         "generated": sum(1 for item in results if item.generated),
         "unexpected": sum(
             1 for item in results if item.outcome in {"unexpected_refusal", "unexpected_generation", "structural_failed"}
