@@ -833,3 +833,38 @@ Requiring a device alias after the number word does not separate the readings --
 `router` is a device alias. Reading it as a count silently ordered ten routers,
 so it is excluded. `10 komputer` still works; a misparse would not have been
 noticed until Packet Tracer opened the wrong lab.
+
+
+## "Verified" was measuring the wrong thing
+
+Two corpus cases added in the previous pass -- `router_dhcp` and
+`server_services` -- were reported as verified. They were not. The corpus proved
+only that Packet Tracer opened the file, and a pruned donor opens whether or not
+the prompt's capability was ever applied.
+
+Measured against the donor:
+
+| marker | donor | router_dhcp | server_services |
+|---|---|---|---|
+| `ip dhcp pool` | 0 | **0** | 0 |
+| `dns` | 223 | 52 | 62 |
+| `http` | 72 | 2 | **25** |
+
+Every hit is inherited donor content, thinned by pruning. Nothing was added.
+`ip dhcp pool` is absent everywhere, including from the case whose whole purpose
+was to request one.
+
+`CorpusCase.requires_content` now names the markers a lab must contain for the
+request to count as honoured, checked against the decoded XML. The two cases are
+reclassified as capability gaps, which is what they always were.
+
+The same check was applied to the VLAN cases as a control, and they pass: VLAN
+configuration is genuinely emitted, so the gap is specific to DHCP and server
+services rather than general.
+
+Honest corpus standing: **8 verified, 3 capability gaps, 1 donor-limited, 1
+correct refusal, 0 unexpected.**
+
+This is the recurring defect shape once more, now in the measuring instrument
+itself: "the file opens" and "the file does what was asked" were two models of
+one concept, and the weaker one was doing the reporting.

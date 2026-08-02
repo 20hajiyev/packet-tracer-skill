@@ -28,6 +28,7 @@ SKILL_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SKILL_ROOT / "scripts"))
 
 import pkt_verify  # noqa: E402
+from pkt_codec import decode_pkt_auto  # noqa: E402
 
 DEFAULT_RESULTS = SKILL_ROOT / "output" / "corpus-results.json"
 
@@ -38,6 +39,13 @@ class CorpusCase:
     prompt: str
     expects: str = "generate"  # generate | refuse | donor_limited | capability_gap
     note: str = ""
+    # Markers that must appear in the generated lab for the request to have been
+    # honoured. Without this, "verified" meant only that Packet Tracer opened the
+    # file -- which a donor-shaped lab does whether or not the prompt's
+    # capability was applied. Two cases passed that way: they asked for router
+    # DHCP and for server DNS/HTTP, produced neither, and were still counted as
+    # verified because the file opened.
+    requires_content: tuple[str, ...] = ()
 
 
 # Deliberately spans the shapes the donor cannot supply directly, because that
@@ -48,6 +56,7 @@ CORPUS: tuple[CorpusCase, ...] = (
     CorpusCase(
         "campus_star_vlan",
         "3 dene switch ve 6 komputer ve 1 router vlanlarda 10,20,30",
+        requires_content=("vlan 10", "vlan 20", "vlan 30"),
         note="star target on a chain donor; needs a created link",
     ),
     CorpusCase(
@@ -64,6 +73,7 @@ CORPUS: tuple[CorpusCase, ...] = (
     CorpusCase(
         "vlan_uneven",
         "2 switch 1 router 7 komputer vlanlarda 10,20",
+        requires_content=("vlan 10", "vlan 20"),
         note="uneven split; the busier switch needs more hosts than the donor gives",
     ),
     CorpusCase(
@@ -77,17 +87,24 @@ CORPUS: tuple[CorpusCase, ...] = (
     CorpusCase(
         "vlan_explicit_split",
         "2 switch 1 router 6 komputer vlan 10 da 4 pc vlan 20 de 2 pc",
+        requires_content=("vlan 10", "vlan 20"),
         note="explicit host-to-VLAN counts rather than an even default",
     ),
     CorpusCase(
         "router_dhcp",
         "1 router 1 switch 3 komputer qur dhcp routerden verilsin",
-        note="router DHCP pool on top of a working topology",
+        expects="capability_gap",
+        requires_content=("ip dhcp pool",),
+        note="the parser recognises router_dhcp but emits no router_ops, so the "
+        "lab opens without a DHCP pool",
     ),
     CorpusCase(
         "server_services",
         "1 router 1 switch 2 komputer 1 server qur serverde dns ve http olsun",
-        note="server service enablement",
+        expects="capability_gap",
+        requires_content=("<DNS>", "<HTTP>"),
+        note="the parser recognises the services but emits no server_ops; any DNS "
+        "or HTTP present is inherited from the donor",
     ),
     CorpusCase(
         "management_telnet",
@@ -123,6 +140,17 @@ class CaseResult:
     outcome: str = ""
     detail: str = ""
     failures: list[str] = field(default_factory=list)
+
+
+def _missing_content(pkt_path: Path, required: tuple[str, ...]) -> list[str]:
+    """Markers the prompt asked for that the generated lab does not contain."""
+    try:
+        decoded = decode_pkt_auto(pkt_path.read_bytes())
+    except Exception as error:  # noqa: BLE001 - reported, not raised
+        return [f"could not decode to check content ({error})"]
+    payload = decoded[0] if isinstance(decoded, tuple) else decoded
+    text = payload.decode("utf-8", "replace").lower()
+    return [marker for marker in required if marker.lower() not in text]
 
 
 def run_case(case: CorpusCase, output_dir: Path, do_open: bool, timeout: int) -> CaseResult:
@@ -172,6 +200,21 @@ def run_case(case: CorpusCase, output_dir: Path, do_open: bool, timeout: int) ->
     if not report.passed:
         result.outcome = result.outcome or "structural_failed"
         return result
+
+    if case.requires_content:
+        missing = _missing_content(output_path, case.requires_content)
+        if missing:
+            # The file opens, but it does not do what was asked. Counting this as
+            # verified is how two capability gaps hid in plain sight.
+            result.failures.append(
+                "generated lab is missing what the prompt asked for: " + ", ".join(missing)
+            )
+            result.outcome = result.outcome or (
+                "refused_capability_gap" if case.expects == "capability_gap" else "content_missing"
+            )
+            return result
+        if case.expects == "capability_gap":
+            result.outcome = "unexpected_capability"
 
     if do_open:
         open_report = pkt_verify.open_check(output_path, timeout_seconds=timeout)
@@ -225,7 +268,16 @@ def main() -> int:
         "capability_gap": sum(1 for item in results if item.outcome == "refused_capability_gap"),
         "generated": sum(1 for item in results if item.generated),
         "unexpected": sum(
-            1 for item in results if item.outcome in {"unexpected_refusal", "unexpected_generation", "structural_failed"}
+            1
+            for item in results
+            if item.outcome
+            in {
+                "unexpected_refusal",
+                "unexpected_generation",
+                "structural_failed",
+                "content_missing",
+                "unexpected_capability",
+            }
         ),
         "total": len(results),
     }
