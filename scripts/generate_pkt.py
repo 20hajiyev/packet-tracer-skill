@@ -1573,7 +1573,7 @@ def _operation_category(bucket_name: str, operation: dict[str, object]) -> str:
             return "layout_reposition"
         if op_name == "prune_device":
             return "device_prune"
-        if op_name in {"duplicate_device", "duplicate_group"}:
+        if op_name in {"duplicate_device", "duplicate_group", "duplicate_host"}:
             return "device_duplicate"
         if op_name == "set_link":
             return "link_rewrite"
@@ -2604,6 +2604,17 @@ def _link_may_be_created(left_kind: str, right_kind: str) -> bool:
     return bool(left_kind) and bool(right_kind)
 
 
+def _host_duplication_enabled() -> bool:
+    """Whether a missing host may be cloned from one the donor group has.
+
+    On by default. It became possible only once `_ensure_link` stopped writing
+    invented MEM_ADDR values into new links; before that a cloned host's
+    connection made Packet Tracer reject the file.
+    """
+    raw = (os.getenv("PACKET_TRACER_HOST_DUPLICATION") or "").strip().lower()
+    return raw not in {"0", "off", "false", "no"}
+
+
 def _group_duplication_enabled() -> bool:
     """Whether a switch group may be duplicated to exceed the donor's size.
 
@@ -3146,6 +3157,7 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
     # to the hosts its *matched* donor switch happened to have, so "1 switch and
     # 5 PCs" was refused against a donor holding 11 PCs spread over three
     # switches — every one of which was about to be pruned anyway.
+    pending_host_clones: list[dict[str, object]] = []
     unclaimed_by_type: dict[str, list[dict[str, object]]] = {}
     for spare_group in donor_groups[len(target_groups) :]:
         for member in spare_group["members"]:
@@ -3189,6 +3201,29 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
             if len(wanted) > len(available):
                 borrowed = borrow(device_type, len(wanted) - len(available))
                 available.extend(borrowed)
+            if len(wanted) > len(available) and available and _host_duplication_enabled():
+                # Clone the shortfall from a host the donor group already has.
+                # Recorded here and emitted after the rename/prune pass, because
+                # duplication has to run last, from devices carrying their final
+                # names — the same ordering group duplication needs.
+                shortfall_count = len(wanted) - len(available)
+                for offset in range(shortfall_count):
+                    source_member = available[offset % len(available)]
+                    target_member = wanted[len(available) + offset]
+                    pending_host_clones.append(
+                        {
+                            "source": str(source_member["name"]),
+                            "new_name": str(target_member["name"]),
+                            "switch": str(target_group["switch"]["name"]),
+                            "x": int(target_member.get("x", 0)),
+                            "y": int(target_member.get("y", 0)),
+                        }
+                    )
+                available = list(available) + [
+                    {"name": str(wanted[len(available) + offset]["name"]), "type": device_type}
+                    for offset in range(shortfall_count)
+                ]
+
             if len(wanted) > len(available):
                 total_shortfall = len(wanted) - len(available)
                 gap = (
@@ -3526,6 +3561,49 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
                     "media": str(link.get("media", "straight-through")),
                 }
             )
+
+    for clone in pending_host_clones:
+        source_final = rename_map.get(str(clone["source"]), str(clone["source"]))
+        if source_final in parked_set:
+            continue
+        switch_name = str(clone["switch"])
+        # Take the next free access port on the target switch. The link-reuse
+        # pass has already claimed the ports it needs, so scanning the blueprint
+        # is enough to avoid a collision.
+        used_ports = {
+            str(link[end]["port"])
+            for link in blueprint.get("links", [])
+            for end in ("a", "b")
+            if str(link[end]["dev"]) == switch_name
+        }
+        switch_port = next(
+            (
+                candidate
+                for index in range(1, 49)
+                for candidate in (f"FastEthernet0/{index}",)
+                if candidate not in used_ports
+            ),
+            "FastEthernet0/1",
+        )
+        adapted_plan.edit_operations.append(
+            {
+                "op": "duplicate_host",
+                "device": source_final,
+                "new_name": str(clone["new_name"]),
+                "switch": switch_name,
+                "switch_port": switch_port,
+                "host_port": "FastEthernet0",
+                "x": int(clone["x"]),
+                "y": int(clone["y"]),
+            }
+        )
+        blueprint.setdefault("links", []).append(
+            {
+                "a": {"dev": switch_name, "port": switch_port},
+                "b": {"dev": str(clone["new_name"]), "port": "FastEthernet0"},
+                "media": "straight-through",
+            }
+        )
 
     _resolve_port_conflicts(
         adapted_plan,

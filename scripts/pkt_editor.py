@@ -1031,6 +1031,29 @@ def _duplicate_host_for_group(root: ET.Element, source_name: str, new_name: str,
     _clone_physical_leaf(root, source, duplicate, new_name)
 
 
+def _duplicate_host_onto_switch(
+    root: ET.Element,
+    source_name: str,
+    new_name: str,
+    switch_name: str,
+    switch_port: str,
+    host_port: str,
+    x: int,
+    y: int,
+) -> None:
+    """Clone a host and attach the copy to a switch.
+
+    A target switch cannot carry more hosts than its donor group has, because
+    donor-prune only reuses what the donor contains. Cloning a host and linking
+    the copy lifts that: the link is new, which is fine now that `_ensure_link`
+    no longer writes invented MEM_ADDR values into new links.
+    """
+    _duplicate_host_for_group(root, source_name, new_name, x, y)
+    if _find_device(root, new_name) is None:
+        return
+    _ensure_link(root, switch_name, switch_port, new_name, host_port, "straight-through")
+
+
 def _find_link_between_refs(root: ET.Element, left_ref: str, right_ref: str) -> ET.Element | None:
     for link in root.findall(".//LINKS/LINK"):
         cable = link.find("./CABLE")
@@ -1942,6 +1965,18 @@ def apply_plan_operations(root: ET.Element, plan: IntentPlan) -> ET.Element:
         if operation["op"] == "add_acl_rule" and operation.get("acl_name") in acl_device_map:
             operation["device"] = acl_device_map[str(operation["acl_name"])]
     for operation in plan.edit_operations:
+        if operation["op"] == "duplicate_host":
+            _duplicate_host_onto_switch(
+                updated,
+                str(operation["device"]),
+                str(operation["new_name"]),
+                str(operation["switch"]),
+                str(operation.get("switch_port", "")),
+                str(operation.get("host_port", "FastEthernet0")),
+                int(operation.get("x", 0)),
+                int(operation.get("y", 0)),
+            )
+            continue
         if operation["op"] == "duplicate_group":
             _duplicate_group(
                 updated,

@@ -227,3 +227,19 @@ def test_blueprint_device_kind_lookup() -> None:
     assert _device_kind_of_blueprint(blueprint, "SW4") == "Switch"
     assert _device_kind_of_blueprint(blueprint, "PC3") == "PC"
     assert _device_kind_of_blueprint(blueprint, "absent") == ""
+
+
+def test_host_duplication_is_on_by_default(monkeypatch) -> None:
+    """Verified: a switch carrying two cloned hosts opens in Packet Tracer.
+
+    This became possible only once `_ensure_link` stopped writing invented
+    MEM_ADDR values into new links; before that a cloned host's connection made
+    Packet Tracer reject the file.
+    """
+    from generate_pkt import _host_duplication_enabled
+
+    monkeypatch.delenv("PACKET_TRACER_HOST_DUPLICATION", raising=False)
+    assert _host_duplication_enabled()
+
+    monkeypatch.setenv("PACKET_TRACER_HOST_DUPLICATION", "off")
+    assert not _host_duplication_enabled()

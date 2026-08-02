@@ -76,6 +76,35 @@ performed only to read `<VERSION>`.
   an edited file is re-read rather than served stale. Only immutable bytes are
   cached; callers still get their own tree to mutate.
 
+### Every corpus case now opens in Packet Tracer
+
+7 generated, 7 opened, 1 correctly refused, 0 unexpected — including topologies
+larger than the donor itself.
+
+**The cause of every "not compatible with this version" rejection was invented
+`*_MEM_ADDR` values on newly created links.** Rebuilding an existing, working
+host link with the same devices and ports left exactly five fields different
+from the original: `LENGTH` and the four MEM_ADDRs. Omitting those four makes
+the same link open. They are runtime pointers from the session that saved the
+file — in working donors they resolve to no device at all.
+
+That single finding retired an earlier conclusion. Created `Pc <-> Switch` links
+had been refused on the theory that host connections could not be built; the
+endpoint kind was incidental, the invented pointers were the cause.
+`_ensure_link` no longer writes them on a new link, and the restriction is gone.
+The repo's own workspace validator required them too, and so rejected files
+Packet Tracer accepts; it now objects only when one end has a reference and the
+other does not.
+
+With that unblocked, three duplication operations close the remaining gaps —
+`duplicate_device`, `duplicate_group`, and `duplicate_host` — each verified
+against a real open. All three must run **after** the rename and prune pass,
+from devices already carrying their final names; emitting them first and
+renaming the copies afterwards produces files Packet Tracer refuses.
+
+The donor now constrains which device models are available, not how large a
+topology can be.
+
 ### First open-verified generation set, and what it disproved
 
 Running the corpus with real Packet Tracer opens produced the first evidence-backed

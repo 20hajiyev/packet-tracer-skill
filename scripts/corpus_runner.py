@@ -59,14 +59,12 @@ CORPUS: tuple[CorpusCase, ...] = (
     CorpusCase(
         "hosts_only",
         "1 switch ve 5 komputer qur",
-        expects="donor_limited",
-        note="needs 5 hosts on one switch; the local donor's switch carries 3",
+        note="more hosts on one switch than the donor group has; needs host duplication",
     ),
     CorpusCase(
         "vlan_uneven",
         "2 switch 1 router 7 komputer vlanlarda 10,20",
-        expects="donor_limited",
-        note="uneven split works, but 4 hosts land on a switch the donor gives 3",
+        note="uneven split; the busier switch needs more hosts than the donor gives",
     ),
     CorpusCase(
         "no_devices",

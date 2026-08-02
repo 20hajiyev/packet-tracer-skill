@@ -666,3 +666,45 @@ switches. That is the next step, and it should close `hosts_only` and
 It also means the two changes reverted earlier may be worth retrying, since both
 failed while `_ensure_link` was still inventing MEM_ADDRs — but only with an
 open test, one at a time.
+
+
+---
+
+## Corpus complete
+
+Every case now behaves correctly, and every generated file opens in Packet
+Tracer:
+
+| Case | Devices | Links | Result |
+|---|---:|---:|---|
+| minimal | 6 | 4 | opened |
+| two_switch_chain | 8 | 6 | opened |
+| campus_star_vlan | 11 | 9 | opened |
+| four_switch | 14 | 12 | opened |
+| server_lan | 6 | 4 | opened |
+| hosts_only | 7 | 5 | opened |
+| vlan_uneven | 11 | 9 | opened |
+| no_devices | — | — | correctly refused |
+
+**7 generated, 7 opened, 0 unexpected.**
+
+The last two gaps closed with `duplicate_host`: when a target switch needs more
+hosts than its donor group has, a host is cloned from that group and linked to
+the switch. It only works because new links no longer carry invented MEM_ADDR
+values — the same finding that removed the infrastructure-only restriction.
+
+Three duplication operations now exist, each verified against a real open:
+
+| Operation | Adds |
+|---|---|
+| `duplicate_device` | a bare infrastructure device |
+| `duplicate_group` | a switch with its hosts and their links |
+| `duplicate_host` | one host attached to an existing switch |
+
+All three must be emitted **after** the rename and prune pass, from devices
+already carrying their final names. That ordering is not incidental: emitting
+them first and renaming the copies afterwards produces files Packet Tracer
+refuses.
+
+The donor now constrains which device *models* are available, not how large a
+topology can be.
