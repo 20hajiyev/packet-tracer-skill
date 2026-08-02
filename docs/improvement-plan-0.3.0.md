@@ -868,3 +868,49 @@ correct refusal, 0 unexpected.**
 This is the recurring defect shape once more, now in the measuring instrument
 itself: "the file opens" and "the file does what was asked" were two models of
 one concept, and the weaker one was doing the reporting.
+
+
+## Three capability gaps closed
+
+None of these needed new capability. `pkt_editor` already implemented
+`set_router_dhcp_pool`, `enable_server_service`, `set_server_dns_record`,
+`set_management_vlan` and `enable_telnet` -- 70+ operations in total, nearly all
+of them unreachable. The planner simply never emitted them.
+
+### Router DHCP was coupled to VLANs
+
+`_synthesize_vlan_and_link_ops` returns immediately when the prompt names no
+VLAN, and it was the only place that built a DHCP pool. So "dhcp routerden
+verilsin" on a flat network produced a lab with no pool -- which opened, so
+nothing complained. `_synthesize_service_ops` now emits the VLAN-independent
+operations.
+
+Putting hosts on the pool with `set_host_dhcp` is the natural next step, but
+that is an `end_device_mutation`, which open-first mode blocks; adding it
+refused every DHCP prompt outright. Whether that block is measured or merely
+cautious is its own question and belongs in its own verified step.
+
+### Capabilities were detected from file names
+
+`infer_capability_tags` matches every keyword against the sample's *path*. A lab
+called `telnet.pkt` counted as having telnet; the local campus donor, with
+nineteen `line vty` blocks and nineteen `interface Vlan` blocks, was credited
+with no capabilities at all -- so management prompts were refused as "missing
+critical capability coverage".
+
+Reading the running-config as evidence changed the bundled corpus from **5
+telnet samples to 230**, and management_vlan from **6 to 226**.
+
+### A service name in the wrong case
+
+`_set_enabled_service` keys on lowercase names, and `DNS` raised `KeyError` out
+of the middle of donor validation. It surfaced as "no ranked donor candidate
+passed compatibility validation: 'DNS'", pointing at the donor rather than at
+the service name. The helper now ignores unknown services instead of raising.
+
+### Standing
+
+**11/13 generated, 11 opened in Packet Tracer, 0 unexpected** -- and every one
+now verified by content, not just by opening. Up from 8 under the stricter
+standard. The single remaining gap is `wireless_home`, which is a genuine donor
+limit: a device model the donor lacks cannot be cloned into existence.

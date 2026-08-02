@@ -1720,6 +1720,7 @@ def _set_enabled_service(engine: ET.Element, service_name: str) -> None:
         "syslog": ("SYSLOG_SERVER", "ENABLED"),
         "aaa": ("ACS_SERVER", "ENABLED"),
     }
+    service_name = service_name.strip().lower()
     if service_name == "email":
         email = engine.find("EMAIL_SERVER")
         if email is None:
@@ -1730,7 +1731,14 @@ def _set_enabled_service(engine: ET.Element, service_name: str) -> None:
         _ensure_text(email, "SMTP_ENABLED", "1")
         _ensure_text(email, "POP3_ENABLED", "1")
         return
-    tag, enabled_tag = mapping[service_name]
+    # Callers reach this with whatever the prompt produced, and an unknown name
+    # used to raise KeyError out of the middle of donor validation -- surfacing
+    # as "no ranked donor candidate passed compatibility validation: 'DNS'",
+    # which points at the donor rather than at the service name.
+    entry = mapping.get(service_name.strip().lower())
+    if entry is None:
+        return
+    tag, enabled_tag = entry
     node = engine.find(tag)
     if node is None:
         prototype = _server_engine_prototype_child(tag)

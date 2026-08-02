@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from functools import lru_cache
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -384,8 +385,38 @@ def _normalized_counts_for_item(item: dict[str, Any]) -> dict[str, int]:
     return counts
 
 
+#
+# Evidence read from device configuration rather than from the file name.
+#
+# Every keyword capability below `CAPABILITY_KEYWORDS` is matched against the
+# path, so a lab called `telnet.pkt` counts as having telnet and a lab whose
+# switches actually carry `line vty` with `transport input telnet` does not.
+# That is how a campus donor with nineteen `line vty` blocks and nineteen
+# `interface Vlan` blocks was credited with no capabilities at all, which in
+# turn refused every management/telnet prompt as "missing critical capability
+# coverage".
+#
+# Only capabilities whose evidence is unambiguous in config text belong here.
+CONFIG_EVIDENCE_PATTERNS: dict[str, tuple[str, ...]] = {
+    "telnet": (r"^\s*line vty\b", r"transport input (?:all|telnet)"),
+    "management_vlan": (r"^\s*interface vlan\s*\d+", r"^\s*ip default-gateway\b"),
+}
+
+
+def config_capability_tags(config_text: str) -> set[str]:
+    """Capabilities a lab demonstrably configures, not ones its name suggests."""
+    if not config_text:
+        return set()
+    lowered = config_text.lower()
+    found: set[str] = set()
+    for capability, patterns in CONFIG_EVIDENCE_PATTERNS.items():
+        if any(re.search(pattern, lowered, flags=re.MULTILINE) for pattern in patterns):
+            found.add(capability)
+    return found
+
+
 def infer_capability_tags(item: dict[str, Any]) -> list[str]:
-    tags: set[str] = set()
+    tags: set[str] = set(item.get("config_capability_tags") or ())
     rel = item.get("relative_path", "").lower().replace("\\", "/")
     rel_flat = rel.replace("/", " ")
     devices = item.get("devices", [])
@@ -1038,6 +1069,9 @@ def load_catalog(path: Path | None = None) -> list[SampleDescriptor]:
 def _summarize_pkt(path: Path, relative_path: str, origin: str, prototype_eligible: bool) -> dict[str, Any]:
     xml, _container = decode_pkt_auto(path.read_bytes())
     root = parse_pkt_xml(xml)
+    config_text = "\n".join(
+        line.text or "" for line in root.findall(".//ENGINE/RUNNINGCONFIG/LINE")
+    )
     from pkt_editor import inventory_root
 
     inventory = inventory_root(root)
@@ -1099,6 +1133,7 @@ def _summarize_pkt(path: Path, relative_path: str, origin: str, prototype_eligib
     return {
         "path": str(path),
         "relative_path": relative_path,
+        "config_capability_tags": sorted(config_capability_tags(config_text)),
         "version": root.findtext("./VERSION", default=""),
         "device_count": len(devices),
         "link_count": len(links),

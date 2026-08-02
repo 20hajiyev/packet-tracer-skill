@@ -52,12 +52,21 @@ def test_undecodable_file_reports_rather_than_raising(tmp_path: Path) -> None:
     assert "could not decode" in missing[0]
 
 
-def test_capability_gaps_declare_what_they_are_missing() -> None:
-    """A gap case without a content marker cannot be told from a success."""
-    for case in corpus_runner.CORPUS:
-        if case.name in {"router_dhcp", "server_services"}:
-            assert case.expects == "capability_gap"
-            assert case.requires_content, f"{case.name} must state what it lacks"
+def test_capability_cases_must_prove_their_output() -> None:
+    """These three were capability gaps until the ops were actually emitted.
+
+    They generate now, so they carry content markers instead: a case that only
+    has to open would go back to passing the moment the operations stopped
+    being applied, which is exactly how the gap went unnoticed.
+    """
+    by_name = {case.name: case for case in corpus_runner.CORPUS}
+
+    for name in ("router_dhcp", "server_services", "management_telnet"):
+        case = by_name[name]
+        assert case.expects == "generate"
+        assert case.requires_content, f"{name} must state what its output has to contain"
+
+    assert by_name["router_dhcp"].requires_content == ("ip dhcp pool",)
 
 
 def test_vlan_cases_assert_the_vlans_they_request() -> None:

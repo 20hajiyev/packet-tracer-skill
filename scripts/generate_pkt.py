@@ -2227,6 +2227,126 @@ def _synthesize_links(plan: IntentPlan, devices: list[dict[str, object]]) -> lis
     return links
 
 
+def _synthesize_service_ops(plan: IntentPlan, devices: list[dict[str, object]]) -> None:
+    """Emit the service operations that do not depend on VLANs.
+
+    Every one of these already had a working implementation in `pkt_editor`;
+    nothing here teaches it a new trick. They were simply never emitted, because
+    the only place that built them was `_synthesize_vlan_and_link_ops`, which
+    returns immediately when the prompt names no VLAN. So "dhcp routerden
+    verilsin" produced a lab with no DHCP pool at all -- and it still opened, so
+    nothing complained.
+
+    The editor's vocabulary and the planner's emission were two models of what
+    the skill can do, and only one of them was consulted when reporting.
+    """
+    routers = [device for device in devices if _device_kind(device) == "Router"]
+    switches = [device for device in devices if _device_kind(device) == "Switch"]
+    hosts = [device for device in devices if _fallback_group_member_type(_device_kind(device))]
+    servers = [device for device in devices if _device_kind(device) == "Server"]
+    capabilities = set(plan.capabilities)
+    services = {str(item).lower() for item in (plan.service_requirements or {}).get("services", [])}
+
+    # Router DHCP on a flat network. The VLAN path already covers the segmented
+    # case, one pool per VLAN, so only fill the gap it leaves.
+    if (
+        routers
+        and not plan.vlan_ids
+        and plan.topology_requirements.get("needs_dhcp_pool")
+        and not any(op.get("op") == "set_server_dhcp_pool" for op in plan.server_ops)
+    ):
+        _append_unique_op(
+            plan.router_ops,
+            {
+                "op": "set_router_dhcp_pool",
+                "device": routers[0]["name"],
+                "name": "LAN",
+                "network": "192.168.1.0",
+                "prefix": 24,
+                "gateway": "192.168.1.1",
+                "dns": None,
+                "start": "192.168.1.100",
+                "max_users": 100,
+            },
+        )
+        # Putting the hosts on the pool with `set_host_dhcp` would be the
+        # natural next step, but that is an `end_device_mutation`, which
+        # open-first mode blocks -- adding it here refused every DHCP prompt
+        # outright. Whether that block is measured or merely cautious is a
+        # separate question, and changing it belongs in its own verified step.
+        # The donor's hosts already carry `DHCP_ENABLED`, so the pool is live
+        # for them regardless.
+
+    # Management VLAN and telnet, on every switch that will exist.
+    management_vlan = _management_vlan_id(plan)
+    if management_vlan is not None:
+        for index, switch in enumerate(switches, start=1):
+            _append_unique_op(
+                plan.management_ops,
+                {
+                    "op": "set_management_vlan",
+                    "device": switch["name"],
+                    "vlan": management_vlan,
+                    "ip": f"192.168.{management_vlan % 256}.{index + 1}",
+                    "prefix": 24,
+                    "gateway": f"192.168.{management_vlan % 256}.1",
+                    "username": "admin",
+                    "password": "cisco",
+                },
+            )
+
+    if "telnet" in capabilities:
+        for device in switches + routers:
+            _append_unique_op(
+                plan.management_ops,
+                {
+                    "op": "enable_telnet",
+                    "device": device["name"],
+                    "username": "admin",
+                    "password": "cisco",
+                },
+            )
+
+    # Server services. `enable_server_service` toggles the service in the
+    # server's engine, which is what Packet Tracer reads -- config text alone
+    # would not turn it on.
+    if servers:
+        server_name = servers[0]["name"]
+        for service in ("dns", "http", "ftp", "email", "tftp"):
+            if service in services or f"server_{service}" in capabilities:
+                _append_unique_op(
+                    plan.server_ops,
+                    {
+                        "op": "enable_server_service",
+                        "device": server_name,
+                        "service": service,
+                        "domain": "local",
+                    },
+                )
+        if "dns" in services or "server_dns" in capabilities:
+            _append_unique_op(
+                plan.server_ops,
+                {
+                    "op": "set_server_dns_record",
+                    "device": server_name,
+                    "record_type": "A",
+                    "name": "www.local",
+                    "value": "192.168.1.10",
+                },
+            )
+
+
+def _management_vlan_id(plan: IntentPlan) -> int | None:
+    """The VLAN reserved for switch management, if the prompt asked for one."""
+    if "management_vlan" not in set(plan.capabilities):
+        return None
+    # A management VLAN is normally the highest one named -- 99 in the common
+    # `management vlan 99` phrasing -- and must not steal a user data VLAN.
+    if plan.vlan_ids:
+        return max(plan.vlan_ids)
+    return 99
+
+
 def _synthesize_vlan_and_link_ops(plan: IntentPlan, devices: list[dict[str, object]], links: list[dict[str, object]]) -> None:
     if not plan.vlan_ids:
         return
@@ -4300,6 +4420,7 @@ def build_prompt_blueprint(plan: IntentPlan, donor_roots: list[Path] | None = No
     links = _synthesize_links(prepared, devices)
     prepared.links = links
     _synthesize_vlan_and_link_ops(prepared, devices, links)
+    _synthesize_service_ops(prepared, devices)
     prepared.capabilities = sorted(dict.fromkeys(prepared.capabilities))
     topology_plan = _build_topology_plan(prepared, devices, links)
     config_plan = _build_config_plan(prepared)

@@ -93,25 +93,24 @@ CORPUS: tuple[CorpusCase, ...] = (
     CorpusCase(
         "router_dhcp",
         "1 router 1 switch 3 komputer qur dhcp routerden verilsin",
-        expects="capability_gap",
         requires_content=("ip dhcp pool",),
-        note="the parser recognises router_dhcp but emits no router_ops, so the "
-        "lab opens without a DHCP pool",
+        note="router DHCP pool on a flat network, the case the VLAN path misses",
     ),
     CorpusCase(
         "server_services",
         "1 router 1 switch 2 komputer 1 server qur serverde dns ve http olsun",
-        expects="capability_gap",
-        requires_content=("<DNS>", "<HTTP>"),
-        note="the parser recognises the services but emits no server_ops; any DNS "
-        "or HTTP present is inherited from the donor",
+        # `www.local` is the record this skill writes. A bare `<DNS_SERVER>`
+        # marker would pass on donor content alone and prove nothing.
+        requires_content=("www.local",),
+        note="server service enablement plus a DNS record",
     ),
     CorpusCase(
         "management_telnet",
         "2 switch 1 router 4 komputer qur management vlan 99 ve telnet olsun",
-        expects="capability_gap",
-        note="the parser recognises management_vlan and telnet but produces no "
-        "operations for them, so generation has nothing to apply",
+        # `username admin secret cisco` is what enable_telnet writes; the donor's
+        # own vty lines would satisfy a looser marker without proving anything.
+        requires_content=("interface vlan99", "username admin secret cisco"),
+        note="management SVI plus telnet credentials on every switch",
     ),
     CorpusCase(
         "wireless_home",
