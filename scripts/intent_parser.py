@@ -363,19 +363,43 @@ def _normalize_device_type(raw_type: str) -> str:
     return DEVICE_SYNONYMS.get(raw_type.strip().lower(), raw_type.strip())
 
 
+def _any_device_alias_pattern() -> str:
+    """Alternation over every device alias, longest first so prefixes lose."""
+    aliases = sorted(
+        {alias for alias_list in NATURAL_DEVICE_ALIASES.values() for alias in alias_list},
+        key=len,
+        reverse=True,
+    )
+    return "|".join(re.escape(alias) for alias in aliases)
+
+
 def _extract_natural_device_counts(normalized_prompt: str) -> dict[str, int]:
+    """Count devices per type from a natural prompt.
+
+    Two phrasings are supported: `3 switch` (count first, the common form) and
+    `switch 3`. The trailing form used to swallow the *next* device's count —
+    "1 router 8 komputer" matched `router 8` and, because the two forms were
+    pooled through `max`, the router ended up with 8. Trailing counts are now
+    rejected when another device word follows, and the leading form wins
+    outright when both are present.
+    """
     counts: dict[str, int] = {}
+    any_alias = _any_device_alias_pattern()
     for device_type, aliases in NATURAL_DEVICE_ALIASES.items():
         alias_pattern = "|".join(re.escape(alias) for alias in aliases)
-        patterns = [
-            re.compile(rf"(?<![,/])\b(\d+)\s*(?:dene|dene?|eded|eded|tane)?\s*(?:{alias_pattern})\b"),
-            re.compile(rf"\b(?:{alias_pattern})\s+(\d+)\b"),
-        ]
-        values: list[int] = []
-        for pattern in patterns:
-            values.extend(int(value) for value in pattern.findall(normalized_prompt))
-        if values:
-            counts[device_type] = max(values)
+        leading = re.compile(
+            rf"(?<![,/])\b(\d+)\s*(?:dene|dene?|eded|eded|tane)?\s*(?:{alias_pattern})\b"
+        )
+        trailing = re.compile(
+            rf"\b(?:{alias_pattern})\s+(\d+)\b(?!\s*(?:dene|eded|tane)?\s*(?:{any_alias})\b)"
+        )
+        leading_values = [int(value) for value in leading.findall(normalized_prompt)]
+        if leading_values:
+            counts[device_type] = max(leading_values)
+            continue
+        trailing_values = [int(value) for value in trailing.findall(normalized_prompt)]
+        if trailing_values:
+            counts[device_type] = max(trailing_values)
     return counts
 
 
@@ -1648,6 +1672,7 @@ def parse_intent(prompt: str) -> IntentPlan:
     if department_groups and vlan_ids and len(vlan_ids) < len(department_groups):
         blocking_gaps.append("Department count is larger than provided VLAN IDs.")
 
+
     if department_groups and "Switch" not in device_counts:
         assumptions_used.append("Added one switch per department group.")
     if department_groups and not network_style:
@@ -1657,6 +1682,31 @@ def parse_intent(prompt: str) -> IntentPlan:
         assumptions_used.append("Interpreted VPN/WAN/security wording as WAN-security edge style.")
 
     goal = "edit" if pkt_path or any(word in normalized_prompt for word in ["deyis", "edit", "modify", "change", "rename", "update"]) else "generate"
+
+    # A prompt that carries no topology signal at all is not an underspecified
+    # lab request, it is a different kind of message. "sebeke haqqinda melumat
+    # ver" used to produce a two-device file, which is worse than a refusal:
+    # the user gets a lab they never asked for and no indication anything
+    # was misread. Every genuine request carries at least one signal.
+    if goal == "generate" and not any(
+        [
+            device_counts,
+            department_groups,
+            vlan_ids,
+            network_style,
+            capabilities,
+            switch_ops,
+            router_ops,
+            server_ops,
+            wireless_ops,
+            management_ops,
+            end_device_ops,
+        ]
+    ):
+        blocking_gaps.append(
+            "This prompt does not describe a topology. Say which devices you want, "
+            "for example '1 router 1 switch 3 komputer qur'."
+        )
     confidence_score = _estimate_confidence(device_requirements, capabilities, parse_warnings, blocking_gaps, devices, links)
     return IntentPlan(
         goal=goal,

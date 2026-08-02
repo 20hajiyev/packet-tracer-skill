@@ -19,3 +19,4 @@ scripts/vendor/_twofish*.dll
 .npm-cache/
 *.tgz
 examples/previews/
+output/corpus-results.json

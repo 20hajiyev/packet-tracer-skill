@@ -1,0 +1,96 @@
+"""Device counts must attach to the device word they belong to.
+
+Two phrasings are supported: `3 switch` and `switch 3`. Pooling both through
+`max` let the trailing form swallow the next device's number, so
+"4 switch 1 router 8 komputer" produced eight routers. The corpus runner found
+this; no unit test had ever asserted a multi-device count.
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+
+from intent_parser import parse_intent  # noqa: E402
+
+
+@pytest.mark.parametrize(
+    "prompt,expected",
+    [
+        ("1 router 1 switch ve 3 komputer qur", {"Router": 1, "Switch": 1, "PC": 3}),
+        ("1 switch ve 5 komputer qur", {"Switch": 1, "PC": 5}),
+        # The regressions: a count for one device landing on the previous one.
+        ("4 switch 1 router 8 komputer qur", {"Router": 1, "Switch": 4, "PC": 8}),
+        ("1 router 1 switch 2 komputer 1 server qur", {"Router": 1, "Switch": 1, "PC": 2, "Server": 1}),
+        ("2 switch 1 router 7 komputer vlanlarda 10,20", {"Router": 1, "Switch": 2, "PC": 7}),
+        (
+            "3 dene switch ve 6 komputer ve 1 router vlanlarda 10,20,30",
+            {"Router": 1, "Switch": 3, "PC": 6},
+        ),
+    ],
+)
+def test_counts_attach_to_the_right_device(prompt: str, expected: dict[str, int]) -> None:
+    counts = parse_intent(prompt).device_requirements
+
+    for device_type, count in expected.items():
+        assert counts.get(device_type) == count, f"{device_type} in {counts}"
+
+
+def test_trailing_form_still_works_when_nothing_follows() -> None:
+    counts = parse_intent("switch 3 ve router 1 qur").device_requirements
+
+    assert counts.get("Switch") == 3
+    assert counts.get("Router") == 1
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    ["router 1 ve switch 4 qur", "switch 4 ve router 1 qur"],
+)
+def test_separated_trailing_form_does_not_consume_the_next_count(prompt: str) -> None:
+    counts = parse_intent(prompt).device_requirements
+
+    assert counts.get("Router") == 1
+    assert counts.get("Switch") == 4
+
+
+def test_unseparated_trailing_form_is_ambiguous_and_reads_leading_first() -> None:
+    """`router 1 switch 4` can be read either way; the leading form wins.
+
+    Pinned so the choice is deliberate rather than accidental. Adding a
+    separator (`router 1 ve switch 4`) resolves it unambiguously.
+    """
+    counts = parse_intent("router 1 switch 4 qur").device_requirements
+
+    assert counts.get("Switch") == 1
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    ["sebeke haqqinda melumat ver", "packet tracer nedir", "salam"],
+)
+def test_a_prompt_with_no_topology_signal_is_refused(prompt: str) -> None:
+    """Inventing a lab is worse than refusing: the user never sees the misread."""
+    plan = parse_intent(prompt)
+
+    assert any("does not describe a topology" in gap for gap in plan.blocking_gaps)
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "campus sebekesi qur",
+        "1 router 1 switch ve 3 komputer qur",
+        "wireless ap qur",
+        "6 sobeli kampus sebekesi qur",
+    ],
+)
+def test_real_requests_are_not_caught_by_the_no_signal_check(prompt: str) -> None:
+    plan = parse_intent(prompt)
+
+    assert not any("does not describe a topology" in gap for gap in plan.blocking_gaps)

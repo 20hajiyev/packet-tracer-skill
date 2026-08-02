@@ -76,6 +76,45 @@ performed only to read `<VERSION>`.
   an edited file is re-read rather than served stale. Only immutable bytes are
   cached; callers still get their own tree to mutate.
 
+### A corpus runner, and the five defects it found immediately
+
+`scripts/corpus_runner.py` runs a set of prompts end to end and records what
+happened: generated or refused, structural result, and optionally a real Packet
+Tracer open. Its first run found five defects that 377 unit tests had not.
+
+- **Device counts attached to the wrong device.** Two phrasings are supported,
+  `3 switch` and `switch 3`, and both were pooled through `max`. The trailing
+  form swallowed the next device's number, so `4 switch 1 router 8 komputer`
+  asked for **eight routers** and `1 router 1 switch 2 komputer` asked for two
+  switches. No test had ever asserted a multi-device count.
+- **A prompt with no topology signal produced a lab.** "sebeke haqqinda melumat
+  ver" — a request for information — generated a two-device file. Inventing a
+  lab is worse than refusing: the user never sees that they were misread.
+- **Host capacity was checked per donor switch group** rather than across the
+  donor, so "1 switch and 5 PCs" was refused against a donor holding 11 PCs on
+  three switches, every one of which was about to be pruned. Donor devices are
+  pooled across groups now.
+- **Two cables on one interface.** Ports are set from two independent places:
+  surviving donor links keep their wiring, and `set_link` operations carry
+  planner-chosen ports. Neither knew about the other, so `PC1` and `R1` both
+  landed on `SW1 FastEthernet0/3`. `_resolve_port_conflicts` reconciles once
+  over the links that will actually exist; surviving donor wiring wins because
+  it is known-good.
+- **Group alignment dropped donors.** With more targets than donor groups the
+  reordering lost entries, and the caller then reported "supports only 0 switch
+  groups" for a donor with three switches.
+
+Refusals also name the layer that failed. When the intent plan has gaps, donor
+evaluation never runs, so reporting "donor selection" with zero candidate counts
+sent users to fix a donor that had never been consulted. That is
+`blocked_by_intent` now, and donor messages name the donor.
+
+Corpus: **6 of 8 generate, 1 refuses correctly, 1 known gap.** `four_switch`
+needs a donor with four switch groups; none of the eligible donors has one, so
+the refusal is real. Generation also got faster — the inflated device counts had
+been driving much larger donor searches, and the minimal case went from 103 s to
+24 s.
+
 ### Every bundled sample is readable now
 
 18 of the 292 samples shipped with Packet Tracer 9.0 failed EAX tag

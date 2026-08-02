@@ -2602,6 +2602,77 @@ def _spare_strategy() -> str:
     return raw if raw in SPARE_STRATEGIES else DEFAULT_SPARE_STRATEGY
 
 
+def _resolve_port_conflicts(
+    adapted_plan: IntentPlan,
+    *,
+    donor_links: list[dict[str, object]],
+    rename_map: dict[str, str],
+    removed_pairs: set[tuple[str, str]],
+    parked_names: set[str],
+    donor_device_by_target: dict[str, ET.Element],
+) -> None:
+    """Make sure no interface ends up carrying two cables.
+
+    Link ports come from two independent places: donor links that survive the
+    prune keep their original wiring, and `set_link` operations carry ports the
+    planner chose. Neither knows about the other, so a plan that is internally
+    consistent could still put `PC1` and `R1` on `SW1 FastEthernet0/3`.
+
+    Rather than teach both producers about each other — the mistake this repo
+    keeps making — reconcile once, here, over the links that will actually exist.
+    Surviving donor wiring wins, because it is known-good; `set_link` moves.
+    """
+    claimed: dict[tuple[str, str], str] = {}
+
+    for donor_link in donor_links:
+        left = rename_map.get(str(donor_link.get("from") or ""), str(donor_link.get("from") or ""))
+        right = rename_map.get(str(donor_link.get("to") or ""), str(donor_link.get("to") or ""))
+        if not left or not right or left == right:
+            continue
+        if left in parked_names or right in parked_names:
+            continue
+        if tuple(sorted((left, right))) in removed_pairs:
+            continue
+        ports = [str(port) for port in (donor_link.get("ports") or [])][:2]
+        for device_name, port_name in zip((left, right), ports):
+            if port_name:
+                claimed.setdefault((device_name, port_name), f"donor link {left} <-> {right}")
+
+    def free_port(device_name: str, port_name: str, label: str) -> str:
+        if not port_name or (device_name, port_name) not in claimed:
+            if port_name:
+                claimed[(device_name, port_name)] = label
+            return port_name
+        device = donor_device_by_target.get(device_name)
+        match = re.match(r"^(.*?)(\d+)$", port_name)
+        if device is None or not match:
+            return port_name
+        stems = [match.group(1)]
+        if "gigabit" in match.group(1).lower():
+            stems.append("FastEthernet0/")
+        start = int(match.group(2))
+        for stem in stems:
+            first = start if stem != match.group(1) else start + 1
+            for index in range(first, first + 48):
+                candidate = f"{stem}{index}"
+                if (device_name, candidate) in claimed:
+                    continue
+                if not port_exists(device, candidate):
+                    break
+                claimed[(device_name, candidate)] = label
+                return candidate
+        return port_name
+
+    for operation in adapted_plan.edit_operations:
+        if operation.get("op") != "set_link":
+            continue
+        left_name = str(operation["a"]["dev"])
+        right_name = str(operation["b"]["dev"])
+        label = f"set_link {left_name} <-> {right_name}"
+        operation["a"]["port"] = free_port(left_name, str(operation["a"]["port"]), label)
+        operation["b"]["port"] = free_port(right_name, str(operation["b"]["port"]), label)
+
+
 def _switch_carrying_router_uplink(
     devices_by_name: dict[str, str],
     links: list[dict[str, object]],
@@ -2711,23 +2782,31 @@ def _align_donor_groups_to_targets(
         ),
     )
 
-    # `target_groups` is consumed in its own order, so map back into it.
+    # `target_groups` is consumed in its own order, so map back into it. The
+    # output must always contain exactly the donor groups that came in: an
+    # earlier version dropped entries when there were more targets than donors,
+    # and the caller then reported "supports only 0 switch groups" for a donor
+    # with three switches.
     position_of_target = {
         str(group["switch"]["name"]): index for index, group in enumerate(target_groups)
     }
-    aligned: list[dict[str, object] | None] = [None] * len(donor_groups)
-    leftovers = list(ranked_donors)
+    rank_by_target_index: dict[int, int] = {}
     for rank, target_name in enumerate(target_order):
-        if rank >= len(ranked_donors):
-            break
-        slot = position_of_target.get(target_name)
-        if slot is None or slot >= len(aligned):
-            continue
-        aligned[slot] = ranked_donors[rank]
-        leftovers.remove(ranked_donors[rank])
+        target_index = position_of_target.get(target_name)
+        if target_index is not None:
+            rank_by_target_index[target_index] = rank
 
-    spare = iter(leftovers)
-    return [group if group is not None else next(spare) for group in aligned]
+    aligned: list[dict[str, object]] = []
+    used_ranks: set[int] = set()
+    for target_index in range(len(target_groups)):
+        rank = rank_by_target_index.get(target_index)
+        if rank is not None and rank < len(ranked_donors) and rank not in used_ranks:
+            aligned.append(ranked_donors[rank])
+            used_ranks.add(rank)
+    aligned.extend(group for rank, group in enumerate(ranked_donors) if rank not in used_ranks)
+
+    assert len(aligned) == len(donor_groups)
+    return aligned
 
 
 def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, object], compat_donor: Path) -> tuple[IntentPlan, DonorArchetypePlan]:
@@ -2741,7 +2820,11 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
     donor_capacity = _donor_capacity(donor_root, donor_groups)
     donor_groups = _align_donor_groups_to_targets(donor_groups, target_groups, donor_devices, donor_links, blueprint)
     if len(target_groups) > len(donor_groups):
-        gap = f"Compatibility donor supports only {len(donor_groups)} switch groups; requested {len(target_groups)}."
+        gap = (
+            f"Donor {Path(compat_donor).name} has {len(donor_groups)} switch group(s); "
+            f"requested {len(target_groups)}. Donor-prune reuses the donor's switches, "
+            "so a topology needs a donor with at least that many."
+        )
         if gap not in adapted_plan.blocking_gaps:
             adapted_plan.blocking_gaps.append(gap)
         raise PlanningError("Prompt plan is incomplete; generation was skipped.", adapted_plan)
@@ -2860,6 +2943,20 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
         queue_spare(donor_device, 9000, 500, park_cursor["index"], None)
         park_cursor["index"] += 1
 
+    # Donor devices are pooled across groups. A target switch used to be limited
+    # to the hosts its *matched* donor switch happened to have, so "1 switch and
+    # 5 PCs" was refused against a donor holding 11 PCs spread over three
+    # switches — every one of which was about to be pruned anyway.
+    unclaimed_by_type: dict[str, list[dict[str, object]]] = {}
+    for spare_group in donor_groups[len(target_groups) :]:
+        for member in spare_group["members"]:
+            unclaimed_by_type.setdefault(_device_kind(member), []).append(member)
+
+    def borrow(device_type: str, count: int) -> list[dict[str, object]]:
+        pool = unclaimed_by_type.get(device_type, [])
+        taken, unclaimed_by_type[device_type] = pool[:count], pool[count:]
+        return taken
+
     for donor_group, target_group in zip(donor_groups, target_groups):
         group_kept: list[str] = []
         group_park_index = 0
@@ -2878,11 +2975,16 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
             members.sort(key=lambda item: _name_sort_key(str(item["name"])))
         donor_members_by_type = donor_group["members_by_type"]
         for device_type, wanted in target_members_by_type.items():
-            available = donor_members_by_type.get(device_type, [])
+            available = list(donor_members_by_type.get(device_type, []))
             if len(wanted) > len(available):
+                borrowed = borrow(device_type, len(wanted) - len(available))
+                available.extend(borrowed)
+            if len(wanted) > len(available):
+                total_shortfall = len(wanted) - len(available)
                 gap = (
-                    f"Compatibility donor group {donor_group['group_name']} has only {len(available)} {device_type} device(s); "
-                    f"requested {len(wanted)} for {target_group['group_name']}."
+                    f"Compatibility donor has only {len(available)} {device_type} device(s) available for "
+                    f"{target_group['group_name']}; requested {len(wanted)} (short by {total_shortfall}). "
+                    "Donor devices are pooled across switch groups, so this is the whole donor's capacity."
                 )
                 if gap not in adapted_plan.blocking_gaps:
                     adapted_plan.blocking_gaps.append(gap)
@@ -3096,8 +3198,12 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
         ports_match = len(existing_ports) >= 2 and sorted(existing_ports[:2]) == sorted(desired_ports)
         media_matches = existing_media == desired_media
         if ports_match and media_matches:
-            claim_port(desired_left, desired_ports[0])
-            claim_port(desired_right, desired_ports[1])
+            # The claim can still come back changed: an earlier link that adopted
+            # donor wiring may already hold this port. Writing the result back is
+            # what keeps two cables off one interface — discarding it silently
+            # produced a lab with PC1 and R1 both on SW1 FastEthernet0/3.
+            link["a"]["port"] = claim_port(desired_left, desired_ports[0])
+            link["b"]["port"] = claim_port(desired_right, desired_ports[1])
             continue
         # A port or media value the user never asked for must not reject a donor.
         # When the planner defaulted it, the donor's own wiring is the better
@@ -3134,6 +3240,16 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
             if gap not in adapted_plan.blocking_gaps:
                 adapted_plan.blocking_gaps.append(gap)
         raise PlanningError("Prompt plan is incomplete; generation was skipped.", adapted_plan)
+
+    _resolve_port_conflicts(
+        adapted_plan,
+        donor_links=donor_links,
+        rename_map=rename_map,
+        removed_pairs=removed_pairs,
+        parked_names=set(parked_devices),
+        donor_device_by_target=donor_device_by_target,
+    )
+
     archetype_plan = DonorArchetypePlan(
         compat_donor=str(compat_donor),
         donor_capacity=donor_capacity,
@@ -3245,6 +3361,7 @@ def _scenario_generate_decision(
     selected_donor_summary: dict[str, object] | None = None,
     runtime_blocked: bool = False,
     runtime_blocking_reason: str | None = None,
+    intent_blocking_gaps: list[str] | None = None,
 ) -> dict[str, object]:
     readiness = dict(coverage_gap.get("scenario_generate_readiness") or {})
     family = str(readiness.get("family") or "").strip()
@@ -3270,6 +3387,23 @@ def _scenario_generate_decision(
         "decision_confidence": 0.4,
         "blocking_layer": None,
     }
+    # An incomplete prompt is not a donor problem. When the intent plan has gaps,
+    # donor evaluation never runs, so reporting "donor selection" with zero
+    # candidate counts told the user to go fix a donor that was never consulted.
+    gaps = [str(gap) for gap in (intent_blocking_gaps or []) if str(gap).strip()]
+    if gaps:
+        decision["status"] = "blocked_by_intent"
+        decision["blocking_reasons"] = gaps
+        decision["what_failed"] = "prompt completeness"
+        decision["why_failed"] = gaps[0]
+        decision["what_would_make_it_pass"] = (
+            "Answer the missing detail in the prompt. Donor selection has not run yet, "
+            "so no donor is implicated."
+        )
+        decision["decision_confidence"] = 0.95
+        decision["blocking_layer"] = "intent"
+        return decision
+
     if not family or readiness_status in {"", "not_classified", "partial"}:
         decision["status"] = "ready_without_selected_donor"
         decision["what_failed"] = "scenario classification"
@@ -3989,6 +4123,7 @@ def _explain_plan_payload(
         coverage_gap,
         runtime_blocked=bool(donor_details.blocking_reason),
         runtime_blocking_reason=donor_details.blocking_reason,
+        intent_blocking_gaps=list(plan.blocking_gaps),
     )
     result["scenario_acceptance_summary"] = _scenario_acceptance_summary(
         coverage_gap,

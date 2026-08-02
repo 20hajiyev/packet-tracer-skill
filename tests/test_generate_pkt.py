@@ -709,12 +709,16 @@ def test_build_donor_prune_plan_blocks_new_link_pairs_in_open_first_mode() -> No
     try:
         _build_donor_prune_plan_for_donor(plan, blueprint, Path(compat_donor))
     except PlanningError as exc:
+        # The refusal must name a donor-shaped limitation, whichever one bites
+        # first: a link the donor lacks, wiring it cannot reuse, or not enough
+        # switch groups to build the requested topology from.
         assert any(
             "cannot create new donor link pair" in gap
             or "requires donor link reuse" in gap
-            or "supports only" in gap
+            or "switch group(s); requested" in gap
+            or "available for" in gap
             for gap in exc.plan.blocking_gaps
-        )
+        ), exc.plan.blocking_gaps
     else:
         raise AssertionError("Expected open-first donor graph reuse to block unsupported link mutations")
 
