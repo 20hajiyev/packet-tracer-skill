@@ -146,3 +146,39 @@ def test_spare_strategy_can_be_overridden(monkeypatch) -> None:
 
     monkeypatch.setenv("PACKET_TRACER_SPARE_STRATEGY", "nonsense")
     assert _spare_strategy() == DEFAULT_SPARE_STRATEGY
+
+
+def test_pruned_devices_reports_deletions_not_just_parking(monkeypatch) -> None:
+    """`prune` deletes rather than parks, and the report must say so.
+
+    `pruned_devices` was built only from the parked list, so a run that removed
+    fourteen donor devices reported zero pruned.
+    """
+    from generate_pkt import DonorArchetypePlan
+
+    plan = DonorArchetypePlan(
+        compat_donor="donor.pkt",
+        donor_capacity={},
+        kept_devices=["R1", "SW1"],
+        pruned_devices=["UNUSED-PC1", "Spare0"],
+        renamed_devices=[],
+        mutation_groups=[],
+        layout_strategy="donor_park_clean",
+    )
+
+    assert plan.pruned_devices == ["UNUSED-PC1", "Spare0"]
+
+
+def test_cross_group_borrowing_is_off_by_default(monkeypatch) -> None:
+    """Isolated by a control test: borrowing produces files Packet Tracer rejects.
+
+    A no-router, no-borrow lab opens, so pruning the router is safe; every case
+    that borrowed a host from another donor switch group failed to open.
+    """
+    from generate_pkt import _cross_group_borrowing_enabled
+
+    monkeypatch.delenv("PACKET_TRACER_CROSS_GROUP_BORROW", raising=False)
+    assert not _cross_group_borrowing_enabled()
+
+    monkeypatch.setenv("PACKET_TRACER_CROSS_GROUP_BORROW", "1")
+    assert _cross_group_borrowing_enabled()

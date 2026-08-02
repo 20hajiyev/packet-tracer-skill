@@ -437,3 +437,46 @@ setting that would accept the donor.
 5. `generate_pkt.py` under 1,000 lines.
 6. `docs/` under 8 hand-written files.
 7. A new user reaches a generated, opening `.pkt` in **one** command.
+
+
+---
+
+## Open investigation: why cross-group borrowing breaks a file
+
+**Isolated, mechanism unknown.** Letting a target switch take hosts from another
+donor switch group produces files Packet Tracer rejects with the generic "not
+compatible with this version". Borrowing is disabled by default
+(`PACKET_TRACER_CROSS_GROUP_BORROW=1` re-enables it for experiments).
+
+The cause is isolated rather than merely correlated. A control lab with **no
+router and no borrowing** (1 switch, 3 PCs) opens, so pruning the router is safe;
+the variable that matters is the borrow.
+
+| Case | Hosts on one switch | Borrowed | Opens |
+|---|---:|---|---|
+| minimal (router + 3 PCs) | 3 | no | yes |
+| campus star (6 PCs / 3 switches) | 2 | no | yes |
+| server lan | 3 | no | yes |
+| no-router control (3 PCs) | 3 | no | yes |
+| hc4 | 4 | yes | no |
+| hosts_only | 5 | yes | no |
+| vlan_uneven | 4 | yes | no |
+
+Ruled out so far, by comparing a borrowing file against a working one:
+
+- **link `MEM_ADDR` mismatch** — present in *working* files too, so Packet Tracer
+  does not require link memory addresses to resolve to a device
+- **orphaned `save-ref-id` references** — none in either file
+- **devices missing from `PHYSICALWORKSPACE`** — every device appears in both
+- **physical container hierarchy** — a borrowed PC sits under the same
+  `Corporate Office` node as a native one
+- **dangling link endpoints and duplicate ports** — the structural checker passes
+
+Next ideas: compare the full device subtree of a borrowed host against a native
+one field by field; check whether the borrowed host retains configuration tied to
+its original VLAN or subnet; and check whether Packet Tracer validates a
+device-to-container association that is not name-based.
+
+Until the mechanism is found, the refusal is the correct behaviour: a file that
+looks generated and will not open is worse than a clear "the donor's switch
+carries 3 hosts, you asked for 5".

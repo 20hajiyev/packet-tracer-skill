@@ -3309,7 +3309,10 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
         compat_donor=str(compat_donor),
         donor_capacity=donor_capacity,
         kept_devices=sorted([name for name in rename_map.values() if name not in set(parked_devices)], key=_name_sort_key),
-        pruned_devices=sorted(dict.fromkeys(parked_devices), key=_name_sort_key),
+        # Under the default `prune` strategy devices are deleted rather than
+        # parked, so reporting only `parked_devices` said "0 pruned" for a run
+        # that removed fourteen of them.
+        pruned_devices=sorted(dict.fromkeys([*parked_devices, *pruned_spares]), key=_name_sort_key),
         renamed_devices=renamed_devices,
         mutation_groups=mutation_groups,
         layout_strategy="donor_park_clean",
