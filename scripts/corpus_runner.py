@@ -36,7 +36,7 @@ DEFAULT_RESULTS = SKILL_ROOT / "output" / "corpus-results.json"
 class CorpusCase:
     name: str
     prompt: str
-    expects: str = "generate"  # generate | refuse | donor_limited
+    expects: str = "generate"  # generate | refuse | donor_limited | capability_gap
     note: str = ""
 
 
@@ -71,6 +71,37 @@ CORPUS: tuple[CorpusCase, ...] = (
         "sebeke haqqinda melumat ver",
         expects="refuse",
         note="not a topology request; must not invent one",
+    ),
+    # Beyond plain topology: the capability surface the skill advertises but the
+    # corpus has never exercised end to end.
+    CorpusCase(
+        "vlan_explicit_split",
+        "2 switch 1 router 6 komputer vlan 10 da 4 pc vlan 20 de 2 pc",
+        note="explicit host-to-VLAN counts rather than an even default",
+    ),
+    CorpusCase(
+        "router_dhcp",
+        "1 router 1 switch 3 komputer qur dhcp routerden verilsin",
+        note="router DHCP pool on top of a working topology",
+    ),
+    CorpusCase(
+        "server_services",
+        "1 router 1 switch 2 komputer 1 server qur serverde dns ve http olsun",
+        note="server service enablement",
+    ),
+    CorpusCase(
+        "management_telnet",
+        "2 switch 1 router 4 komputer qur management vlan 99 ve telnet olsun",
+        expects="capability_gap",
+        note="the parser recognises management_vlan and telnet but produces no "
+        "operations for them, so generation has nothing to apply",
+    ),
+    CorpusCase(
+        "wireless_home",
+        "1 wireless router 2 laptop qur",
+        expects="donor_limited",
+        note="the local donor is a wired campus lab and carries no wireless router; "
+        "a model the donor lacks cannot be cloned into existence",
     ),
 )
 
@@ -114,6 +145,10 @@ def run_case(case: CorpusCase, output_dir: Path, do_open: bool, timeout: int) ->
         result.detail = (completed.stdout or completed.stderr or "").strip()[-400:]
         if case.expects == "refuse":
             result.outcome = "refused_as_expected"
+        elif case.expects == "capability_gap":
+            # Recognised in the prompt, not implemented for generation. Distinct
+            # from a donor limit: a richer donor would not help.
+            result.outcome = "refused_capability_gap"
         elif case.expects == "donor_limited":
             # Not a defect: the request is sound and the local donor cannot serve
             # it. Kept visible rather than folded into "expected" so the gap stays
@@ -172,6 +207,7 @@ def main() -> int:
             "generated_unverified": "GEN ",
             "refused_as_expected": "REF ",
             "refused_donor_limited": "GAP ",
+            "refused_capability_gap": "CAP ",
         }.get(result.outcome, "FAIL")
         print(
             f"{flag} {result.name:20} {result.outcome:22} "
@@ -186,6 +222,7 @@ def main() -> int:
         "cases": [asdict(item) for item in results],
         "verified": sum(1 for item in results if item.outcome == "verified"),
         "donor_limited": sum(1 for item in results if item.outcome == "refused_donor_limited"),
+        "capability_gap": sum(1 for item in results if item.outcome == "refused_capability_gap"),
         "generated": sum(1 for item in results if item.generated),
         "unexpected": sum(
             1 for item in results if item.outcome in {"unexpected_refusal", "unexpected_generation", "structural_failed"}

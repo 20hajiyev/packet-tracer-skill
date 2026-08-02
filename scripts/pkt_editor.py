@@ -1051,6 +1051,8 @@ def _duplicate_host_onto_switch(
     _duplicate_host_for_group(root, source_name, new_name, x, y)
     if _find_device(root, new_name) is None:
         return
+    if not switch_name:
+        return  # standalone clone: the topology's own link pass attaches it
     _ensure_link(root, switch_name, switch_port, new_name, host_port, "straight-through")
 
 

@@ -3279,6 +3279,29 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
         device_type = _device_kind(target)
         available_pool = spare_candidates_by_type.get(device_type, [])
         if not available_pool:
+            # Same shortfall as inside a switch group, on the path for devices
+            # that hang off no switch. Clone one the donor already has rather
+            # than refusing: "1 wireless router 2 laptop" failed here because the
+            # donor carries a single laptop.
+            source = next(
+                (
+                    str(device["name"])
+                    for device in donor_devices
+                    if _device_kind(device) == device_type and str(device["name"]) in rename_map
+                ),
+                "",
+            )
+            if source and _host_duplication_enabled():
+                pending_host_clones.append(
+                    {
+                        "source": source,
+                        "new_name": str(target["name"]),
+                        "switch": "",
+                        "x": int(target.get("x", 0)),
+                        "y": int(target.get("y", 0)),
+                    }
+                )
+                continue
             gap = f"Compatibility donor does not have a spare {device_type} device for standalone target {target['name']}."
             if gap not in adapted_plan.blocking_gaps:
                 adapted_plan.blocking_gaps.append(gap)
@@ -3567,6 +3590,20 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
         if source_final in parked_set:
             continue
         switch_name = str(clone["switch"])
+        if not switch_name:
+            # Standalone target: clone the device, leave it unattached. Whatever
+            # link the topology wants is handled by the normal link pass.
+            adapted_plan.edit_operations.append(
+                {
+                    "op": "duplicate_host",
+                    "device": source_final,
+                    "new_name": str(clone["new_name"]),
+                    "switch": "",
+                    "x": int(clone["x"]),
+                    "y": int(clone["y"]),
+                }
+            )
+            continue
         # Take the next free access port on the target switch. The link-reuse
         # pass has already claimed the ports it needs, so scanning the blueprint
         # is enough to avoid a collision.
@@ -3846,8 +3883,14 @@ def _scenario_generate_decision(
         what_failed = "runtime readiness"
         why_failed = runtime_blocking_reason or "Runtime prerequisites required for strict generate are not ready."
     elif readiness_status == "unsupported":
+        # Name the capabilities. The generic sentence sent users looking for a
+        # donor or a runtime problem when the answer was a specific feature the
+        # prompt asked for and the planner produced no operations for.
+        detail = "; ".join(str(item) for item in list(readiness.get("reasons", [])) if str(item).strip())
         blocking_reasons.append(
-            f"Scenario '{family_label}' is not generate-ready in safe-open mode because critical capability coverage is still missing."
+            f"Scenario '{family_label}' is not generate-ready in safe-open mode: {detail}"
+            if detail
+            else f"Scenario '{family_label}' is not generate-ready in safe-open mode because critical capability coverage is still missing."
         )
         decision["status"] = "blocked_by_capability"
         decision["blocking_layer"] = "capability"

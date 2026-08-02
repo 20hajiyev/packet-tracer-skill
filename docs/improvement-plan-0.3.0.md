@@ -708,3 +708,41 @@ refuses.
 
 The donor now constrains which device *models* are available, not how large a
 topology can be.
+
+
+---
+
+## Corpus widened to the capability surface
+
+Five cases added beyond plain topology, covering what the skill advertises but
+had never been run end to end.
+
+| Case | Result |
+|---|---|
+| vlan_explicit_split | opened — explicit per-VLAN host counts |
+| router_dhcp | opened — router DHCP pool |
+| server_services | opened — DNS and HTTP on a server |
+| management_telnet | capability gap |
+| wireless_home | donor-limited |
+
+**10 generated, 10 opened, 0 unexpected.**
+
+### Two new gaps, correctly separated
+
+`wireless_home` is **donor-limited**: the local donor is a wired campus lab with
+no wireless router, and a device model the donor lacks cannot be cloned into
+existence. A richer donor fixes it.
+
+`management_telnet` is a **capability gap**, which is a different thing: the
+parser recognises `management_vlan` and `telnet` and produces no operations for
+them, so generation has nothing to apply. A richer donor would not help. The
+corpus reports it as `refused_capability_gap` so the two never get confused.
+
+The refusal used to read "critical capability coverage is still missing", which
+sent people looking for donor or runtime problems. It now names the capabilities.
+
+### Also fixed
+
+Host duplication reached only devices attached to a switch group. Devices that
+hang off no switch took a different path and still refused — "1 wireless router
+2 laptop" failed on the donor's single laptop. Standalone targets now clone too.
