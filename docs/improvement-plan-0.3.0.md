@@ -746,3 +746,59 @@ sent people looking for donor or runtime problems. It now names the capabilities
 Host duplication reached only devices attached to a switch group. Devices that
 hang off no switch took a different path and still refused — "1 wireless router
 2 laptop" failed on the donor's single laptop. Standalone targets now clone too.
+
+
+---
+
+## Dependency and limitation audit
+
+Re-measured what the skill actually requires. Three findings, all fixed.
+
+### The one-time bootstrap is gone
+
+The target build was read from a lab the install had already saved. A user who
+had never saved anything got a three-field release (`9.0.0`) from the install
+directory name -- and under the `exact` policy a three-field target matches
+**nothing**, not even a genuine lab written by that very install. A fresh
+machine could not generate at all.
+
+The binary knows its own build. Measured on 9.0.0: `PacketTracer.exe` reports
+`9.0.0.0810` in its version resource, the same string it stamps into saves.
+`_build_from_executable()` reads it via `version.dll` -- stdlib ctypes, no
+subprocess, no new dependency. Resolution order is now env, executable, local
+save, install root; the local-save scan still covers Linux and macOS, which
+carry no version resource.
+
+Side effect: generation dropped from 10-16s to 6-7s per case, because the probe
+no longer decodes saved labs looking for a build string.
+
+This was the same defect shape as every previous one -- `_version_from_install_root`
+returned a release on the assumption that the tier ladder would *rank* donors,
+while `_base_donor_candidates` under `exact` *filters* them. Two models of one
+concept, disagreeing.
+
+### Two refusal messages contradicted each other
+
+`describe_donor_rejection` deliberately withholds "set a looser policy" under
+`exact`, because loosening was measured to produce files Packet Tracer refuses
+to open. The donor resolver's own blocking reason handed that suggestion out
+anyway. It now gives the same advice as the other path: save one lab.
+
+The generation refusal was worse -- a fixed string telling users to "let the
+repo auto-detect one" when auto-detection had already run and rejected all 16
+candidates. It now reports the real reason, naming the bundled-sample trap.
+
+### The README documented requirements that no longer exist
+
+It said `bridge_resolution=missing` blocks decode, edit and generate. Nothing is
+blocked: the vendored pure-Python Twofish has been the default since `0.3.0` and
+a compiled bridge is only an accelerator. It also instructed users to pin
+`PACKET_TRACER_TARGET_VERSION=9.0.0.0810`, which would break every machine on a
+different build. Both rewritten.
+
+### Actual requirements, measured
+
+Python 3.9+ syntax throughout, standard library only, `pytest` for tests alone.
+Node is needed only for the npm wrapper. Install discovery already covers
+Windows, macOS and Linux. Packet Tracer is needed to *verify* opens and, once,
+to supply a donor -- after that `donor_cache` serves generation on its own.

@@ -379,6 +379,79 @@ def _version_from_install_root(root: Path) -> str | None:
     return f"{major}.{minor}.{patch}"
 
 
+def _build_from_executable(release_version: str = "") -> str | None:
+    """Read the running build straight out of the Packet Tracer binary.
+
+    This is the authoritative source and it needs nothing from the user. The
+    binary's `FileVersion` resource carries the same four-field string Packet
+    Tracer stamps into every lab it saves — measured on 9.0.0: the executable
+    reports `9.0.0.0810`, exactly what its saves contain.
+
+    Reading it here removes the one-time bootstrap the skill used to require.
+    Before this, the build could only be learned from a lab the install had
+    already written, so a user who had never saved anything got a three-field
+    release (`9.0.0`) that no donor can match under the `exact` policy -- not
+    even a genuine lab written by that very install.
+
+    Windows only for now: the version resource is a PE feature, and no
+    equivalent has been measured on the Linux and macOS builds. Returns None
+    there so the local-save path still runs.
+    """
+    if platform.system() != "Windows":
+        return None
+    exe = get_packet_tracer_exe()
+    if exe is None:
+        return None
+
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        version_dll = ctypes.WinDLL("version")
+        path = str(exe)
+        size = version_dll.GetFileVersionInfoSizeW(path, None)
+        if not size:
+            return None
+        buffer = ctypes.create_string_buffer(size)
+        if not version_dll.GetFileVersionInfoW(path, 0, size, buffer):
+            return None
+
+        value = ctypes.c_void_p()
+        length = wintypes.UINT()
+        # The language/codepage of the string table is not fixed, so ask the
+        # file which translations it actually carries instead of guessing.
+        if not version_dll.VerQueryValueW(
+            buffer, r"\VarFileInfo\Translation", ctypes.byref(value), ctypes.byref(length)
+        ) or not length.value:
+            return None
+        language, codepage = ctypes.cast(
+            value, ctypes.POINTER(wintypes.WORD * 2)
+        ).contents[:]
+
+        if not version_dll.VerQueryValueW(
+            buffer,
+            rf"\StringFileInfo\{language:04x}{codepage:04x}\FileVersion",
+            ctypes.byref(value),
+            ctypes.byref(length),
+        ) or not length.value:
+            return None
+        detected = ctypes.wstring_at(value.value, length.value).strip().rstrip("\x00").strip()
+    except (OSError, AttributeError, ValueError):
+        return None
+
+    # Only a full four-field build is useful; anything shorter tells us no more
+    # than the install directory name already did.
+    fields = _version_fields(detected)
+    if len(fields) < 4:
+        return None
+    if release_version:
+        release_fields = _version_fields(release_version)[:2]
+        if len(release_fields) == 2 and fields[:2] != release_fields:
+            # The binary disagrees with the directory it sits in; trust neither.
+            return None
+    return detected
+
+
 def _build_from_local_saves(release_version: str) -> str | None:
     """Find the running build by reading a lab this Packet Tracer saved.
 
@@ -427,8 +500,15 @@ def detect_packet_tracer_target_version() -> tuple[str, str]:
             # The directory name gives major.minor.patch but not the build, and
             # Packet Tracer refuses to open a file whose <VERSION> build differs
             # from its own: "This file requires 9.0.0.0000. Your current version
-            # is 9.0.0.0810." Labs this install saved carry the real build, so
-            # prefer one of those when it belongs to the same release line.
+            # is 9.0.0.0810."
+            #
+            # The binary itself knows its build, so ask it first: that works on a
+            # machine where nothing has ever been saved. Labs this install wrote
+            # carry the same string and cover the platforms where no version
+            # resource is available.
+            build = _build_from_executable(detected)
+            if build:
+                return build, "executable"
             build = _build_from_local_saves(detected)
             if build:
                 return build, "local_save"
@@ -657,9 +737,22 @@ def inspect_packet_tracer_compatibility_donor() -> CompatibilityDonorDetails:
             reason = (
                 f"no donor compatible with {target_version} under the '{policy}' policy was found "
                 f"among {wrong_version_count} discovered local candidates. "
-                "Set PACKET_TRACER_DONOR_POLICY to a looser tier "
-                f"({', '.join(COMPATIBILITY_TIERS[:-1])}) to widen the search."
             )
+            if policy == "exact":
+                # Never offer a looser policy under `exact`. Loosening was
+                # measured to produce files Packet Tracer refuses to open, so it
+                # walks the user into a broken state that looks like progress.
+                # The bundled Cisco samples are exactly this trap: there are
+                # dozens of them, all carrying a build the local install rejects.
+                reason += (
+                    "Bundled Cisco samples do not qualify -- they ship with a different "
+                    "build, and a lab generated from one is refused on open. " + save_a_lab_hint()
+                )
+            else:
+                reason += (
+                    "Set PACKET_TRACER_DONOR_POLICY to a looser tier "
+                    f"({', '.join(COMPATIBILITY_TIERS[:-1])}) to widen the search."
+                )
         else:
             reason = f"no compatible Packet Tracer {target_version} donor was found"
     else:

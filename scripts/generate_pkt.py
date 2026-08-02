@@ -158,9 +158,27 @@ class PlanningError(RuntimeError):
 
 
 STRICT_COMPATIBILITY_GAP = (
-    "Strict 9.0 generation requires a compatible Packet Tracer 9.0 donor lab. "
-    "Set PACKET_TRACER_COMPAT_DONOR explicitly, let the repo auto-detect one, or provide --donor-root with validated local donor labs."
+    "Strict generation requires a compatible Packet Tracer donor lab. "
+    "Set PACKET_TRACER_COMPAT_DONOR explicitly, or provide --donor-root with validated local donor labs."
 )
+
+
+def _strict_compatibility_gap() -> str:
+    """Say why no donor qualified, using the evaluation that actually ran.
+
+    The fixed string above told users to "let the repo auto-detect one" when
+    auto-detection had already run and rejected everything it found. The donor
+    resolver knows the real reason -- usually that the only candidates are
+    bundled Cisco samples carrying a build the local install refuses -- so
+    report that instead of sending people to look for a switch to flip.
+    """
+    try:
+        details = _inspect_packet_tracer_compatibility_donor_cached()
+    except Exception:  # diagnosis must never mask the original refusal
+        return STRICT_COMPATIBILITY_GAP
+    if details.blocking_reason:
+        return f"No donor lab can serve as a generation base: {details.blocking_reason}"
+    return STRICT_COMPATIBILITY_GAP
 
 
 def _compat_donor_details() -> tuple[Path | None, str | None]:
@@ -1276,8 +1294,10 @@ def _apply_prompt_compatibility_requirements(plan: IntentPlan, donor_roots: list
     if prepared.goal != "edit":
         topology_tags = _topology_tags_for_plan(prepared, _choose_topology_archetype(prepared))
         _, _, donor_candidates = _rank_generation_donors(prepared, topology_tags, donor_roots)
-        if not donor_candidates and STRICT_COMPATIBILITY_GAP not in prepared.blocking_gaps:
-            prepared.blocking_gaps.append(STRICT_COMPATIBILITY_GAP)
+        if not donor_candidates:
+            gap = _strict_compatibility_gap()
+            if gap not in prepared.blocking_gaps:
+                prepared.blocking_gaps.append(gap)
     return prepared
 
 
@@ -3678,8 +3698,9 @@ def _build_donor_prune_plan(
     )
     if not donor_candidates:
         blocked_plan = _copy_plan(plan)
-        if STRICT_COMPATIBILITY_GAP not in blocked_plan.blocking_gaps:
-            blocked_plan.blocking_gaps.append(STRICT_COMPATIBILITY_GAP)
+        gap = _strict_compatibility_gap()
+        if gap not in blocked_plan.blocking_gaps:
+            blocked_plan.blocking_gaps.append(gap)
         raise PlanningError("Prompt plan is incomplete; generation was skipped.", blocked_plan)
 
     evaluation, diagnostics = _evaluate_donor_prune_candidates(plan, blueprint, donor_candidates)

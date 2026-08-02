@@ -258,42 +258,45 @@ Important variables:
 - `PKT_TWOFISH_LIBRARY`
 - `PKT_TWOFISH_SEARCH_ROOTS`
 
-Twofish bridge setup is intentionally local-machine specific. Use a path that exists on your own machine.
+**None of these are required.** The skill resolves all of them on its own; set
+one only to override what it found.
 
-Generic explicit bridge path:
+### Twofish
+
+Nothing to install. `scripts/vendor/twofish_pure.py` is a pure-Python Twofish
+that ships in the checkout and passes the official test vectors, so decode,
+edit and generate work with no binaries and no environment variables.
+
+A compiled bridge is an optional accelerator, worth setting only for repeated
+work on very large labs (~12x on the Twofish step):
 
 ```powershell
 $env:PKT_TWOFISH_LIBRARY="C:\path\to\_twofish.cp314-win_amd64.pyd"
+$env:PKT_TWOFISH_SEARCH_ROOTS="C:\path\to\bridge-folder"   # or search a folder
 ```
 
-Repo-local bridge path, if you have placed a compatible bridge inside this
-checkout:
+### Target version
 
-```powershell
-$env:PKT_TWOFISH_LIBRARY="$PWD\scripts\vendor\_twofish.cp314-win_amd64.pyd"
-```
+Do not pin `PACKET_TRACER_TARGET_VERSION`. Packet Tracer refuses any lab whose
+`<VERSION>` build differs from its own, so the correct value is whatever build
+is installed on *your* machine, and the skill detects it:
 
-Search-root fallback, if you want the runtime to look inside a local bridge
-folder:
+1. `PACKET_TRACER_TARGET_VERSION`, if you set it
+2. the Packet Tracer binary's own version resource (Windows)
+3. a lab the local install has saved
+4. the install directory name, which gives a release but no build
 
-```powershell
-$env:PKT_TWOFISH_SEARCH_ROOTS="C:\path\to\bridge-folder"
-```
+Steps 2 and 3 are the ones that yield a full four-field build. Only a donor
+carrying that exact build can serve as a generation base -- bundled Cisco
+samples ship as `9.0.0.0000` and produce files Packet Tracer rejects.
 
-Developer-local bridge paths are valid only for the person and host where that bridge exists. They are not the public setup contract.
+Troubleshooting:
 
-Required policy:
-
-- keep `PACKET_TRACER_TARGET_VERSION` on `9.0.0.0810`
-- do not downgrade the workflow to `5.3`
-- if donor or bridge is missing, fix the runtime instead of weakening the compatibility profile
-
-Troubleshooting guide:
-
-- `bridge_resolution=repo_local` means the checkout contains the bridge path the doctor resolved.
-- `bridge_resolution=external_env` means an environment variable points to a bridge outside the repo. This can be valid for testing, but it is not repo self-contained readiness.
-- `bridge_resolution=missing` means strict decode/edit/generate is blocked until `PKT_TWOFISH_LIBRARY` or `PKT_TWOFISH_SEARCH_ROOTS` resolves a compatible bridge.
-- `validate_open` readiness only proves Packet Tracer can launch a file. Strict `.pkt` generation still depends on donor and bridge readiness.
+- `twofish_backend=pure_python` is the normal, fully supported state.
+- `bridge_resolution=missing` means only that no compiled accelerator was
+  found. It does not block anything.
+- `validate_open` readiness proves Packet Tracer can launch a file. Generation
+  additionally needs an eligible donor -- run `runtime_doctor.py` to see which.
 
 ## Core Product Surfaces
 
