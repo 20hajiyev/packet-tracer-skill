@@ -2163,6 +2163,10 @@ def _synthesize_links(plan: IntentPlan, devices: list[dict[str, object]]) -> lis
         return links
 
     core_switch = switches[0]
+    # Reverted: putting hosts on the core switch as well as the access switch
+    # looked like better use of a two-switch topology, but it made
+    # `two_switch_chain` -- which opened before -- stop opening. Whatever Packet
+    # Tracer objects to, a hostless core is the arrangement that works.
     access_switches = switches[1:] or [core_switch]
     links: list[dict[str, object]] = []
     uplink_media = "straight-through"
@@ -2860,6 +2864,14 @@ def _align_donor_groups_to_targets(
     if not donor_hops or not target_hops:
         return donor_groups
 
+    # Host capacity outranks router adjacency. A host link cannot be created, so
+    # a target switch is hard-limited by the hosts its donor group already has;
+    # a router uplink *can* be created, so which switch faces the router is a
+    # preference. Matching the router-facing pair first put a 4-host target on
+    # the donor's 3-host switch while two 4-host groups sat unused.
+    # Reverted to distance-from-router ordering. A kind-aware greedy match fixed
+    # `vlan_uneven` but stopped `four_switch` from opening, and a case that opens
+    # outranks a case that merely generates.
     target_order = [
         str(group["switch"]["name"])
         for group in sorted(

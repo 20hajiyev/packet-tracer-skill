@@ -584,3 +584,48 @@ default; `PACKET_TRACER_GROUP_DUPLICATION=off` restricts topologies to the
 donor's own switch count.
 
 Corpus: 5 generated, 2 donor-limited, 1 correct refusal, 0 unexpected.
+
+
+---
+
+## Two plausible improvements, both reverted
+
+Both changes below looked like clear wins, both passed the structural checker,
+and both stopped files opening in Packet Tracer. Only the open test caught them.
+
+**Hosts on the core switch.** With two switches the planner put every host on
+the access switch and left the core empty — wasteful, and no donor switch can
+supply seven hosts. Letting the core carry hosts too gave a tidy 4/3 split.
+`two_switch_chain`, which had been opening, stopped opening. A hostless core is
+apparently the arrangement Packet Tracer accepts.
+
+**Kind-aware group matching.** Alignment ranked donor groups by distance from
+the router, so a target needing four PCs could land on the donor's three-PC
+switch while two four-PC groups sat unused. Matching by device kind fixed
+`vlan_uneven` — and `four_switch` stopped opening.
+
+Both are reverted. `vlan_uneven` is donor-limited again, which is the honest
+state: a case that opens outranks a case that merely generates.
+
+### Verified baseline
+
+Every generated file opens:
+
+| Case | Result |
+|---|---|
+| minimal, two_switch_chain, campus_star_vlan, four_switch, server_lan | **opened** |
+| hosts_only | donor-limited: 5 hosts on one switch, the donor's richest group has 4 |
+| vlan_uneven | donor-limited: 4 hosts land on a switch the donor gives 3 |
+| no_devices | correctly refused |
+
+5 generated, **5 opened**, 2 donor-limited, 0 unexpected.
+
+### What this says about the remaining gaps
+
+`hosts_only` is a real limit under the measured rule: a host cannot take a
+created connection, so a target switch cannot carry more hosts than its donor
+group has. Group duplication adds switches, not hosts to an existing switch.
+
+Closing it needs either a donor whose richest group is large enough, or an
+understanding of *why* Packet Tracer rejects a created host link — which is
+still unexplained and is the highest-value thing left to learn.
