@@ -2673,6 +2673,26 @@ def _resolve_port_conflicts(
         operation["b"]["port"] = free_port(right_name, str(operation["b"]["port"]), label)
 
 
+def _stamp_target_version(root: ET.Element) -> None:
+    """Write the running Packet Tracer build into the generated file.
+
+    Donor-prune inherits the donor's `<VERSION>`, and Packet Tracer refuses a
+    file whose build differs from its own: "This file requires Cisco Packet
+    Tracer version 9.0.0.0000. Your current version is 9.0.0.0810." Generating
+    from a bundled `9.0.0.0000` sample therefore produced a file the very
+    Packet Tracer that supplied the donor would not open.
+
+    Only a full four-field build is stamped; a three-field release detected from
+    an install directory name is not a build and must not be written.
+    """
+    target = get_packet_tracer_target_version()
+    if len(target.split(".")) < 4:
+        return
+    node = root.find("./VERSION")
+    if node is not None:
+        node.text = target
+
+
 def _switch_carrying_router_uplink(
     devices_by_name: dict[str, str],
     links: list[dict[str, object]],
@@ -4004,6 +4024,7 @@ def generate_from_prompt(
         raise PlanningError("Prompt plan requires unsafe donor mutations; generation was skipped in open-first mode.", profiled_plan)
     root = apply_plan_operations(donor_root, safe_plan)
     _sanitize_runtime_sections(root)
+    _stamp_target_version(root)
     unexpected_workspace_issues = _unexpected_workspace_issues(donor_root, root)
     if unexpected_workspace_issues:
         raise ValueError("; ".join(unexpected_workspace_issues))

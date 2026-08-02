@@ -67,7 +67,16 @@ class CompatibilityDonorDetails:
 # that is still acceptable.
 
 COMPATIBILITY_TIERS = ("exact", "same_minor", "same_major", "upgradeable", "incompatible")
-DEFAULT_DONOR_POLICY = "same_minor"
+
+# Measured, not assumed: a donor whose build differs from the running Packet
+# Tracer produces a file Packet Tracer refuses to open. Relabelling the output
+# is not enough either — the first attempt swapped `9.0.0.0000` for the running
+# `9.0.0.0810` and Packet Tracer still rejected the file, because the donor's
+# internal structures were never migrated.
+#
+# So the base donor must be a lab the running install actually wrote. None of
+# the 292 bundled Cisco samples qualifies; the user's own saves do.
+DEFAULT_DONOR_POLICY = "exact"
 
 # Packet Tracer reliably upgrades saves from this major version onward on open.
 MINIMUM_UPGRADEABLE_MAJOR = 6
@@ -237,16 +246,54 @@ def get_packet_tracer_root() -> Path | None:
 
 
 def get_packet_tracer_saves_root() -> Path | None:
+    """Resolve a saves tree: explicit override, live install, then the local cache.
+
+    The cache is shaped like a real `saves/` tree, so it can answer this seam
+    directly and every consumer of `resolve_sample_path()` keeps working
+    unchanged on a machine with no Packet Tracer installed.
+    """
     env_saves = _existing_path(os.getenv("PACKET_TRACER_SAVES_ROOT"))
     if env_saves is not None:
         return env_saves
+
     root = get_packet_tracer_root()
-    if root is None:
-        return None
-    for candidate in default_saves_candidates(root):
-        if candidate.exists():
-            return candidate
+    if root is not None:
+        for candidate in default_saves_candidates(root):
+            if candidate.exists():
+                _refresh_donor_cache(candidate)
+                return candidate
+
+    from donor_cache import cache_is_usable, cache_root
+
+    if cache_is_usable(get_packet_tracer_target_version()):
+        return cache_root()
     return None
+
+
+_DONOR_CACHE_REFRESHED = False
+
+
+def _refresh_donor_cache(saves_root: Path) -> None:
+    """Populate the cache once per process while a live install is available.
+
+    Failure here is never fatal: the cache improves availability on *other*
+    machines and must not break the machine that already works.
+    """
+    global _DONOR_CACHE_REFRESHED
+    if _DONOR_CACHE_REFRESHED:
+        return
+    _DONOR_CACHE_REFRESHED = True
+    try:
+        from donor_cache import bootstrap, cache_enabled, cache_is_usable
+
+        target_version = get_packet_tracer_target_version()
+        if not cache_enabled() or cache_is_usable(target_version):
+            return
+        report = bootstrap(saves_root, target_version=target_version)
+        if report.ok:
+            print(report.summary())
+    except Exception:
+        return
 
 
 def get_packet_tracer_exe() -> Path | None:
@@ -265,9 +312,9 @@ def get_packet_tracer_exe() -> Path | None:
 def require_packet_tracer_saves_root() -> Path:
     saves = get_packet_tracer_saves_root()
     if saves is None:
-        raise FileNotFoundError(
-            "Packet Tracer sample saves were not found. Set PACKET_TRACER_SAVES_ROOT or PACKET_TRACER_ROOT."
-        )
+        from donor_cache import missing_requirements_message
+
+        raise FileNotFoundError(missing_requirements_message())
     return saves
 
 
@@ -303,6 +350,35 @@ def _version_from_install_root(root: Path) -> str | None:
     return f"{major}.{minor}.{patch}"
 
 
+def _build_from_local_saves(release_version: str) -> str | None:
+    """Find the running build by reading a lab this Packet Tracer saved.
+
+    Only files the local install wrote carry its build number. Bundled Cisco
+    samples do not: they ship as `9.0.0.0000` and friends, which is precisely
+    the value Packet Tracer then refuses to open.
+    """
+    release_fields = _version_fields(release_version)[:2]
+    if len(release_fields) < 2:
+        return None
+
+    best: tuple[tuple[int, ...], str] | None = None
+    for directory in DEFAULT_DONOR_FALLBACKS:
+        if not directory.exists():
+            continue
+        try:
+            candidates = sorted(directory.glob("*.pkt"))[:12]
+        except OSError:
+            continue
+        for candidate in candidates:
+            version = _pkt_version(candidate)
+            fields = _version_fields(version)
+            if len(fields) < 4 or fields[:2] != release_fields:
+                continue
+            if best is None or fields > best[0]:
+                best = (fields, str(version))
+    return best[1] if best else None
+
+
 def detect_packet_tracer_target_version() -> tuple[str, str]:
     """Resolve the version to target, and say where it came from.
 
@@ -319,6 +395,14 @@ def detect_packet_tracer_target_version() -> tuple[str, str]:
     if root is not None:
         detected = _version_from_install_root(root)
         if detected:
+            # The directory name gives major.minor.patch but not the build, and
+            # Packet Tracer refuses to open a file whose <VERSION> build differs
+            # from its own: "This file requires 9.0.0.0000. Your current version
+            # is 9.0.0.0810." Labs this install saved carry the real build, so
+            # prefer one of those when it belongs to the same release line.
+            build = _build_from_local_saves(detected)
+            if build:
+                return build, "local_save"
             return detected, "install_root"
 
     env_donor = _existing_path(os.getenv("PACKET_TRACER_COMPAT_DONOR"))

@@ -52,12 +52,28 @@ def test_tier_classification(donor_version: str | None, expected_tier: str) -> N
     assert donor_compatibility(donor_version, TARGET) == expected_tier
 
 
-def test_default_policy_accepts_the_bundled_nine_zero_family() -> None:
-    """The default must accept 9.0.0.x donors; that is the whole point."""
-    assert DEFAULT_DONOR_POLICY == "same_minor"
-    for donor_version in ("9.0.0.0810", "9.0.0.0000", "9.0.0.4178"):
+def test_default_policy_requires_the_running_build() -> None:
+    """Measured, not assumed: a generation base must carry the running build.
+
+    `same_minor` was the default until a real open test contradicted it. Packet
+    Tracer rejects a file built from a `9.0.0.0000` sample with "This file
+    requires Cisco Packet Tracer version 9.0.0.0000. Your current version is
+    9.0.0.0810", and relabelling the output does not help — the donor's
+    structures are never migrated. None of the 292 bundled samples carries the
+    running build; the user's own saves do.
+    """
+    assert DEFAULT_DONOR_POLICY == "exact"
+    assert donor_tier_is_accepted(donor_compatibility("9.0.0.0810", TARGET), DEFAULT_DONOR_POLICY)
+    for donor_version in ("9.0.0.0000", "9.0.0.4178"):
         tier = donor_compatibility(donor_version, TARGET)
-        assert donor_tier_is_accepted(tier, DEFAULT_DONOR_POLICY)
+        assert tier == "same_minor"
+        assert not donor_tier_is_accepted(tier, DEFAULT_DONOR_POLICY)
+
+
+def test_looser_policies_remain_available_for_inspection() -> None:
+    """The ladder still classifies; only the default for *generation* is strict."""
+    for donor_version in ("9.0.0.0000", "9.0.0.4178"):
+        assert donor_tier_is_accepted(donor_compatibility(donor_version, TARGET), "same_minor")
 
 
 def test_default_policy_still_rejects_legacy_and_cross_minor_donors() -> None:
