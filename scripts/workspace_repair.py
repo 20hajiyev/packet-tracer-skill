@@ -283,10 +283,15 @@ def inspect_workspace_integrity(root: ET.Element) -> WorkspaceValidationResult:
         if len(ports) < 2 or not ports[0] or not ports[1]:
             issues.append("Link is missing endpoint port names")
 
+        # A link may legitimately carry no device MEM_ADDR references. They are
+        # runtime pointers from the session that saved the file — in working
+        # donors they resolve to nothing — and a link built without them opens
+        # in Packet Tracer, while one built with invented values does not.
+        # Requiring them here made the repo reject files Packet Tracer accepts.
         from_device_mem = cable.findtext("FROM_DEVICE_MEM_ADDR", default="")
         to_device_mem = cable.findtext("TO_DEVICE_MEM_ADDR", default="")
-        if not from_device_mem or not to_device_mem:
-            issues.append("Link is missing device MEM_ADDR references")
+        if bool(from_device_mem) != bool(to_device_mem):
+            issues.append("Link has a device MEM_ADDR reference on only one end")
         elif from_device_mem not in logical_mem_addrs or to_device_mem not in logical_mem_addrs:
             issues.append("Link device MEM_ADDR references do not match device workspace records")
 

@@ -2597,7 +2597,11 @@ def _link_may_be_created(left_kind: str, right_kind: str) -> bool:
     version". Uplinks between infrastructure devices can be built; a host's
     connection cannot, so a host must keep the switch the donor already gave it.
     """
-    return left_kind in INFRASTRUCTURE_LINK_KINDS and right_kind in INFRASTRUCTURE_LINK_KINDS
+    # Host links used to be refused here. The real cause was not the endpoint
+    # kind but the invented MEM_ADDR values written into new links: building the
+    # same host link with those fields omitted opens in Packet Tracer. With
+    # `_ensure_link` no longer inventing them, any pair may be linked.
+    return bool(left_kind) and bool(right_kind)
 
 
 def _group_duplication_enabled() -> bool:

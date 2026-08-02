@@ -184,23 +184,23 @@ def test_cross_group_borrowing_is_off_by_default(monkeypatch) -> None:
     assert _cross_group_borrowing_enabled()
 
 
-def test_only_infrastructure_links_may_be_created() -> None:
-    """Measured: a created host connection makes Packet Tracer reject the file.
+def test_any_known_pair_may_be_linked() -> None:
+    """The endpoint kind was never the real constraint.
 
-    Every generated file whose only created links were `Switch <-> Switch`
-    opened; every file containing a created `Pc <-> Switch` link was rejected as
-    "not compatible with this version".
+    Created `Pc <-> Switch` links did make Packet Tracer reject the file, but
+    the cause was the invented MEM_ADDR values written into new links, not the
+    endpoints. Building the same host link with those fields omitted opens, so
+    the restriction is gone and only unknown device kinds are refused.
     """
     from generate_pkt import _link_may_be_created
 
     assert _link_may_be_created("Switch", "Switch")
     assert _link_may_be_created("Router", "Switch")
-    assert _link_may_be_created("MultiLayerSwitch", "Switch")
+    assert _link_may_be_created("PC", "Switch")
+    assert _link_may_be_created("Server", "Switch")
 
-    assert not _link_may_be_created("PC", "Switch")
-    assert not _link_may_be_created("Switch", "PC")
-    assert not _link_may_be_created("Server", "Switch")
     assert not _link_may_be_created("", "Switch")
+    assert not _link_may_be_created("Switch", "")
 
 
 def test_group_duplication_is_on_by_default(monkeypatch) -> None:

@@ -1130,23 +1130,39 @@ def _ensure_link(
             ports.append(ET.SubElement(cable, "PORT"))
     ports[0].text = left_port
     ports[1].text = right_port
-    resolved_port_mem_map = port_mem_map or {}
-    for node_name, value in [
-        ("FROM_DEVICE_MEM_ADDR", left_device.findtext("./WORKSPACE/LOGICAL/MEM_ADDR", default="")),
-        ("TO_DEVICE_MEM_ADDR", right_device.findtext("./WORKSPACE/LOGICAL/MEM_ADDR", default="")),
-        (
+    # These four are runtime pointers from the session that saved the file, not
+    # references into it: in working donors they match no device. Writing
+    # invented values into a *new* link is what made Packet Tracer reject the
+    # result — verified by building the same link with the fields omitted, which
+    # opens. On an existing link they are left exactly as the donor wrote them.
+    if existing is None:
+        for node_name in (
+            "FROM_DEVICE_MEM_ADDR",
+            "TO_DEVICE_MEM_ADDR",
             "FROM_PORT_MEM_ADDR",
-            _port_address_for_name(left_device, left_port)
-            or resolved_port_mem_map.get((from_ref, left_port), ""),
-        ),
-        (
             "TO_PORT_MEM_ADDR",
-            _port_address_for_name(right_device, right_port)
-            or resolved_port_mem_map.get((to_ref, right_port), ""),
-        ),
-    ]:
-        if value:
-            _ensure_text(cable, node_name, value)
+        ):
+            stale = cable.find(node_name)
+            if stale is not None:
+                cable.remove(stale)
+    else:
+        resolved_port_mem_map = port_mem_map or {}
+        for node_name, value in [
+            ("FROM_DEVICE_MEM_ADDR", left_device.findtext("./WORKSPACE/LOGICAL/MEM_ADDR", default="")),
+            ("TO_DEVICE_MEM_ADDR", right_device.findtext("./WORKSPACE/LOGICAL/MEM_ADDR", default="")),
+            (
+                "FROM_PORT_MEM_ADDR",
+                _port_address_for_name(left_device, left_port)
+                or resolved_port_mem_map.get((from_ref, left_port), ""),
+            ),
+            (
+                "TO_PORT_MEM_ADDR",
+                _port_address_for_name(right_device, right_port)
+                or resolved_port_mem_map.get((to_ref, right_port), ""),
+            ),
+        ]:
+            if value:
+                _ensure_text(cable, node_name, value)
     _ensure_text(cable, "FUNCTIONAL", cable.findtext("FUNCTIONAL", default="true") or "true")
     _ensure_text(cable, "GEO_VIEW_COLOR", cable.findtext("GEO_VIEW_COLOR", default="#6ba72e") or "#6ba72e")
     _ensure_text(

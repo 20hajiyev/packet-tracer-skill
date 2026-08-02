@@ -629,3 +629,40 @@ group has. Group duplication adds switches, not hosts to an existing switch.
 Closing it needs either a donor whose richest group is large enough, or an
 understanding of *why* Packet Tracer rejects a created host link — which is
 still unexplained and is the highest-value thing left to learn.
+
+
+---
+
+## Solved: why a created host link was rejected
+
+It was never the endpoint kind. Rebuilding an *existing*, working host link with
+the same devices and the same ports left exactly five fields different from the
+original — `LENGTH` and the four `*_MEM_ADDR` values. Building the same link
+with those four **omitted** opens in Packet Tracer (13.4 s).
+
+Link MEM_ADDRs are runtime pointers from the session that saved the file. In
+working donors they resolve to no device at all. Writing invented values into a
+*new* link is what Packet Tracer rejects; leaving the fields out is fine.
+
+`_ensure_link` no longer writes them on a newly created link, and the
+infrastructure-only restriction on link creation is gone.
+
+The repo's own workspace validator had to be corrected too: it required
+`FROM_DEVICE_MEM_ADDR` and `TO_DEVICE_MEM_ADDR` on every link and so rejected
+files Packet Tracer accepts. It now only objects to a reference present on one
+end and missing on the other.
+
+Baseline holds after the change: 5 generated, **5 opened**, 2 donor-limited,
+0 unexpected.
+
+### What this opens up
+
+The two remaining gaps are host-capacity limits — a target switch wanting more
+hosts than its donor group has. With host links now creatable, the path is
+duplicating a host and linking it, the same way group duplication already adds
+switches. That is the next step, and it should close `hosts_only` and
+`vlan_uneven` together.
+
+It also means the two changes reverted earlier may be worth retrying, since both
+failed while `_ensure_link` was still inventing MEM_ADDRs — but only with an
+open test, one at a time.

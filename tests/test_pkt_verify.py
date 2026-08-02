@@ -151,3 +151,32 @@ def test_open_report_json_is_explicit_about_proof() -> None:
     assert payload["tier"] == "open"
     assert payload["opened"] is False
     assert payload["elapsed_seconds"] == 12.3
+
+
+def test_new_links_carry_no_invented_memory_addresses(tmp_path: Path) -> None:
+    """Link MEM_ADDRs are runtime pointers; inventing them breaks the file.
+
+    A created host link with those fields omitted opens in Packet Tracer; the
+    same link with values written in does not.
+    """
+    import xml.etree.ElementTree as ET
+
+    from pkt_editor import _ensure_link
+
+    root = ET.fromstring(
+        "<PACKETTRACER5><VERSION>9.0.0.0810</VERSION><DEVICES>"
+        "<DEVICE><ENGINE><NAME>SW1</NAME><TYPE>Switch</TYPE>"
+        "<SAVE_REF_ID>ref-a</SAVE_REF_ID></ENGINE>"
+        "<WORKSPACE><LOGICAL><MEM_ADDR>111</MEM_ADDR></LOGICAL></WORKSPACE></DEVICE>"
+        "<DEVICE><ENGINE><NAME>PC1</NAME><TYPE>Pc</TYPE>"
+        "<SAVE_REF_ID>ref-b</SAVE_REF_ID></ENGINE>"
+        "<WORKSPACE><LOGICAL><MEM_ADDR>222</MEM_ADDR></LOGICAL></WORKSPACE></DEVICE>"
+        "</DEVICES><LINKS/></PACKETTRACER5>"
+    )
+
+    _ensure_link(root, "SW1", "FastEthernet0/1", "PC1", "FastEthernet0", "straight-through")
+
+    cables = root.findall(".//LINKS/LINK/CABLE")
+    assert cables, "a link should have been created"
+    for tag in ("FROM_DEVICE_MEM_ADDR", "TO_DEVICE_MEM_ADDR", "FROM_PORT_MEM_ADDR", "TO_PORT_MEM_ADDR"):
+        assert cables[0].find(tag) is None, f"{tag} must not be invented on a new link"
