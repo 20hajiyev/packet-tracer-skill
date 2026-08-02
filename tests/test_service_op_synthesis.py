@@ -140,7 +140,9 @@ def test_capabilities_are_read_from_configuration_not_file_names() -> None:
         ]
     )
 
-    assert config_capability_tags(switch_config) == {"telnet", "management_vlan"}
+    # `interface Vlan99` is also VLAN evidence, which is correct -- the point
+    # here is that both management capabilities are found from config alone.
+    assert {"telnet", "management_vlan"} <= config_capability_tags(switch_config)
 
 
 def test_configuration_evidence_is_specific() -> None:
@@ -178,3 +180,36 @@ def test_hosts_are_put_on_the_dhcp_pool() -> None:
 
     dhcp_hosts = {op["device"] for op in plan.end_device_ops if op["op"] == "set_host_dhcp"}
     assert dhcp_hosts == {"PC1", "SRV1"}
+
+
+def test_extra_routers_are_planned_rather_than_dropped() -> None:
+    """"2 router" produced one router, and the file opened, so nothing complained.
+
+    Routers were matched singularly -- `next(...)` on both the target and donor
+    side -- and `standalone_targets` excludes Router by kind, so every router
+    past the first belonged to no code path at all.
+    """
+    from intent_parser import parse_intent
+
+    from generate_pkt import _seed_devices_from_plan
+
+    seeded = _seed_devices_from_plan(parse_intent("2 router 2 switch 4 pc qur"))
+    routers = [device for device in seeded if device["type"] == "Router"]
+
+    assert [device["name"] for device in routers] == ["R1", "R2"]
+
+
+def test_configuration_evidence_covers_the_measured_blind_spots() -> None:
+    """Both directions of the filename error were measured over 292 samples.
+
+    36 labs configure RIP and none were credited; 22 configure a static route
+    and none were credited; all three `hsrp` credits were filename coincidences.
+    """
+    from sample_catalog import CONFIG_EVIDENCE_PATTERNS, config_capability_tags
+
+    for capability in ("rip", "static_route", "acl", "nat", "hsrp", "ospf"):
+        assert capability in CONFIG_EVIDENCE_PATTERNS
+
+    assert "static_route" in config_capability_tags("ip route 0.0.0.0 0.0.0.0 10.0.0.1")
+    assert "hsrp" in config_capability_tags("standby 1 ip 192.168.1.254")
+    assert "hsrp" not in config_capability_tags("interface GigabitEthernet0/0")

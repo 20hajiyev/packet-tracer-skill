@@ -113,6 +113,17 @@ CORPUS: tuple[CorpusCase, ...] = (
         note="management SVI plus telnet credentials on every switch",
     ),
     CorpusCase(
+        "two_routers",
+        "2 router 2 switch 4 pc qur",
+        # The device name is the proof: R2 exists only if the second router was
+        # actually created. This silently produced one router for a long time --
+        # the file opened, so nothing reported the loss. The closing tag is
+        # matched without the opening one because Packet Tracer writes
+        # `<NAME translate="true">`.
+        requires_content=(">R2</NAME>",),
+        note="more routers than the donor has; needs router duplication",
+    ),
+    CorpusCase(
         "wireless_home",
         "1 wireless router 2 laptop qur",
         expects="donor_limited",

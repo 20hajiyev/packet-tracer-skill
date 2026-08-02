@@ -941,3 +941,51 @@ what was actually measured: wireless blocked, end-device allowed.
 
 Corpus holds at **11/13 generated, 11 opened, 0 unexpected**, and DHCP labs now
 hand addresses to their hosts instead of offering a pool nobody asks from.
+
+
+## Two theories, stated first and then measured
+
+### T1: the corpus is biased toward what already works
+
+The 13 cases were written by the same process that fixed the bugs, so they
+cannot be evidence that the skill handles what users actually type. Tested
+against ten out-of-corpus Azerbaijani prompts of the kind a student would write.
+
+Eight of ten generated. But generation is not correctness, so the topologies
+were compared against what was asked -- and **`2 router 2 switch 4 pc` produced
+one router**. The file opened, the structural check passed, nothing reported the
+loss.
+
+Routers were matched singularly, `next(...)` on both the target and the donor
+side, and `standalone_targets` excludes `Router` by kind. Every router past the
+first belonged to no code path at all. They are now mapped to donor routers in
+order, and the shortfall is cloned with `duplicate_device` -- already verified
+for bare infrastructure devices. A two-router lab opens in 13.5s, and
+`two_routers` is now a corpus case pinned by device name.
+
+The two remaining refusals are honest: `router switch pc qur` names no counts,
+and `bir sebeke lazimdir 10 kompyuter ucun` names no switch.
+
+### T2: filename-based capability detection is pervasive, not a one-off
+
+Confirmed. Of 116 capabilities, **91 rested on the file path alone**. Measured
+across all 292 bundled samples:
+
+| capability | credited by name | actually configured | missed entirely |
+|---|---|---|---|
+| rip | 5 | 1 | **36** |
+| static_route | 0 | 0 | **22** |
+| acl | 5 | 1 | **18** |
+| nat | 6 | 4 | 7 |
+| hsrp | 3 | **0** | 0 |
+
+Both directions are wrong: every `hsrp` credit was a filename coincidence, and
+36 labs that configure RIP were invisible. Config evidence now covers 30+
+capabilities, added to the filename tags rather than replacing them -- a
+capability the config proves is never wrong to record, whereas withdrawing
+credit is a larger change that needs its own measurement.
+
+Catalogue gains: vlan 6 → 227, rip 6 → 42, dhcp_pool 23 → 53, static_route
+0 → 22, access_port 2 → 21, acl 6 → 24, trunk 0 → 16.
+
+**Corpus: 12/14 generated, 12 opened, 0 unexpected.**

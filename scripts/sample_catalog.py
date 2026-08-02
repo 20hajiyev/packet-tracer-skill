@@ -397,9 +397,57 @@ def _normalized_counts_for_item(item: dict[str, Any]) -> dict[str, int]:
 # coverage".
 #
 # Only capabilities whose evidence is unambiguous in config text belong here.
+#
+# Measured across all 292 bundled samples, filename credit against real config:
+#
+#   capability      name-only   correct   missed
+#   rip                     5         1       36
+#   static_route            0         0       22
+#   acl                     5         1       18
+#   nat                     6         4        7
+#   eigrp                   2         8        4
+#   hsrp                    3         0        0
+#
+# Both directions are wrong. Every `hsrp` credit was a filename coincidence, and
+# 36 labs that configure RIP were invisible. Config evidence is *added* to the
+# filename tags rather than replacing them: withdrawing credit is a larger
+# change and needs its own measurement, but a capability the config proves is
+# never wrong to record.
 CONFIG_EVIDENCE_PATTERNS: dict[str, tuple[str, ...]] = {
     "telnet": (r"^\s*line vty\b", r"transport input (?:all|telnet)"),
     "management_vlan": (r"^\s*interface vlan\s*\d+", r"^\s*ip default-gateway\b"),
+    "ospf": (r"^\s*router ospf\b",),
+    "ospfv2": (r"^\s*router ospf\b",),
+    "eigrp": (r"^\s*router eigrp\b",),
+    "eigrp_ipv4": (r"^\s*router eigrp\b",),
+    "rip": (r"^\s*router rip\b",),
+    "ripv2": (r"^\s*router rip\b.*|^\s*version 2\b",),
+    "bgp": (r"^\s*router bgp\b",),
+    "nat": (r"^\s*ip nat\b",),
+    "pat": (r"^\s*ip nat inside source list .*overload",),
+    "static_route": (r"^\s*ip route\b",),
+    "default_route": (r"^\s*ip route 0\.0\.0\.0 0\.0\.0\.0",),
+    "acl": (r"^\s*(?:ip )?access-list\b",),
+    "port_security": (r"switchport port-security",),
+    "etherchannel": (r"^\s*channel-group\b",),
+    "hsrp": (r"^\s*standby \d+ ip\b",),
+    "vtp": (r"^\s*vtp (?:mode|domain)\b",),
+    "stp": (r"^\s*spanning-tree mode\b",),
+    "dhcp_relay": (r"^\s*ip helper-address\b",),
+    "dhcp_pool": (r"^\s*ip dhcp pool\b",),
+    "router_dhcp": (r"^\s*ip dhcp pool\b",),
+    "trunk": (r"switchport mode trunk",),
+    "access_port": (r"switchport mode access",),
+    "router_on_a_stick": (r"^\s*encapsulation dot1q\b",),
+    "ssh_ios": (r"^\s*ip ssh\b", r"transport input ssh"),
+    "ntp_ios": (r"^\s*ntp server\b",),
+    "syslog_ios": (r"^\s*logging (?:host|\d+\.)",),
+    "snmp": (r"^\s*snmp-server\b",),
+    "lldp": (r"^\s*lldp run\b",),
+    "dhcp_snooping": (r"^\s*ip dhcp snooping\b",),
+    "dai": (r"^\s*ip arp inspection\b",),
+    "dot1x": (r"^\s*dot1x\b",),
+    "vlan": (r"^\s*interface vlan\s*\d+", r"switchport access vlan"),
 }
 
 

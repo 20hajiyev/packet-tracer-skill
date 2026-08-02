@@ -3285,17 +3285,53 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
             }
         )
 
-    target_router = next((device for device in blueprint.get("devices", []) if _device_kind(device) == "Router"), None)
-    donor_router = next((device for device in donor_devices if device["type"] == "Router"), None)
-    if target_router is not None:
-        if donor_router is None:
+    # Routers were matched one-to-one and singular: `next(...)` on both sides.
+    # A prompt asking for two routers produced one, the file opened, and nothing
+    # reported the loss -- the second router belonged to no path at all, because
+    # `standalone_targets` below excludes Router by kind.
+    target_routers = [device for device in blueprint.get("devices", []) if _device_kind(device) == "Router"]
+    donor_routers = [device for device in donor_devices if device["type"] == "Router"]
+    pending_router_clones: list[dict[str, object]] = []
+    if target_routers:
+        if not donor_routers:
             gap = "Compatibility donor does not contain a router prototype for prompt generation."
             if gap not in adapted_plan.blocking_gaps:
                 adapted_plan.blocking_gaps.append(gap)
             raise PlanningError("Prompt plan is incomplete; generation was skipped.", adapted_plan)
-        keep_name(str(donor_router["name"]), str(target_router["name"]), int(target_router.get("x", 0)), int(target_router.get("y", 0)))
-    elif donor_router is not None:
-        park_device(str(donor_router["name"]))
+        for index, target_router in enumerate(target_routers):
+            if index < len(donor_routers):
+                donor_router = donor_routers[index]
+                keep_name(
+                    str(donor_router["name"]),
+                    str(target_router["name"]),
+                    int(target_router.get("x", 0)),
+                    int(target_router.get("y", 0)),
+                )
+                continue
+            # More routers than the donor has. Clone one, the same way a switch
+            # shortfall is met -- `duplicate_device` on a bare infrastructure
+            # device is already verified against a real open. Emitted after the
+            # rename pass, from the source's final name, because duplicating
+            # first and renaming the copy produces a file Packet Tracer refuses.
+            if not _group_duplication_enabled():
+                gap = (
+                    f"Compatibility donor has {len(donor_routers)} router(s); "
+                    f"{len(target_routers)} were requested, and router duplication is disabled."
+                )
+                if gap not in adapted_plan.blocking_gaps:
+                    adapted_plan.blocking_gaps.append(gap)
+                raise PlanningError("Prompt plan is incomplete; generation was skipped.", adapted_plan)
+            pending_router_clones.append(
+                {
+                    "source": str(donor_routers[0]["name"]),
+                    "new_name": str(target_router["name"]),
+                    "x": int(target_router.get("x", 0)),
+                    "y": int(target_router.get("y", 0)),
+                }
+            )
+    else:
+        for donor_router in donor_routers:
+            park_device(str(donor_router["name"]))
 
     grouped_donor_names = {
         str(group["switch"]["name"])
@@ -3749,6 +3785,23 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
                     "media": str(link.get("media", "straight-through")),
                 }
             )
+
+    for clone in locals().get("pending_router_clones", []) or []:
+        source_final = rename_map.get(str(clone["source"]), str(clone["source"]))
+        if source_final in parked_set:
+            continue
+        # `duplicate_device` copies the device alone, with no attached hosts --
+        # which is exactly right for a router. Its links come from the normal
+        # link pass, like any other device in the blueprint.
+        adapted_plan.edit_operations.append(
+            {
+                "op": "duplicate_device",
+                "device": source_final,
+                "new_name": str(clone["new_name"]),
+                "x": int(clone["x"]),
+                "y": int(clone["y"]),
+            }
+        )
 
     for clone in pending_host_clones:
         source_final = rename_map.get(str(clone["source"]), str(clone["source"]))
