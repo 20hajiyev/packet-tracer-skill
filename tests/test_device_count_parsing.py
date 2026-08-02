@@ -94,3 +94,53 @@ def test_real_requests_are_not_caught_by_the_no_signal_check(prompt: str) -> Non
     plan = parse_intent(prompt)
 
     assert not any("does not describe a topology" in gap for gap in plan.blocking_gaps)
+
+
+def test_english_plurals_are_counted_for_every_device_type() -> None:
+    """Plurals were listed by hand, so the table disagreed with itself.
+
+    `PC` carried `computers` and `pcs`; `Switch` and `Router` had no English
+    plural at all. The switches vanished silently and the user got a topology
+    without them -- the worst kind of parse failure, because it looks like it
+    worked.
+    """
+    counts = parse_intent("2 switches 1 router 4 computers").device_counts
+
+    assert counts == {"Router": 1, "Switch": 2, "PC": 4}
+
+
+def test_spelled_out_counts_are_understood() -> None:
+    """Every downstream extractor matches digits, so words parsed as nothing."""
+    assert parse_intent("bir router iki switch uc komputer qur").device_counts == {
+        "Router": 1,
+        "Switch": 2,
+        "PC": 3,
+    }
+    assert parse_intent("three routers two switches ten computers").device_counts == {
+        "Router": 3,
+        "Switch": 2,
+        "PC": 10,
+    }
+
+
+def test_prepositional_on_is_never_read_as_a_count() -> None:
+    """`on` is ten in Azerbaijani and a preposition in English.
+
+    It sits directly in front of the words that identify a device, so no
+    lookahead separates the readings. Treating it as a count silently ordered
+    ten routers; it is excluded from the number-word table for that reason.
+    """
+    assert parse_intent("1 router 1 switch 3 komputer qur dhcp on router").device_counts == {
+        "Router": 1,
+        "Switch": 1,
+        "PC": 3,
+    }
+    assert parse_intent("enable telnet on switch 2 switch 1 router 4 pc").device_counts == {
+        "Router": 1,
+        "Switch": 2,
+        "PC": 4,
+    }
+
+
+def test_komutator_is_a_switch() -> None:
+    assert parse_intent("5 kompyuter 1 komutator qur").device_counts == {"Switch": 1, "PC": 5}

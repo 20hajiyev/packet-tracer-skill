@@ -802,3 +802,34 @@ Python 3.9+ syntax throughout, standard library only, `pytest` for tests alone.
 Node is needed only for the npm wrapper. Install discovery already covers
 Windows, macOS and Linux. Packet Tracer is needed to *verify* opens and, once,
 to supply a donor -- after that `donor_cache` serves generation on its own.
+
+
+## Prompt parsing: three silent misreads
+
+Fuzzing the parser over ordinary phrasings found three defects, all of which
+produced a *wrong topology* rather than an error.
+
+| Prompt | Was | Now |
+|---|---|---|
+| `2 switches 1 router 4 computers` | Router 1, PC 4 -- switches lost | Router 1, Switch 2, PC 4 |
+| `bir router iki switch uc komputer qur` | nothing at all | Router 1, Switch 2, PC 3 |
+| `5 kompyuter 1 komutator qur` | PC 5 -- switch lost | Switch 1, PC 5 |
+
+Plural forms had been listed by hand, so the table disagreed with itself: `PC`
+carried `computers` and `pcs` while `Switch` and `Router` had no English plural
+at all. Aliases now match a plural suffix rather than enumerating one, so every
+device type is on the same footing.
+
+Spelled-out counts were not handled anywhere, and every downstream extractor
+matches `\d+` -- so a perfectly ordinary Azerbaijani sentence parsed as an empty
+topology. They are converted once during normalisation rather than in each
+extractor, keeping one model of what a count is.
+
+### One number word had to be left out
+
+`on` is ten in Azerbaijani and a preposition in English, and it sits directly in
+front of the words that identify a device: `dhcp on router`, `telnet on switch`.
+Requiring a device alias after the number word does not separate the readings --
+`router` is a device alias. Reading it as a count silently ordered ten routers,
+so it is excluded. `10 komputer` still works; a misparse would not have been
+noticed until Packet Tracer opened the wrong lab.

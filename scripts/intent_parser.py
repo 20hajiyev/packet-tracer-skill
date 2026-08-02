@@ -5,6 +5,7 @@ import os
 import re
 import unicodedata
 from dataclasses import asdict, dataclass, field
+from functools import lru_cache
 
 
 CAPABILITY_PATTERNS = {
@@ -163,7 +164,7 @@ DEVICE_SYNONYMS = {
 
 NATURAL_DEVICE_ALIASES = {
     "Router": ["router", "routerler", "routerlerin"],
-    "Switch": ["switch", "switchler", "switchlerin"],
+    "Switch": ["switch", "switchler", "switchlerin", "komutator", "kommutator"],
     "PC": ["pc", "pcs", "computer", "computers", "komputer", "komputerler", "kompyuter", "kompyuterler"],
     "Server": ["server", "serverler"],
     "WirelessRouter": ["wireless router", "wireless-router", "wirelessrouter", "home router", "home-router", "wrt"],
@@ -290,7 +291,51 @@ def _normalize_prompt(prompt: str) -> str:
     text = text.lower()
     text = re.sub(r"[^a-z0-9./\\,:_-]+", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
-    return text
+    return _digits_for_number_words(text)
+
+
+# Written after transliteration, so these are the folded forms: `uc` for uc,
+# `dord` for dord, `bes` for bes, `sekkiz` for sekkiz.
+#
+# `on` -- ten in Azerbaijani -- is deliberately absent. Prompts here mix
+# Azerbaijani and English, where `on` is a preposition sitting in front of the
+# very words that identify a device: `dhcp on router`, `telnet on switch`. No
+# lookahead separates the two readings, and guessing wrong silently orders ten
+# routers instead of one. `10 komputer` still works; a misparse would not be
+# noticed until Packet Tracer opened the wrong lab.
+NUMBER_WORDS = {
+    "bir": 1, "iki": 2, "uc": 3, "dord": 4, "bes": 5,
+    "alti": 6, "yeddi": 7, "sekkiz": 8, "doqquz": 9,
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+}
+
+@lru_cache(maxsize=1)
+def _number_word_pattern() -> re.Pattern[str]:
+    """Match a spelled-out count only when a device word follows it.
+
+    The narrow lookahead is not optional. `on` is ten in Azerbaijani and a
+    preposition in English, so a bare substitution turns `dhcp on router` into
+    `dhcp 10 router` and silently orders ten routers. Requiring a device alias
+    next confines the rewrite to phrases that are actually counts.
+    """
+    words = "|".join(sorted(NUMBER_WORDS, key=len, reverse=True))
+    return re.compile(
+        rf"\b({words})\b(?=\s+(?:dene|eded|tane)?\s*(?:{_any_device_alias_pattern()})\b)"
+    )
+
+
+def _digits_for_number_words(text: str) -> str:
+    """Rewrite spelled-out counts as digits.
+
+    Every count extractor downstream matches `\\d+`, so `bir router iki switch
+    uc komputer` parsed as no devices at all -- a silent empty topology from a
+    perfectly ordinary Azerbaijani phrasing.
+
+    Converting here rather than in each extractor keeps one model of what a
+    count is.
+    """
+    return _number_word_pattern().sub(lambda match: str(NUMBER_WORDS[match.group(1)]), text)
 
 
 @dataclass
@@ -363,14 +408,26 @@ def _normalize_device_type(raw_type: str) -> str:
     return DEVICE_SYNONYMS.get(raw_type.strip().lower(), raw_type.strip())
 
 
+# Plural forms were listed by hand, so the table disagreed with itself: `PC`
+# carried `computers` and `pcs` while `Switch` and `Router` had no English
+# plural at all. `2 switches 1 router 4 computers` therefore parsed as a router
+# and four PCs -- the switches vanished silently, and the user got a topology
+# with none. Matching the suffix instead of enumerating it keeps every device
+# type on the same footing.
+_PLURAL_SUFFIX = r"(?:s|es|ler|lar)?"
+
+
+def _alias_alternation(aliases: list[str]) -> str:
+    """Alternation over aliases, longest first so prefixes lose, plural-tolerant."""
+    ordered = sorted(set(aliases), key=len, reverse=True)
+    return "|".join(re.escape(alias) + _PLURAL_SUFFIX for alias in ordered)
+
+
 def _any_device_alias_pattern() -> str:
     """Alternation over every device alias, longest first so prefixes lose."""
-    aliases = sorted(
-        {alias for alias_list in NATURAL_DEVICE_ALIASES.values() for alias in alias_list},
-        key=len,
-        reverse=True,
+    return _alias_alternation(
+        [alias for alias_list in NATURAL_DEVICE_ALIASES.values() for alias in alias_list]
     )
-    return "|".join(re.escape(alias) for alias in aliases)
 
 
 def _extract_natural_device_counts(normalized_prompt: str) -> dict[str, int]:
@@ -386,7 +443,7 @@ def _extract_natural_device_counts(normalized_prompt: str) -> dict[str, int]:
     counts: dict[str, int] = {}
     any_alias = _any_device_alias_pattern()
     for device_type, aliases in NATURAL_DEVICE_ALIASES.items():
-        alias_pattern = "|".join(re.escape(alias) for alias in aliases)
+        alias_pattern = _alias_alternation(aliases)
         leading = re.compile(
             rf"(?<![,/])\b(\d+)\s*(?:dene|dene?|eded|eded|tane)?\s*(?:{alias_pattern})\b"
         )
