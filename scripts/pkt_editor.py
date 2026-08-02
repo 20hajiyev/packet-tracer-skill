@@ -847,6 +847,25 @@ def _duplicate_device(root: ET.Element, source_name: str, new_name: str, x: int,
                 node.text = str(value)
 
     devices_parent.append(duplicate)
+    _clone_physical_leaf(root, source, duplicate, new_name)
+
+
+def _fresh_guid(seed_text: str, taken: set[str]) -> str:
+    """A deterministic, correctly shaped `{8-4-4-4-12}` GUID not already in use."""
+    attempt = 0
+    while True:
+        digest = hashlib.sha256(f"{seed_text}:{attempt}".encode("utf-8")).hexdigest()
+        # Shape it as a RFC 4122 version-4 GUID: the donor's identifiers all
+        # carry the `4` version nibble and an `8`-`b` variant nibble, so a
+        # hash-shaped id with arbitrary nibbles is not the same kind of value.
+        variant = "89ab"[int(digest[16], 16) % 4]
+        candidate = (
+            "{" + digest[0:8] + "-" + digest[8:12] + "-4" + digest[13:16]
+            + "-" + variant + digest[17:20] + "-" + digest[20:32] + "}"
+        )
+        if candidate not in taken:
+            return candidate
+        attempt += 1
 
 
 def _clone_physical_leaf(root: ET.Element, source: ET.Element, duplicate: ET.Element, new_name: str) -> None:
@@ -870,13 +889,27 @@ def _clone_physical_leaf(root: ET.Element, source: ET.Element, duplicate: ET.Ele
         if parent is None:
             return
         clone_node = copy.deepcopy(node)
-        # A fresh UUID, not a suffix of the original. Workspace validation
-        # matches by substring, so `<original>-1234` made a pruned device look
-        # like it was still present.
-        new_uuid = f"{_stable_ref_seed(new_name + leaf_token):x}"
-        uuid_node = clone_node.find("UUID_STR")
-        if uuid_node is not None:
-            uuid_node.text = new_uuid
+        # Every UUID inside the copied subtree must be fresh, and must keep the
+        # braced `{8-4-4-4-12}` shape Packet Tracer writes. A bare hex id, or a
+        # nested UUID reused from the original, makes Packet Tracer refuse the
+        # file with "File contains corrupted Physical Workspace data".
+        #
+        # The identifier must also not merely extend the original's: workspace
+        # validation matches by substring, so `<original>-1234` made a pruned
+        # device look like it was still present.
+        taken = {
+            existing.findtext("UUID_STR", default="").strip()
+            for existing in root.findall(".//PHYSICALWORKSPACE//NODE")
+        }
+        new_uuid = ""
+        for nested in clone_node.iter("UUID_STR"):
+            replacement = _fresh_guid(new_name + (nested.text or ""), taken)
+            taken.add(replacement)
+            nested.text = replacement
+            if not new_uuid:
+                new_uuid = replacement
+        if not new_uuid:
+            return
         name_node = clone_node.find("NAME")
         if name_node is not None:
             name_node.text = new_name
@@ -884,7 +917,10 @@ def _clone_physical_leaf(root: ET.Element, source: ET.Element, duplicate: ET.Ele
 
         physical_node = duplicate.find("./WORKSPACE/PHYSICAL")
         if physical_node is not None:
-            physical_node.text = ", ".join([*tokens[:-1], new_uuid])
+            # Packet Tracer writes this list with no space after the comma.
+            # A space made the leaf token parse as " {uuid}" and the file was
+            # rejected with "File contains corrupted Physical Workspace data".
+            physical_node.text = ",".join([*tokens[:-1], new_uuid])
         return
 
 

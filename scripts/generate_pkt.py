@@ -2596,6 +2596,18 @@ def _link_may_be_created(left_kind: str, right_kind: str) -> bool:
     return left_kind in INFRASTRUCTURE_LINK_KINDS and right_kind in INFRASTRUCTURE_LINK_KINDS
 
 
+def _group_duplication_enabled() -> bool:
+    """Whether a switch group may be duplicated to exceed the donor's size.
+
+    Off until a duplicated group is verified to open. The mechanism works —
+    duplicating a group at the XML level opens in Packet Tracer — but the
+    generator's version still produces a file Packet Tracer refuses, and this
+    repo treats a file that will not open as worse than an honest refusal.
+    `PACKET_TRACER_GROUP_DUPLICATION=1` enables it for development.
+    """
+    return (os.getenv("PACKET_TRACER_GROUP_DUPLICATION") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _cross_group_borrowing_enabled() -> bool:
     """Whether a target switch may take hosts from another donor switch group.
 
@@ -2889,7 +2901,7 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
     donor_links = inventory_links(donor_root)
     donor_capacity = _donor_capacity(donor_root, donor_groups)
     donor_groups = _align_donor_groups_to_targets(donor_groups, target_groups, donor_devices, donor_links, blueprint)
-    if len(target_groups) > len(donor_groups) and donor_groups:
+    if len(target_groups) > len(donor_groups) and donor_groups and _group_duplication_enabled():
         # The donor caps how many switches exist, not how many the topology may
         # have: duplicating a switch was verified to open in Packet Tracer.
         # Copies are seeded from the richest existing group so the duplicate

@@ -537,6 +537,38 @@ The additions are inert for topologies that already worked — they only fire on
 the shortfall branch, which previously refused outright — and the corpus is
 unchanged at 4 generated, 3 donor-limited, 0 unexpected.
 
-Remaining work is narrow: make the physical leaf clone survive the subsequent
-rename, then re-run `four_switch`. Both `hosts_only` and `vlan_uneven` should
-fall out of the same mechanism, since a duplicated group brings its own hosts.
+### Physical workspace: resolved
+
+The clone's physical leaf now survives the rename, and Packet Tracer stopped
+reporting corrupted workspace data. Three separate defects, each found by
+reading the error Packet Tracer actually gave:
+
+1. `_duplicate_device` never called `_clone_physical_leaf`, so the clone kept
+   pointing at the original's leaf. Renaming the clone then renamed the
+   original's leaf — exactly what `Generated device SW1 physical leaf name is
+   SW4` was reporting.
+2. Nested `UUID_STR` values inside the copied subtree were reused verbatim, and
+   the new identifier was a bare hash rather than a braced GUID. Packet Tracer
+   answered with "File contains corrupted Physical Workspace data".
+3. `WORKSPACE/PHYSICAL` is a comma-separated list written **without a space**
+   after the comma. Joining with `", "` made the leaf token parse as `" {uuid}"`.
+   The identifier also has to be a real version-4 GUID: the donor's all carry
+   the `4` version nibble and an `8`-`b` variant nibble.
+
+After those, the physical workspace validates and the error returns to the
+generic "not compatible with this version".
+
+### Still open
+
+`four_switch` now *generates* — 14 devices, 12 links, structurally clean — but
+the file does not open. The XML-level experiment proved a duplicated group can
+open, so the generator's version differs from it in some way not yet identified.
+
+Group duplication is therefore **off by default**
+(`PACKET_TRACER_GROUP_DUPLICATION=1` enables it). A file that looks generated and
+will not open is worse than an honest refusal, so the corpus stays at 4
+generated, 3 donor-limited, 0 unexpected rather than reporting a fifth success
+that is not one.
+
+The next step is to diff the generator's duplicated group against the hand-built
+XML experiment that opened, since one of them works and the other does not.
