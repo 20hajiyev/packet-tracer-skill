@@ -1366,6 +1366,10 @@ SAFE_OPEN_ALLOWED_MUTATIONS = [
     "device_prune",
     "link_prune",
     "donor_group_reduction",
+    # Verified against a real Packet Tracer open: a duplicated switch with a
+    # fresh identity, joined by a created switch-to-switch link, opens. This is
+    # what lets a topology be larger than its donor.
+    "device_duplicate",
 ]
 SAFE_OPEN_BLOCKED_MUTATIONS = [
     "link_rewrite",
@@ -1569,6 +1573,8 @@ def _operation_category(bucket_name: str, operation: dict[str, object]) -> str:
             return "layout_reposition"
         if op_name == "prune_device":
             return "device_prune"
+        if op_name in {"duplicate_device", "duplicate_group"}:
+            return "device_duplicate"
         if op_name == "set_link":
             return "link_rewrite"
         if op_name == "remove_link":
@@ -2639,6 +2645,13 @@ def _spare_strategy() -> str:
     return raw if raw in SPARE_STRATEGIES else DEFAULT_SPARE_STRATEGY
 
 
+def _device_kind_by_name(group: dict[str, object], host_name: str) -> str:
+    for member in group.get("members", []):
+        if str(member.get("name")) == host_name:
+            return _device_kind(member)
+    return "PC"
+
+
 def _resolve_port_conflicts(
     adapted_plan: IntentPlan,
     *,
@@ -2876,6 +2889,70 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
     donor_links = inventory_links(donor_root)
     donor_capacity = _donor_capacity(donor_root, donor_groups)
     donor_groups = _align_donor_groups_to_targets(donor_groups, target_groups, donor_devices, donor_links, blueprint)
+    if len(target_groups) > len(donor_groups) and donor_groups:
+        # The donor caps how many switches exist, not how many the topology may
+        # have: duplicating a switch was verified to open in Packet Tracer.
+        # Copies are seeded from the richest existing group so the duplicate
+        # arrives with a usable port layout.
+        # `donor_groups` grows inside this loop, so the base length must be
+        # captured first or the target index walks off the end.
+        base_group_count = len(donor_groups)
+        shortfall = len(target_groups) - base_group_count
+        seed_group = max(donor_groups, key=lambda group: len(group.get("members", [])))
+        seed_name = str(seed_group["switch"]["name"])
+        seed_hosts = [str(member["name"]) for member in seed_group.get("members", [])]
+        for index in range(shortfall):
+            duplicate_name = f"{seed_name}-COPY{index + 1}"
+            target_switch = target_groups[base_group_count + index]["switch"]
+            adapted_plan.edit_operations.append(
+                {
+                    "op": "duplicate_group",
+                    "device": seed_name,
+                    "new_name": duplicate_name,
+                    "hosts": seed_hosts,
+                    "x": int(target_switch.get("x", 0)),
+                    "y": int(target_switch.get("y", 0)),
+                }
+            )
+            cloned_members = [
+                {"name": f"{duplicate_name}-H{index + 1}", "type": _device_kind_by_name(seed_group, host)}
+                for index, host in enumerate(seed_hosts)
+            ]
+            # The clone's links exist in the output but not in `donor_links`,
+            # which was read before duplication. Register them so the rename and
+            # link-reuse logic downstream sees the copies as donor-provided —
+            # otherwise it asks to *create* a host link, which is refused.
+            for host in seed_hosts:
+                original = next(
+                    (
+                        link
+                        for link in donor_links
+                        if {str(link.get("from") or ""), str(link.get("to") or "")} == {seed_name, host}
+                    ),
+                    None,
+                )
+                if original is None:
+                    continue
+                cloned = dict(original)
+                cloned["from"] = duplicate_name
+                cloned["to"] = f"{duplicate_name}-H{seed_hosts.index(host) + 1}"
+                donor_links.append(cloned)
+            members_by_type: dict[str, list[dict[str, object]]] = {}
+            for member in cloned_members:
+                members_by_type.setdefault(str(member["type"]), []).append(member)
+            donor_groups.append(
+                {
+                    "group_name": duplicate_name,
+                    "switch": {"name": duplicate_name, "type": "Switch"},
+                    "members": cloned_members,
+                    "members_by_type": members_by_type,
+                }
+            )
+        adapted_plan.assumptions_used.append(
+            f"Duplicated {seed_name} {shortfall} time(s): the donor has "
+            f"{base_group_count} switch group(s) and the topology needs {len(target_groups)}."
+        )
+
     if len(target_groups) > len(donor_groups):
         gap = (
             f"Donor {Path(compat_donor).name} has {len(donor_groups)} switch group(s); "

@@ -10,6 +10,7 @@ from functools import lru_cache
 
 from intent_parser import IntentPlan
 from packet_tracer_env import resolve_sample_path
+from sample_catalog import normalize_device_type
 from pkt_codec import decode_pkt_auto, decode_pkt_modern, encode_pkt_modern, parse_pkt_xml, serialize_pkt_xml
 from pkt_transformer import _device_type, _port_address_for_name, apply_cable_type, apply_host_ip, load_sample_root
 
@@ -780,6 +781,231 @@ def _remove_runtime_references(root: ET.Element, device: ET.Element) -> None:
                     parent.remove(child)
                     continue
                 stack.append(child)
+
+
+DUPLICABLE_DEVICE_TYPES = {"Router", "Switch", "MultiLayerSwitch"}
+
+
+def _duplicate_device(root: ET.Element, source_name: str, new_name: str, x: int, y: int) -> None:
+    """Copy an infrastructure device, giving the copy a fresh identity.
+
+    Donor-prune can only reuse what the donor contains, so a four-switch request
+    against a three-switch donor was impossible. Duplicating a switch removes
+    that cap. Verified against a real Packet Tracer open: a duplicated switch
+    with a fresh `SAVE_REF_ID`, `MEM_ADDR`, name and position, joined by a
+    created switch-to-switch link, opens.
+
+    Restricted to infrastructure devices on purpose. Hosts cannot take a created
+    connection (see `_link_may_be_created`), so a duplicated host would have
+    nothing valid to attach to.
+    """
+    source = _find_device(root, source_name)
+    if source is None or _find_device(root, new_name) is not None:
+        return
+    device_type = normalize_device_type(source.findtext("./ENGINE/TYPE", default=""))
+    if device_type not in DUPLICABLE_DEVICE_TYPES:
+        return
+
+    devices_parent = _find_parent_of_node(root, source)
+    if devices_parent is None:
+        return
+
+    used_refs = {
+        device.findtext("./ENGINE/SAVE_REF_ID", default="")
+        for device in root.findall(".//DEVICES/DEVICE")
+    }
+    used_mems: list[int] = []
+    for device in root.findall(".//DEVICES/DEVICE"):
+        logical = device.find("./WORKSPACE/LOGICAL")
+        if logical is None:
+            continue
+        try:
+            used_mems.append(int(logical.findtext("MEM_ADDR", default="0") or 0))
+        except ValueError:
+            continue
+
+    duplicate = copy.deepcopy(source)
+    name_node = duplicate.find("./ENGINE/NAME")
+    if name_node is not None:
+        name_node.text = new_name
+
+    ref_node = duplicate.find("./ENGINE/SAVE_REF_ID")
+    if ref_node is not None:
+        candidate = f"save-ref-id:{_stable_ref_seed(new_name)}"
+        while candidate in used_refs:
+            candidate = f"save-ref-id:{_stable_ref_seed(new_name + candidate)}"
+        ref_node.text = candidate
+
+    logical = duplicate.find("./WORKSPACE/LOGICAL")
+    if logical is not None:
+        mem_node = logical.find("MEM_ADDR")
+        if mem_node is not None and used_mems:
+            mem_node.text = str(max(used_mems) + 4096)
+        for tag, value in (("X", x), ("Y", y)):
+            node = logical.find(tag)
+            if node is not None:
+                node.text = str(value)
+
+    devices_parent.append(duplicate)
+
+
+def _clone_physical_leaf(root: ET.Element, source: ET.Element, duplicate: ET.Element, new_name: str) -> None:
+    """Give a duplicated device its own node in the physical workspace.
+
+    A device lives twice: in `DEVICES` and as a leaf in `PHYSICALWORKSPACE`,
+    joined by the UUID path in `WORKSPACE/PHYSICAL`. Copying only the logical
+    half left the clone pointing at the original's leaf, and workspace
+    validation then reported "Generated device SW1 physical leaf name is SW4".
+    """
+    physical_path = source.findtext("./WORKSPACE/PHYSICAL", default="")
+    tokens = [token.strip() for token in physical_path.split(",") if token.strip()]
+    if not tokens:
+        return
+    leaf_token = tokens[-1]
+
+    for node in root.findall(".//PHYSICALWORKSPACE//NODE"):
+        if node.findtext("UUID_STR", default="").strip() != leaf_token:
+            continue
+        parent = _find_parent_of_node(root, node)
+        if parent is None:
+            return
+        clone_node = copy.deepcopy(node)
+        # A fresh UUID, not a suffix of the original. Workspace validation
+        # matches by substring, so `<original>-1234` made a pruned device look
+        # like it was still present.
+        new_uuid = f"{_stable_ref_seed(new_name + leaf_token):x}"
+        uuid_node = clone_node.find("UUID_STR")
+        if uuid_node is not None:
+            uuid_node.text = new_uuid
+        name_node = clone_node.find("NAME")
+        if name_node is not None:
+            name_node.text = new_name
+        parent.append(clone_node)
+
+        physical_node = duplicate.find("./WORKSPACE/PHYSICAL")
+        if physical_node is not None:
+            physical_node.text = ", ".join([*tokens[:-1], new_uuid])
+        return
+
+
+def _duplicate_group(
+    root: ET.Element,
+    switch_name: str,
+    new_switch_name: str,
+    host_names: list[str],
+    x: int,
+    y: int,
+) -> None:
+    """Copy a switch together with its hosts and the links between them.
+
+    Duplicating the switch alone leaves a group with no hosts, so a request for
+    more switches than the donor has still failed on host capacity. Copying the
+    whole working unit — switch, its hosts, and the donor links joining them —
+    was verified to open in Packet Tracer.
+
+    The distinction that matters: replicating an arrangement the donor already
+    has is safe, while *moving* a host onto a different switch is not, because
+    that needs a created host connection Packet Tracer rejects.
+    """
+    source = _find_device(root, switch_name)
+    if source is None or _find_device(root, new_switch_name) is not None:
+        return
+
+    _duplicate_device(root, switch_name, new_switch_name, x, y)
+    clone = _find_device(root, new_switch_name)
+    if clone is None:
+        return
+
+    source_ref = source.findtext("./ENGINE/SAVE_REF_ID", default="")
+    clone_ref = clone.findtext("./ENGINE/SAVE_REF_ID", default="")
+    links_parent = root.find(".//LINKS")
+    if links_parent is None:
+        return
+
+    for offset, host_name in enumerate(host_names):
+        host = _find_device(root, host_name)
+        if host is None:
+            continue
+        # Do not embed the source host's name: workspace validation matches by
+        # substring, so `SW-COPY1-Admin` read as the pruned `Admin` still present.
+        new_host_name = f"{new_switch_name}-H{offset + 1}"
+        _duplicate_host_for_group(root, host_name, new_host_name, x + offset * 90, y + 140)
+        new_host = _find_device(root, new_host_name)
+        if new_host is None:
+            continue
+        template = _find_link_between_refs(root, source_ref, host.findtext("./ENGINE/SAVE_REF_ID", default=""))
+        if template is None:
+            continue
+        duplicate_link = copy.deepcopy(template)
+        cable = duplicate_link.find("./CABLE")
+        if cable is None:
+            continue
+        host_ref = new_host.findtext("./ENGINE/SAVE_REF_ID", default="")
+        if cable.findtext("FROM", default="") == source_ref:
+            cable.find("FROM").text = clone_ref
+            cable.find("TO").text = host_ref
+        else:
+            cable.find("FROM").text = host_ref
+            cable.find("TO").text = clone_ref
+        links_parent.append(duplicate_link)
+
+
+def _duplicate_host_for_group(root: ET.Element, source_name: str, new_name: str, x: int, y: int) -> None:
+    """Clone a host device. Only valid as part of `_duplicate_group`."""
+    source = _find_device(root, source_name)
+    if source is None or _find_device(root, new_name) is not None:
+        return
+    devices_parent = _find_parent_of_node(root, source)
+    if devices_parent is None:
+        return
+
+    used_refs = {d.findtext("./ENGINE/SAVE_REF_ID", default="") for d in root.findall(".//DEVICES/DEVICE")}
+    mems: list[int] = []
+    for device in root.findall(".//DEVICES/DEVICE"):
+        logical = device.find("./WORKSPACE/LOGICAL")
+        if logical is None:
+            continue
+        try:
+            mems.append(int(logical.findtext("MEM_ADDR", default="0") or 0))
+        except ValueError:
+            continue
+
+    duplicate = copy.deepcopy(source)
+    duplicate.find("./ENGINE/NAME").text = new_name
+    ref_node = duplicate.find("./ENGINE/SAVE_REF_ID")
+    if ref_node is not None:
+        candidate = f"save-ref-id:{_stable_ref_seed(new_name)}"
+        while candidate in used_refs:
+            candidate = f"save-ref-id:{_stable_ref_seed(new_name + candidate)}"
+        ref_node.text = candidate
+    logical = duplicate.find("./WORKSPACE/LOGICAL")
+    if logical is not None:
+        mem_node = logical.find("MEM_ADDR")
+        if mem_node is not None and mems:
+            mem_node.text = str(max(mems) + 4096)
+        for tag, value in (("X", x), ("Y", y)):
+            node = logical.find(tag)
+            if node is not None:
+                node.text = str(value)
+    devices_parent.append(duplicate)
+    _clone_physical_leaf(root, source, duplicate, new_name)
+
+
+def _find_link_between_refs(root: ET.Element, left_ref: str, right_ref: str) -> ET.Element | None:
+    for link in root.findall(".//LINKS/LINK"):
+        cable = link.find("./CABLE")
+        if cable is None:
+            continue
+        ends = {cable.findtext("FROM", default=""), cable.findtext("TO", default="")}
+        if ends == {left_ref, right_ref}:
+            return link
+    return None
+
+
+def _stable_ref_seed(text: str) -> int:
+    """A deterministic 63-bit id, so the same plan yields the same file."""
+    digest = hashlib.sha256(text.encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], "big") >> 1
 
 
 def _prune_device(root: ET.Element, device_name: str) -> None:
@@ -1660,6 +1886,25 @@ def apply_plan_operations(root: ET.Element, plan: IntentPlan) -> ET.Element:
         if operation["op"] == "add_acl_rule" and operation.get("acl_name") in acl_device_map:
             operation["device"] = acl_device_map[str(operation["acl_name"])]
     for operation in plan.edit_operations:
+        if operation["op"] == "duplicate_group":
+            _duplicate_group(
+                updated,
+                str(operation["device"]),
+                str(operation["new_name"]),
+                [str(name) for name in operation.get("hosts", [])],
+                int(operation.get("x", 0)),
+                int(operation.get("y", 0)),
+            )
+            continue
+        if operation["op"] == "duplicate_device":
+            _duplicate_device(
+                updated,
+                str(operation["device"]),
+                str(operation["new_name"]),
+                int(operation.get("x", 0)),
+                int(operation.get("y", 0)),
+            )
+            continue
         if operation["op"] == "prune_device":
             _prune_device(updated, str(operation["device"]))
             continue

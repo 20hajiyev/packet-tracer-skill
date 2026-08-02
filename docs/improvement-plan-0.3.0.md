@@ -500,3 +500,43 @@ Still unexplained is *why* Packet Tracer treats host connections differently.
 The link XML written for a created host link is structurally the same as for a
 created switch link, and the stale `FROM_DEVICE_MEM_ADDR` values are mismatched
 in working files too, so that is not the discriminator.
+
+
+---
+
+## Verified: the donor does not cap topology size
+
+Two experiments at the XML level, each confirmed by a real Packet Tracer open:
+
+| Experiment | Result |
+|---|---|
+| Duplicate a switch (fresh `SAVE_REF_ID`, `MEM_ADDR`, name, position) + a created switch-to-switch link | **opens**, 16.7 s |
+| Duplicate a whole group: switch + 4 hosts + the donor links joining them | **opens**, 16.5 s |
+
+Together with the earlier finding on created links, a consistent rule emerges:
+
+> Packet Tracer accepts structures that **replicate** an arrangement the donor
+> already has, and rejects **novel host attachments**.
+
+| Operation | Safe |
+|---|---|
+| copy a working unit (switch + hosts + their links) | yes |
+| create a link between infrastructure devices | yes |
+| move a host onto a different switch | no |
+| create a link to a host | no |
+
+### Implementation status
+
+`duplicate_device` and `duplicate_group` exist in `pkt_editor` and are emitted by
+the planner when the topology needs more switch groups than the donor has. The
+end-to-end path is **not finished**: after cloning, workspace validation reports
+`Generated device SW1 physical leaf name is SW4`, so the rename step and the
+cloned physical leaf are still not agreeing.
+
+The additions are inert for topologies that already worked — they only fire on
+the shortfall branch, which previously refused outright — and the corpus is
+unchanged at 4 generated, 3 donor-limited, 0 unexpected.
+
+Remaining work is narrow: make the physical leaf clone survive the subsequent
+rename, then re-run `four_switch`. Both `hosts_only` and `vlan_uneven` should
+fall out of the same mechanism, since a duplicated group brings its own hosts.

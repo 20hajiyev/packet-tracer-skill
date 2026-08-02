@@ -712,11 +712,15 @@ def test_build_donor_prune_plan_blocks_new_link_pairs_in_open_first_mode() -> No
         # The refusal must name a donor-shaped limitation, whichever one bites
         # first: a link the donor lacks, wiring it cannot reuse, or not enough
         # switch groups to build the requested topology from.
+        # The refusal must name a donor-shaped limitation, whichever one bites
+        # first: a link the donor lacks, wiring it cannot reuse, not enough
+        # switch groups, or not enough hosts on the matched switch.
         assert any(
             "cannot create new donor link pair" in gap
             or "requires donor link reuse" in gap
+            or "cannot be built" in gap
             or "switch group(s); requested" in gap
-            or "available for" in gap
+            or "device(s);" in gap
             for gap in exc.plan.blocking_gaps
         ), exc.plan.blocking_gaps
     else:
