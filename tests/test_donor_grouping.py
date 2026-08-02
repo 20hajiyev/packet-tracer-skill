@@ -182,3 +182,22 @@ def test_cross_group_borrowing_is_off_by_default(monkeypatch) -> None:
 
     monkeypatch.setenv("PACKET_TRACER_CROSS_GROUP_BORROW", "1")
     assert _cross_group_borrowing_enabled()
+
+
+def test_only_infrastructure_links_may_be_created() -> None:
+    """Measured: a created host connection makes Packet Tracer reject the file.
+
+    Every generated file whose only created links were `Switch <-> Switch`
+    opened; every file containing a created `Pc <-> Switch` link was rejected as
+    "not compatible with this version".
+    """
+    from generate_pkt import _link_may_be_created
+
+    assert _link_may_be_created("Switch", "Switch")
+    assert _link_may_be_created("Router", "Switch")
+    assert _link_may_be_created("MultiLayerSwitch", "Switch")
+
+    assert not _link_may_be_created("PC", "Switch")
+    assert not _link_may_be_created("Switch", "PC")
+    assert not _link_may_be_created("Server", "Switch")
+    assert not _link_may_be_created("", "Switch")

@@ -2575,6 +2575,21 @@ def _unexpected_workspace_issues(donor_root: ET.Element, generated_root: ET.Elem
     return [issue for issue in generated_result.blocking_issues if issue not in donor_issue_set]
 
 
+INFRASTRUCTURE_LINK_KINDS = {"Router", "Switch", "MultiLayerSwitch"}
+
+
+def _link_may_be_created(left_kind: str, right_kind: str) -> bool:
+    """Whether a link the donor lacks may be built between these device kinds.
+
+    Measured against real Packet Tracer opens: every generated file whose only
+    created links were `Switch <-> Switch` opened, and every file containing a
+    created `Pc <-> Switch` link was rejected as "not compatible with this
+    version". Uplinks between infrastructure devices can be built; a host's
+    connection cannot, so a host must keep the switch the donor already gave it.
+    """
+    return left_kind in INFRASTRUCTURE_LINK_KINDS and right_kind in INFRASTRUCTURE_LINK_KINDS
+
+
 def _cross_group_borrowing_enabled() -> bool:
     """Whether a target switch may take hosts from another donor switch group.
 
@@ -3224,6 +3239,19 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
             # donor already has: a chain donor can never satisfy a star request.
             # Creating the missing link uses the same `set_link` machinery the
             # edit path already relies on.
+            blueprint_kinds = {
+                str(device.get("name")): _device_kind(device)
+                for device in blueprint.get("devices", [])
+            }
+            left_kind = blueprint_kinds.get(desired_left, "")
+            right_kind = blueprint_kinds.get(desired_right, "")
+            if _link_strategy() == "create" and not _link_may_be_created(left_kind, right_kind):
+                link_reuse_gaps.append(
+                    f"The donor has no link between {desired_left} and {desired_right}, and a "
+                    f"{left_kind}-to-{right_kind} link cannot be built: Packet Tracer rejects files "
+                    "with a created host connection. Hosts must stay on the switch the donor gave them."
+                )
+                continue
             if _link_strategy() == "create":
                 left_port = claim_port(desired_left, desired_ports[0])
                 right_port = claim_port(desired_right, desired_ports[1])

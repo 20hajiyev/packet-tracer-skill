@@ -472,11 +472,31 @@ Ruled out so far, by comparing a borrowing file against a working one:
   `Corporate Office` node as a native one
 - **dangling link endpoints and duplicate ports** — the structural checker passes
 
-Next ideas: compare the full device subtree of a borrowed host against a native
-one field by field; check whether the borrowed host retains configuration tied to
-its original VLAN or subnet; and check whether Packet Tracer validates a
-device-to-container association that is not name-based.
+### Resolved: the boundary is created *host* links
 
-Until the mechanism is found, the refusal is the correct behaviour: a file that
-looks generated and will not open is worse than a clear "the donor's switch
-carries 3 hosts, you asked for 5".
+Diffing a borrowed host against its donor original showed the device subtree is
+mutated identically to a native host — name and X/Y only. The corruption is not
+in the device.
+
+Classifying every generated link as donor-original or created gave a clean split:
+
+| File | Created links | Opens |
+|---|---|---|
+| minimal, two_switch_chain, server_lan, no-router control | none | yes |
+| campus_star_vlan | `Switch+Switch` | yes |
+| borrowing case | `Pc+Switch` x2 | no |
+
+**A link between infrastructure devices can be created; a host's connection
+cannot.** `_link_may_be_created` enforces that, so `PACKET_TRACER_LINK_STRATEGY=create`
+can still build switch uplinks while a topology needing a new host connection is
+refused with a specific reason instead of producing a file that will not open.
+
+This also explains borrowing: a borrowed host always needs a created connection
+to its new switch, so borrowing can never work as long as this holds. It stays
+disabled, but the general rule is the useful artefact — any prompt needing a new
+host link was previously getting a broken file, not just borrowing ones.
+
+Still unexplained is *why* Packet Tracer treats host connections differently.
+The link XML written for a created host link is structurally the same as for a
+created switch link, and the stale `FROM_DEVICE_MEM_ADDR` values are mismatched
+in working files too, so that is not the discriminator.
