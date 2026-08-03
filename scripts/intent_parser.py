@@ -267,6 +267,27 @@ def _command_segments(prompt: str) -> list[str]:
     return [part.strip() for part in parts if part.strip()]
 
 
+def _transliterate(prompt: str) -> str:
+    """Fold Azerbaijani letters to ASCII while keeping capitalisation.
+
+    Device names carry their case into the generated lab, so the rename
+    patterns cannot run against the fully normalised prompt -- but they do need
+    `dəyiş` to read as `deyis`.
+    """
+    text = prompt.translate(TRANSLITERATION_TABLE)
+    for source, target in _MOJIBAKE_REPLACEMENTS.items():
+        text = text.replace(source, target)
+    text = unicodedata.normalize("NFKD", text)
+    return text.encode("ascii", "ignore").decode("ascii")
+
+
+_MOJIBAKE_REPLACEMENTS = {
+    "É™": "e", "Æ": "e", "ÅŸ": "s", "Å": "s", "Ä±": "i", "Ä°": "i",
+    "Ã§": "c", "Ã‡": "c", "Ã¶": "o", "Ã–": "o", "Ã¼": "u", "Ãœ": "u",
+    "ÄŸ": "g", "Ä": "g",
+}
+
+
 def _normalize_prompt(prompt: str) -> str:
     text = prompt.translate(TRANSLITERATION_TABLE)
     for source, target in {
@@ -1646,8 +1667,20 @@ def parse_intent(prompt: str) -> IntentPlan:
     wireless_mode = _extract_wireless_mode(normalized_prompt, sorted(capability_set), device_requirements, network_style)
 
     edit_operations: list[dict[str, object]] = []
-    for old_name, new_name in re.findall(r"rename\s+([A-Za-z0-9_-]+)\s+to\s+([A-Za-z0-9_-]+)", prompt, flags=re.IGNORECASE):
-        edit_operations.append({"op": "rename_device", "device": old_name, "new_name": new_name})
+    # `rename X to Y` is the command form. `X adini Y et` and `X in adi Y olsun`
+    # are how the request is actually phrased; without them `--edit` understood
+    # nothing, fell back to generating, and wrote an unchanged copy.
+    rename_patterns = (
+        r"rename\s+([A-Za-z0-9_-]+)\s+to\s+([A-Za-z0-9_-]+)",
+        r"\b([A-Za-z0-9_-]+)\s*(?:in|nin|nun|un)?\s*adini\s+([A-Za-z0-9_-]+)\s*(?:et|ele|deyis)",
+        r"\b([A-Za-z0-9_-]+)\s*(?:in|nin)?\s*adi\s+([A-Za-z0-9_-]+)\s+olsun",
+    )
+    rename_source = _transliterate(prompt)
+    for pattern in rename_patterns:
+        for old_name, new_name in re.findall(pattern, rename_source, flags=re.IGNORECASE):
+            operation = {"op": "rename_device", "device": old_name, "new_name": new_name}
+            if operation not in edit_operations:
+                edit_operations.append(operation)
     edit_operations.extend(_extract_link_edit_operations(links))
 
     switch_ops = _extract_switch_ops(prompt)

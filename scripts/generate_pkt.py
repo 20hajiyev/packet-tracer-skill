@@ -4955,6 +4955,27 @@ def edit_from_prompt(
     plan = parse_intent(prompt)
     plan.goal = "edit"
     plan.pkt_path = str(pkt_path)
+
+    # An edit request nobody understood used to write an unchanged copy and
+    # report success. The file opened, because it was the original -- the same
+    # trap the corpus fell into, where "it opened" was read as "it worked".
+    operation_buckets = (
+        plan.edit_operations,
+        plan.switch_ops,
+        plan.router_ops,
+        plan.server_ops,
+        plan.wireless_ops,
+        plan.end_device_ops,
+        plan.management_ops,
+    )
+    if not any(operation_buckets):
+        raise PlanningError(
+            "No edit was understood from that request, so the file was left alone. "
+            "Name the device and what to change, for example "
+            "'rename PC1 to PC-Ofis', 'PC1 adini PC-Ofis et', or 'SW1 de vlan 20 yarat'.",
+            plan,
+        )
+
     edit_pkt_file(pkt_path, plan, output_path, xml_out_path)
     print(f"Edited PKT file created: {output_path}")
 
@@ -5780,7 +5801,13 @@ def main() -> None:
             parser.error("--edit requires --prompt")
         if not args.output:
             parser.error("--edit requires --output")
-        edit_from_prompt(Path(args.edit), args.prompt, Path(args.output), Path(args.xml_out) if args.xml_out else None)
+        try:
+            edit_from_prompt(Path(args.edit), args.prompt, Path(args.output), Path(args.xml_out) if args.xml_out else None)
+        except PlanningError as exc:
+            # Report a refused edit the same way a refused generation is
+            # reported, rather than as a traceback.
+            print(json.dumps(exc.to_dict(), indent=2, ensure_ascii=False))
+            raise SystemExit(2) from exc
         return
     if args.coverage_report:
         coverage_report(reference_roots, donor_roots, device_family=args.device_family)

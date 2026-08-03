@@ -1213,3 +1213,43 @@ because that is what the donor carries, with nothing said about it. The
 substitution is now recorded in `assumptions_used`.
 
 **Corpus: 17/18 generated, 17 opened, 0 unexpected.**
+
+
+## The edit surface was silently doing nothing
+
+`--edit` is advertised and had never been run end to end. Three realistic
+requests against a real lab, each opened in Packet Tracer:
+
+| request | opened | actually applied |
+|---|---|---|
+| `PC1 adini PC-Ofis et` | yes | **no** |
+| `SW1 de vlan 20 yarat` | yes | yes |
+| `PC1 ve SW1 arasinda link qur` | yes | **no** |
+
+All three opened. Two had done nothing at all -- the file opened because it was
+an unchanged copy of the input. The same trap the corpus fell into, in a
+different surface: "it opened" read as "it worked".
+
+Two causes, both familiar.
+
+Edit requests were only understood in the English command form,
+`rename PC1 to PC-Ofis`. The natural phrasings -- `PC1 adini PC-Ofis et`,
+`SW1 in adi CORE olsun`, `SW1 adını Core-SW elə` -- matched nothing, exactly as
+with the wireless SSID.
+
+And when nothing matched, `goal` fell back to `generate`, so `--edit` wrote the
+original back out and reported success. It now refuses and says what it would
+accept. The refusal is reported as JSON like every other refusal instead of as a
+traceback.
+
+One detail: `dəyiş` has to read as `deyis`, but device names carry their
+capitalisation into the lab, so the rename patterns run on a transliterated but
+not lowercased prompt rather than the fully normalised one.
+
+### Packet Tracer's undocumented command-line flags
+
+The binary carries `--no-gui`, `--ipc-port`, `--pt-ipc-port`, `--ipc-arg` and
+`--autoloadptsa`. `--no-gui` looked like a cheap verification channel, so it was
+measured: run against a good lab and one stamped with a wrong build, it behaves
+identically, never exits, and reports nothing to the console. It is not an
+oracle without an IPC client. Recorded so nobody spends the afternoon twice.
