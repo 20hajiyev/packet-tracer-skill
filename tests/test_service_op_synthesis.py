@@ -377,3 +377,31 @@ def test_a_cloned_host_reuses_the_link_the_blueprint_planned() -> None:
 
     ports = [(str(op["switch"]), str(op["switch_port"])) for op in clones]
     assert len(ports) == len(set(ports)), "two clones were given the same switch port"
+
+
+def test_a_cloned_switch_uplink_claims_its_port() -> None:
+    """The last producer that bypassed the port allocator.
+
+    A cloned switch's uplink is emitted after the clone exists, and it wrote the
+    blueprint port straight out instead of reserving it. The core switch then
+    handed the same interface to two access switches -- `SW1 FastEthernet0/7`
+    carrying both SW3 and SW21 -- which the structural check caught at 22
+    switches and above.
+    """
+    from intent_parser import parse_intent
+
+    from generate_pkt import _build_donor_prune_plan, build_prompt_blueprint
+
+    blueprint, prepared = build_prompt_blueprint(parse_intent("40 komputer 22 switch 1 router qur"))
+    adapted, _ = _build_donor_prune_plan(prepared, blueprint)
+
+    seen: set[tuple[str, str]] = set()
+    for op in adapted.edit_operations:
+        if op["op"] != "set_link":
+            continue
+        for end in ("a", "b"):
+            key = (str(op[end]["dev"]), str(op[end]["port"]))
+            if not key[1]:
+                continue
+            assert key not in seen, f"{key[0]} {key[1]} was handed out twice"
+            seen.add(key)

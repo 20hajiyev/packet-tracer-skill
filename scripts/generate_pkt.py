@@ -4205,11 +4205,27 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
                 _device_kind_of_blueprint(blueprint, right),
             ):
                 continue
+            # Reserve through the same allocator the rest of the wiring uses.
+            # Writing the blueprint port straight out meant a cloned switch's
+            # uplink could take an interface the core had already given to an
+            # earlier one -- `SW1 FastEthernet0/7` carrying both SW3 and SW21.
+            left_port = claim_port(left, str(link["a"]["port"]))
+            right_port = claim_port(right, str(link["b"]["port"]))
+            if not left_port or not right_port:
+                exhausted = left if not left_port else right
+                gap = (
+                    f"{exhausted} has no free interface for the uplink to "
+                    f"{right if not left_port else left}; the core switch cannot "
+                    "terminate this many uplinks."
+                )
+                if gap not in adapted_plan.blocking_gaps:
+                    adapted_plan.blocking_gaps.append(gap)
+                continue
             adapted_plan.edit_operations.append(
                 {
                     "op": "set_link",
-                    "a": {"dev": left, "port": str(link["a"]["port"])},
-                    "b": {"dev": right, "port": str(link["b"]["port"])},
+                    "a": {"dev": left, "port": left_port},
+                    "b": {"dev": right, "port": right_port},
                     "media": str(link.get("media", "straight-through")),
                 }
             )
