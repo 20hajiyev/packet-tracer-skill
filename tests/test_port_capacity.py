@@ -144,3 +144,30 @@ def test_a_multi_slot_router_interface_is_accepted() -> None:
 
     assert port_exists(router, "GigabitEthernet0/0/1")
     assert port_exists(router, "GigabitEthernet0/0/2")
+
+
+def test_uplink_names_stay_inside_the_model_s_gigabit_count() -> None:
+    """A 2960 has two gigabit interfaces, not twenty.
+
+    `_switch_uplink_port` returned `GigabitEthernet0/{index}` for any index, so a
+    core switch fanning out to twenty-two access switches asked for
+    `GigabitEthernet0/20`. Packet Tracer rejects a lab naming an interface the
+    device does not have -- which is why a 62-device lab opened and a 64-device
+    one did not. The size was never the problem; the twentieth uplink was.
+    """
+    from generate_pkt import _switch_uplink_port
+
+    access = {"name": "SW1", "model": "2960-24TT"}
+
+    assert _switch_uplink_port(access, 1) == "GigabitEthernet0/1"
+    assert _switch_uplink_port(access, 2) == "GigabitEthernet0/2"
+    # Past the gigabit interfaces, a copper port from the top of the range.
+    assert _switch_uplink_port(access, 3).startswith("FastEthernet0/")
+    assert "GigabitEthernet0/20" not in {_switch_uplink_port(access, i) for i in range(1, 25)}
+
+
+def test_a_multilayer_switch_keeps_its_wider_uplink_range() -> None:
+    from generate_pkt import _switch_uplink_port
+
+    assert _switch_uplink_port({"name": "CORE", "model": "3650-24PS"}, 8) == "GigabitEthernet1/0/8"
+    assert _switch_uplink_port({"name": "DIST", "model": "3560-24PS"}, 8) == "GigabitEthernet0/8"

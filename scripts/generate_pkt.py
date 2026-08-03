@@ -1613,11 +1613,35 @@ def _router_port(device: dict[str, object], index: int = 1) -> str:
     return f"FastEthernet0/{index - 1}"
 
 
+# Uplink capacity by switch family. A 2960-24TT has exactly two gigabit
+# interfaces, so a core switch fanning out to twenty access switches runs out
+# after the second one.
+SWITCH_GIGABIT_UPLINKS = {"3650": 24, "3560": 24}
+DEFAULT_GIGABIT_UPLINKS = 2
+
+
 def _switch_uplink_port(device: dict[str, object], index: int) -> str:
+    """Name the nth uplink, staying inside the interfaces the model has.
+
+    This returned `GigabitEthernet0/{index}` for any index, so a twenty-two
+    switch topology asked a 2960 for `GigabitEthernet0/20`. Packet Tracer
+    rejects a lab that names an interface the device does not have, which is why
+    a 62-device lab opened and a 64-device one did not -- the size was never the
+    problem, the twentieth uplink was.
+    """
     model = str(device.get("model") or "")
     if model.startswith("3650"):
         return f"GigabitEthernet1/0/{index}"
-    return f"GigabitEthernet0/{index}"
+    available = next(
+        (count for prefix, count in SWITCH_GIGABIT_UPLINKS.items() if model.startswith(prefix)),
+        DEFAULT_GIGABIT_UPLINKS,
+    )
+    if index <= available:
+        return f"GigabitEthernet0/{index}"
+    # Past the gigabit interfaces an engineer would use a copper access port.
+    # Counting down from the top keeps the low numbers free for hosts, and the
+    # port reconciliation pass moves anything that still collides.
+    return f"FastEthernet0/{max(1, 24 - (index - available - 1))}"
 
 
 def _switch_access_port(index: int) -> str:
@@ -3884,7 +3908,11 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
                     break  # ran past the ports this device actually has
                 claimed_ports.add((device_name, candidate))
                 return candidate
-        return port_name
+        # Nothing free that this device actually has. Handing the requested name
+        # back put `GigabitEthernet0/20` on a switch with two gigabit
+        # interfaces, and Packet Tracer rejects a lab naming an interface that
+        # does not exist. Report the exhaustion instead.
+        return ""
 
     for link in blueprint.get("links", []):
         desired_left = str(link["a"]["dev"])
@@ -3914,6 +3942,15 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
             if _link_strategy() == "create":
                 left_port = claim_port(desired_left, desired_ports[0])
                 right_port = claim_port(desired_right, desired_ports[1])
+                if not left_port or not right_port:
+                    exhausted = desired_left if not left_port else desired_right
+                    link_reuse_gaps.append(
+                        f"{exhausted} has no free interface left for the link to "
+                        f"{desired_right if not left_port else desired_left}. A 24-port switch "
+                        "cannot terminate more cables than it has ports; a topology this wide "
+                        "needs a larger core switch or another distribution layer."
+                    )
+                    continue
                 adapted_plan.edit_operations.append(
                     {
                         "op": "set_link",
@@ -3944,8 +3981,8 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
             # donor wiring may already hold this port. Writing the result back is
             # what keeps two cables off one interface — discarding it silently
             # produced a lab with PC1 and R1 both on SW1 FastEthernet0/3.
-            link["a"]["port"] = claim_port(desired_left, desired_ports[0])
-            link["b"]["port"] = claim_port(desired_right, desired_ports[1])
+            link["a"]["port"] = claim_port(desired_left, desired_ports[0]) or desired_ports[0]
+            link["b"]["port"] = claim_port(desired_right, desired_ports[1]) or desired_ports[1]
             continue
         # A port or media value the user never asked for must not reject a donor.
         # When the planner defaulted it, the donor's own wiring is the better
@@ -3961,8 +3998,8 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
                     left_port, right_port = existing_ports[0], existing_ports[1]
                 else:
                     left_port, right_port = existing_ports[1], existing_ports[0]
-                link["a"]["port"] = claim_port(desired_left, left_port)
-                link["b"]["port"] = claim_port(desired_right, right_port)
+                link["a"]["port"] = claim_port(desired_left, left_port) or left_port
+                link["b"]["port"] = claim_port(desired_right, right_port) or right_port
             if existing_media:
                 link["media"] = existing_media
             adaptation = (
