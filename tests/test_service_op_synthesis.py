@@ -599,3 +599,54 @@ def test_an_aaa_server_gets_its_radius_port() -> None:
     _synthesize_service_ops(plan, [{"name": "R1", "type": "Router"}, {"name": "SRV1", "type": "Server"}])
 
     assert any(op["op"] == "set_server_aaa_auth_port" for op in plan.server_ops)
+
+
+def test_synthesised_wiring_is_recorded_as_defaulted() -> None:
+    """The donor's own wiring must win when the planner picked the ports.
+
+    `_link_wiring_was_defaulted` looked for an assumption that nothing recorded,
+    so a prompt naming no ports was treated as demanding exact ones. The donor's
+    router uses `GigabitEthernet0/0/1`; the planner had picked `0/0/0`; the link
+    was rejected for disagreeing with a choice nobody made. That one mismatch
+    refused ntp, syslog, snmp and aaa.
+    """
+    from generate_pkt import (
+        DEFAULTED_LINK_WIRING_ASSUMPTIONS,
+        _link_wiring_was_defaulted,
+        _synthesize_links,
+    )
+
+    plan = parse_intent("1 router 1 switch 1 server qur ntp olsun")
+    devices = [
+        {"name": "R1", "type": "Router", "model": "ISR4331"},
+        {"name": "SW1", "type": "Switch", "model": "2960-24TT"},
+        {"name": "Server1", "type": "Server"},
+    ]
+
+    assert not _link_wiring_was_defaulted(plan)
+    _synthesize_links(plan, devices)
+
+    assert _link_wiring_was_defaulted(plan)
+    assert set(DEFAULTED_LINK_WIRING_ASSUMPTIONS) <= set(plan.assumptions_used)
+
+
+def test_explicit_links_are_not_marked_defaulted() -> None:
+    """A user who named ports has a preference the donor must not override."""
+    from generate_pkt import _link_wiring_was_defaulted, _synthesize_links
+
+    plan = parse_intent("1 router 1 switch 3 pc qur")
+    plan.links = [{"a": {"dev": "PC1", "port": "FastEthernet0"}, "b": {"dev": "SW1", "port": "FastEthernet0/9"}}]
+
+    _synthesize_links(plan, [{"name": "SW1", "type": "Switch"}])
+
+    assert not _link_wiring_was_defaulted(plan)
+
+
+def test_cable_names_from_both_vocabularies_compare_equal() -> None:
+    """The donor says `eStraightThrough`, the planner says `straight-through`."""
+    from generate_pkt import _same_media
+
+    assert _same_media("eStraightThrough", "straight-through")
+    assert _same_media("eCrossOver", "crossover")
+    assert _same_media("eSerial", "serial")
+    assert not _same_media("eStraightThrough", "eCrossOver")

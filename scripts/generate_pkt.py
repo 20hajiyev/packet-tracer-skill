@@ -810,6 +810,21 @@ DEFAULTED_LINK_WIRING_ASSUMPTIONS = (
 
 
 def _link_wiring_was_defaulted(plan: IntentPlan) -> bool:
+    """Whether the planner, not the user, chose the interfaces.
+
+    This only looked for two specific assumption strings, and most prompts never
+    record either -- so a prompt that named no ports at all was treated as
+    having demanded exact ones. The donor's own wiring was then rejected for
+    disagreeing with a choice nobody made: `1 router 1 switch 1 server qur ntp
+    olsun` was refused because the donor's router uses `GigabitEthernet0/0/1`
+    and the planner had picked `0/0/0`. That single mismatch blocked ntp,
+    syslog, snmp and aaa.
+
+    A prompt with no explicit links has no wiring preference to violate, and
+    `_synthesize_links` records that as an assumption when it invents the wiring
+    -- checking `plan.links` here cannot work, because the blueprint has filled
+    that list in by the time this is asked.
+    """
     used = set(plan.assumptions_used)
     return any(assumption in used for assumption in DEFAULTED_LINK_WIRING_ASSUMPTIONS)
 
@@ -2409,6 +2424,14 @@ def _synthesize_links(plan: IntentPlan, devices: list[dict[str, object]]) -> lis
     if plan.links:
         return list(plan.links)
 
+    # Every port below is the planner's choice, not the user's. Saying so is
+    # what lets the donor's own wiring win later: without it, a donor router on
+    # `GigabitEthernet0/0/1` was rejected for disagreeing with the `0/0/0` this
+    # function had just picked, which refused ntp, syslog, snmp and aaa.
+    for assumption in DEFAULTED_LINK_WIRING_ASSUMPTIONS:
+        if assumption not in plan.assumptions_used:
+            plan.assumptions_used.append(assumption)
+
     archetype = _choose_topology_archetype(plan)
     routers = [device for device in devices if _device_kind(device) == "Router"]
     switches = [device for device in devices if _device_kind(device) == "Switch"]
@@ -3246,6 +3269,26 @@ def _add_wan_link(
             "media": "serial",
         }
     )
+
+
+
+def _same_media(left: str, right: str) -> bool:
+    """Whether two cable names mean the same cable.
+
+    `eStraightThrough` and `straight-through` are one cable in two vocabularies.
+    """
+    from pkt_transformer import CABLE_FAMILIES
+
+    def canonical(value: str) -> str:
+        text = str(value or "").strip().lower()
+        if not text:
+            return ""
+        if text in CABLE_FAMILIES:
+            family, subtype = CABLE_FAMILIES[text]
+            return (subtype or family).lower()
+        return text
+
+    return canonical(left) == canonical(right)
 
 
 def _synthesize_vlan_and_link_ops(plan: IntentPlan, devices: list[dict[str, object]], links: list[dict[str, object]]) -> None:
@@ -4568,8 +4611,13 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
             continue
         existing_ports = [str(port) for port in existing.get("ports", [])]
         existing_media = str(existing.get("media", ""))
+        # The donor speaks Packet Tracer's vocabulary (`eStraightThrough`) and
+        # the planner speaks the prompt's (`straight-through`). Comparing the
+        # raw strings made every identical cable look like a mismatch, which
+        # refused four capabilities -- ntp, syslog, snmp and aaa -- with
+        # "requires donor link reuse" on a link that already matched.
         ports_match = len(existing_ports) >= 2 and sorted(existing_ports[:2]) == sorted(desired_ports)
-        media_matches = existing_media == desired_media
+        media_matches = _same_media(existing_media, desired_media)
         if ports_match and media_matches:
             # The claim can still come back changed: an earlier link that adopted
             # donor wiring may already hold this port. Writing the result back is

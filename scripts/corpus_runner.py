@@ -195,6 +195,12 @@ CORPUS: tuple[CorpusCase, ...] = (
         note="the services beyond dns/http that the enable map already knew",
     ),
     CorpusCase(
+        "management_services",
+        "1 router 1 switch 1 server qur ntp ve syslog olsun",
+        requires_content=("ntp", "syslog"),
+        note="refused for a wiring preference nobody expressed; blocked four capabilities",
+    ),
+    CorpusCase(
         "wireless_ssid",
         "1 wireless router 2 laptop qur ssid EvSebeke wpa2 sifre Gizli123",
         # The network name and secret are the proof. Without the wireless ops the

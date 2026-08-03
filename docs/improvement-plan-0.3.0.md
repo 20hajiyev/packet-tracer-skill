@@ -1555,3 +1555,45 @@ planner -- but it is currently silent, which is the part that needs fixing.
 One attempt at fixing it -- validating the requested port inside `claim_port`
 rather than only the alternatives -- turned six links into thirteen and produced
 a file Packet Tracer refused. Reverted rather than shipped half-understood.
+
+
+## A capability audit, and what it found
+
+Rather than trusting memory about what works, every capability the enterprise
+document asks for was run end to end and the generated file inspected for the
+configuration it should contain.
+
+**23 of 32 produced configuration.** The nine failures fell into three groups,
+and the first group turned out to be one defect wearing four masks.
+
+### Four capabilities blocked by a preference nobody expressed
+
+`ntp`, `syslog`, `snmp` and `aaa` were all refused with "Open-first mode
+requires donor link reuse for SW1 <-> R1". Two separate causes, both the same
+shape -- comparing things that were never the same kind.
+
+The donor describes a cable as `eStraightThrough`; the planner asks for
+`straight-through`. One cable, two vocabularies, compared as raw strings, so
+every identical cable looked like a mismatch.
+
+And `_link_wiring_was_defaulted` looked for an assumption string that nothing
+ever recorded, so a prompt naming no ports at all was treated as demanding
+exact ones. The donor's router uses `GigabitEthernet0/0/1`, the planner had
+picked `0/0/0`, and the link was rejected for disagreeing with a choice nobody
+made. `_synthesize_links` records the assumption now, where the wiring is
+actually invented.
+
+All four generate and open: ntp writes 11 lines, syslog 3, snmp 5, and the AAA
+server gets its `ACS_SERVER` block.
+
+### Still open
+
+| capability | why |
+|---|---|
+| slaac | generates, emits nothing |
+| dhcp_snooping | generates, emits nothing |
+| multi-area OSPF | generates, single area only |
+| gre | refused: `vpn` coverage gate |
+| iot | refused: donor has no `Thing` device |
+
+**Corpus: 28 cases, 27 generated, 27 opened, 0 unexpected. 557 tests.**
