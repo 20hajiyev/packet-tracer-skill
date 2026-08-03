@@ -180,6 +180,15 @@ NATURAL_DEVICE_ALIASES = {
     "Cable Modem": ["cable modem", "cable-modem", "cablemodem"],
     "Dsl Modem": ["dsl modem", "dsl-modem", "dslmodem"],
     "ASA": ["asa", "security appliance", "security-appliance", "firewall"],
+    # Voice and IoT devices could not be asked for at all: "4 ip phone qur"
+    # parsed the count and then dropped it, because no alias matched.
+    "IPPhone": ["ip phone", "ipphone", "ip-phone", "telefon", "voip telefon"],
+    "HomeGateway": ["home gateway", "homegateway", "ev gateway"],
+    "IoE": ["iot device", "iot cihaz", "smart device", "ağıllı cihaz", "agilli cihaz"],
+    "Thing": ["sensor", "sensör", "smart light", "smart door", "motion sensor", "temperature sensor"],
+    "CCTVCamera": ["camera", "kamera", "cctv", "webcam"],
+    "Hub": ["hub", "konsentrator"],
+    "Repeater": ["repeater", "təkrarlayıcı", "tekrarlayici"],
 }
 
 NETWORK_STYLE_PATTERNS = {

@@ -1460,3 +1460,26 @@ access switches, and a wireless home lab has none -- so `wireless_ssid` and
 `wireless_home` stopped generating entirely. Decoration must never be what stops
 a lab being produced, so the whole annotation pass is now guarded: if anything
 inside it fails, the lab is written without drawings.
+
+
+## Voice, IoT devices and the rest of the server farm
+
+Three gaps, all the familiar shape.
+
+**Voice and IoT devices could not be asked for at all.** `4 ip phone qur` parsed
+the count and then dropped it, because no alias matched. IP phones, cameras,
+sensors, home gateways, hubs and repeaters are nameable now.
+
+**Call Manager Express.** `set_telephony_service`, `set_ephone_dn` and
+`set_ephone` existed; nothing built them. They are emitted together, because a
+telephony service with no directory numbers rings nowhere. Extensions start at
+1001 and each phone gets a MAC derived from its index -- a random one would
+change the lab on every regeneration for no reason.
+
+**Four of nine services were unreachable.** `_set_enabled_service` knows dns,
+http, https, ftp, tftp, ntp, syslog, aaa and email; only the first five were
+emitted, so a prompt asking for a syslog or RADIUS server got a plain server
+with nothing running on it. An AAA server also gets its RADIUS port set, since
+nothing authenticates against a server that is not listening.
+
+**Corpus: 27 cases, 26 generated, 26 opened, 0 unexpected. 550 tests.**

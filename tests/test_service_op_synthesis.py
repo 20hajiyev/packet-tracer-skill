@@ -528,3 +528,74 @@ def test_an_hsrp_op_without_an_address_is_skipped_not_raised() -> None:
 
     device = ET.fromstring("<DEVICE><ENGINE><NAME>R1</NAME></ENGINE></DEVICE>")
     _apply_router_op(device, {"op": "set_hsrp_ipv6", "group": 1, "interface": "Gi0/0", "priority": 100})
+
+
+def test_voice_devices_can_be_asked_for() -> None:
+    """"4 ip phone qur" parsed the count and dropped it: no alias matched."""
+    assert parse_intent("1 router 2 switch 4 ip phone qur").device_counts["IPPhone"] == 4
+    assert parse_intent("1 switch 3 kamera qur").device_counts["CCTVCamera"] == 3
+    assert parse_intent("1 switch 5 sensor qur").device_counts["Thing"] == 5
+
+
+def test_telephony_comes_with_directory_numbers() -> None:
+    """A telephony service with no directory numbers rings nowhere."""
+    from generate_pkt import _synthesize_voice_ops
+
+    plan = parse_intent("1 router 2 switch 4 ip phone qur voip olsun")
+    _synthesize_voice_ops(
+        plan,
+        [
+            {"name": "R1", "type": "Router"},
+            {"name": "Phone1", "type": "IPPhone"},
+            {"name": "Phone2", "type": "IPPhone"},
+        ],
+    )
+
+    ops = [str(op["op"]) for op in plan.router_ops]
+    assert "set_telephony_service" in ops
+    assert ops.count("set_ephone_dn") == 2
+    assert ops.count("set_ephone") == 2
+
+    numbers = [op["number"] for op in plan.router_ops if op["op"] == "set_ephone_dn"]
+    assert numbers == [1001, 1002]
+
+
+def test_phone_macs_are_stable_across_regeneration() -> None:
+    """A random MAC would change the lab on every run for no reason."""
+    from generate_pkt import _synthesize_voice_ops
+
+    def macs() -> list[str]:
+        plan = parse_intent("1 router 4 ip phone qur voip olsun")
+        _synthesize_voice_ops(plan, [{"name": "R1", "type": "Router"}, {"name": "P1", "type": "IPPhone"}])
+        return [str(op["mac"]) for op in plan.router_ops if op["op"] == "set_ephone"]
+
+    assert macs() == macs()
+
+
+def test_a_prompt_without_voice_gets_no_telephony() -> None:
+    from generate_pkt import _synthesize_voice_ops
+
+    plan = parse_intent("1 router 1 switch 3 pc qur")
+    _synthesize_voice_ops(plan, [{"name": "R1", "type": "Router"}])
+
+    assert not plan.router_ops
+
+
+def test_the_wider_service_set_is_reachable() -> None:
+    """Only five of the nine services the enable map knows were ever emitted."""
+    from generate_pkt import _synthesize_service_ops
+
+    plan = parse_intent("1 router 1 switch 1 server qur syslog ntp olsun")
+    _synthesize_service_ops(plan, [{"name": "R1", "type": "Router"}, {"name": "SRV1", "type": "Server"}])
+
+    enabled = {str(op["service"]) for op in plan.server_ops if op["op"] == "enable_server_service"}
+    assert {"syslog", "ntp"} <= enabled
+
+
+def test_an_aaa_server_gets_its_radius_port() -> None:
+    from generate_pkt import _synthesize_service_ops
+
+    plan = parse_intent("1 router 1 switch 1 server qur radius aaa olsun")
+    _synthesize_service_ops(plan, [{"name": "R1", "type": "Router"}, {"name": "SRV1", "type": "Server"}])
+
+    assert any(op["op"] == "set_server_aaa_auth_port" for op in plan.server_ops)

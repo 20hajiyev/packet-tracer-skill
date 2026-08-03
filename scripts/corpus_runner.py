@@ -183,6 +183,18 @@ CORPUS: tuple[CorpusCase, ...] = (
         note="plain `ipv6` was not even a capability until measured",
     ),
     CorpusCase(
+        "voip_telephony",
+        "1 router 2 switch 4 komputer qur voip olsun",
+        requires_content=("telephony-service",),
+        note="Call Manager Express with a directory number per phone",
+    ),
+    CorpusCase(
+        "server_farm_services",
+        "1 router 1 switch 2 komputer 1 server qur serverde ftp ve tftp olsun",
+        requires_content=("ftp",),
+        note="the services beyond dns/http that the enable map already knew",
+    ),
+    CorpusCase(
         "wireless_ssid",
         "1 wireless router 2 laptop qur ssid EvSebeke wpa2 sifre Gizli123",
         # The network name and secret are the proof. Without the wireless ops the
