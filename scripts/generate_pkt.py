@@ -2093,7 +2093,58 @@ def _apply_safe_open_preview(plan: IntentPlan) -> IntentPlan:
     return preview_plan
 
 
+IMAGE_REFERENCE_TAGS = (
+    "CUSTOM_IMAGE_LOGICAL",
+    "CUSTOM_IMAGE_PHYSICAL",
+    "CLUSTER_BG_IMAGE",
+    "CLUSTER_EMBEDDED_BG_IMAGE",
+    "CLUSTER_ICON_IMAGE",
+)
+
+
+def prune_unused_images(root: ET.Element) -> int:
+    """Drop embedded pictures nothing in the lab points at.
+
+    Donors carry a `PIXMAPBANK` of background images the original author
+    imported. A generated lab inherits the whole bank however few devices
+    survive: a four-device home network came out at 2.8 MB, of which 3.6 MB was
+    thirty-five orphaned JPEGs and 58 KB was the devices.
+
+    Size is the smaller problem. The bank also carries the *paths* those images
+    came from -- `../../../Users/78-USER/Downloads/...` -- so every lab
+    generated from that donor republished a stranger's photos and their account
+    name. Anything still referenced is kept; only orphans go.
+
+    Returns how many images were removed.
+    """
+    bank = root.find(".//PIXMAPBANK")
+    if bank is None:
+        return 0
+
+    referenced: set[str] = set()
+    for tag in IMAGE_REFERENCE_TAGS:
+        for element in root.iter(tag):
+            for node in element.iter():
+                value = (node.text or "").strip()
+                if value:
+                    referenced.add(value)
+
+    removed = 0
+    for image in list(bank.findall("IMAGE")):
+        path = (image.findtext("IMAGE_PATH") or "").strip()
+        if not path:
+            # A bank entry with no path carries no content either; leave the
+            # structure alone rather than guess at what Packet Tracer expects.
+            continue
+        if any(path in value or value in path for value in referenced):
+            continue
+        bank.remove(image)
+        removed += 1
+    return removed
+
+
 def _write_pkt_root(root: ET.Element, pkt_path: Path, xml_path: Path | None = None) -> None:
+    prune_unused_images(root)
     xml_bytes = serialize_pkt_xml(root)
     pkt_path.parent.mkdir(parents=True, exist_ok=True)
     pkt_path.write_bytes(encode_pkt_modern(xml_bytes))
@@ -4840,6 +4891,7 @@ def generate_from_prompt(
     if unexpected_workspace_issues:
         raise ValueError("; ".join(unexpected_workspace_issues))
     validate_donor_coherence(donor_root, root)
+    prune_unused_images(root)
     xml_bytes = serialize_pkt_xml(root)
     if xml_out_path is not None:
         xml_out_path.parent.mkdir(parents=True, exist_ok=True)

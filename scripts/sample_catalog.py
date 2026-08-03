@@ -1115,7 +1115,9 @@ def load_catalog(path: Path | None = None) -> list[SampleDescriptor]:
 
 
 def _summarize_pkt(path: Path, relative_path: str, origin: str, prototype_eligible: bool) -> dict[str, Any]:
-    xml, _container = decode_pkt_auto(path.read_bytes())
+    # Catalogued labs are parsed immediately below, so a bad file shows up as
+    # unparseable XML without paying for the authentication pass.
+    xml, _container = decode_pkt_auto(path.read_bytes(), verify=False)
     root = parse_pkt_xml(xml)
     config_text = "\n".join(
         line.text or "" for line in root.findall(".//ENGINE/RUNNINGCONFIG/LINE")

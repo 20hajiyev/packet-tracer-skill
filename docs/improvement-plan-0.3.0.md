@@ -1107,3 +1107,55 @@ passphrase is not even the same secret. Both are restored to the capitalisation
 the user typed.
 
 **Corpus: 16/17 generated, 16 opened, 0 unexpected.**
+
+
+## Chasing the slow path found a privacy leak
+
+The wireless cases took 27 s against 4 s for everything else. Profiling the
+decode rather than guessing at it turned up three separate things.
+
+### The codec spent most of its time not doing cryptography
+
+`twofish_pure.encrypt` is 13.9 us per block, which accounts for 5 s of an 11.4 s
+decode of a 2.8 MB lab. The other 6 s went on byte-at-a-time comprehensions in
+the stage masks, the CTR loop and CMAC.
+
+Both stage masks are 256-periodic -- stage 2 masks byte `i` with
+`(length - i) & 0xFF`, stage 1 with `(length - i * length) & 0xFF`, and stepping
+`i` by 256 adds `256 * length`, which is zero modulo 256 whatever the length. So
+one period can be built and tiled, and the whole payload XORed as a single
+big integer, which runs in C.
+
+**11.43 s to 6.02 s, bit-identical output**, pinned against the original
+definitions in a test because getting a mask wrong would corrupt every file
+silently.
+
+### Half the remaining work was authentication nobody needed
+
+EAX runs the cipher twice: once for CTR, once for the CMAC behind the tag.
+Inventory, version probes and donor indexing parse the result as XML
+immediately, so corruption surfaces there regardless. `verify=False` on those
+paths takes decode to **3.05 s** -- 3.7x the original. Every path that writes a
+file keeps verification, and a damaged tag is still rejected.
+
+### The output was 98% someone else's holiday photos
+
+A four-device home network came out at **2.8 MB**: 3.6 MB of `PIXMAPBANK`
+against 58 KB of devices. Thirty-five JPEGs, none referenced by anything in the
+lab -- every image slot was empty.
+
+Size was the smaller problem. The bank stores the paths those images came from,
+`../../../Users/78-USER/Downloads/...`, so every lab generated from that donor
+republished a stranger's photos and their account name. Anyone sharing a
+generated lab shared those too.
+
+`prune_unused_images` drops orphans and keeps anything still referenced:
+
+| | before | after |
+|---|---|---|
+| file size | 2772 KB | **51 KB** |
+| embedded images | 35 | 1 |
+| foreign account paths | 51 | **0** |
+
+Generation of that case went 39 s to 15 s, and the corpus median from 5 s to
+3.6 s. **16/17 generated, 16 opened, 0 unexpected.**

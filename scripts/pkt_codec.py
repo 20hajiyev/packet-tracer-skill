@@ -66,29 +66,64 @@ def quncompress(blob: bytes) -> bytes:
     return out[:size]
 
 
-def stage2_xor(data: bytes) -> bytes:
+def _xor_with_mask(data: bytes, mask: bytes) -> bytes:
+    """XOR two equal-length byte strings in one operation.
+
+    Python's big-integer XOR runs in C, so folding a multi-megabyte payload into
+    a single `int` and back beats any per-byte loop by an order of magnitude.
+    Decoding a 2.8 MB lab spent seconds in byte-at-a-time comprehensions before
+    this.
+    """
+    if not data:
+        return b""
     length = len(data)
-    return bytes(byte ^ ((length - index) & 0xFF) for index, byte in enumerate(data))
+    return (
+        int.from_bytes(data, "big") ^ int.from_bytes(mask, "big")
+    ).to_bytes(length, "big")
 
 
-def stage1_obfuscate(clear: bytes) -> bytes:
-    length = len(clear)
-    out = bytearray(length)
-    for index, byte in enumerate(clear):
-        out[length - 1 - index] = byte ^ ((length - index * length) & 0xFF)
-    return bytes(out)
+def _tiled_mask(period: bytes, length: int) -> bytes:
+    return (period * (length // len(period) + 1))[:length]
 
 
-def stage1_deobfuscate(obfuscated: bytes) -> bytes:
-    length = len(obfuscated)
-    return bytes(
-        obfuscated[length - 1 - index] ^ ((length - index * length) & 0xFF)
-        for index in range(length)
+def _stage2_mask(length: int) -> bytes:
+    """Mask byte `i` is `(length - i) & 0xFF`.
+
+    That descends through the byte range and wraps, so it repeats every 256
+    positions and only one period ever needs building.
+    """
+    return _tiled_mask(bytes((length - index) & 0xFF for index in range(256)), length)
+
+
+def _stage1_mask(length: int) -> bytes:
+    """Mask byte `i` is `(length - i * length) & 0xFF`.
+
+    Also 256-periodic: stepping `i` by 256 adds `256 * length`, which is zero
+    modulo 256 whatever the length.
+    """
+    return _tiled_mask(
+        bytes((length - index * length) & 0xFF for index in range(256)), length
     )
 
 
+def stage2_xor(data: bytes) -> bytes:
+    return _xor_with_mask(data, _stage2_mask(len(data)))
+
+
+def stage1_obfuscate(clear: bytes) -> bytes:
+    # Byte `i` of the input lands at position `length - 1 - i`, which is simply
+    # the reversal of the masked payload.
+    return _xor_with_mask(clear, _stage1_mask(len(clear)))[::-1]
+
+
+def stage1_deobfuscate(obfuscated: bytes) -> bytes:
+    return _xor_with_mask(obfuscated[::-1], _stage1_mask(len(obfuscated)))
+
+
 def _xor_bytes(left: bytes, right: bytes) -> bytes:
-    return bytes(a ^ b for a, b in zip(left, right))
+    if len(left) != len(right):
+        left, right = left[: len(right)], right[: len(left)]
+    return _xor_with_mask(left, right)
 
 
 def _gf_double(block: bytes) -> bytes:
@@ -138,14 +173,19 @@ def _omac(cipher: "Twofish", domain: int, data: bytes) -> bytes:
 
 
 def _ctr_crypt(cipher: "Twofish", initial_counter: bytes, data: bytes) -> bytes:
+    """CTR mode, generating the whole keystream before XORing once.
+
+    The previous version XORed each 16-byte block with a generator expression,
+    which cost more per block than a big-integer XOR costs for the entire
+    payload.
+    """
     counter = int.from_bytes(initial_counter, "big")
-    out = bytearray()
-    for offset in range(0, len(data), BLOCK_SIZE):
-        block = data[offset : offset + BLOCK_SIZE]
-        keystream = cipher.encrypt(counter.to_bytes(16, "big"))
-        out.extend(bytes(a ^ b for a, b in zip(block, keystream)))
+    encrypt = cipher.encrypt  # hoisted: this runs once per block
+    keystream = bytearray()
+    for _ in range(0, len(data), BLOCK_SIZE):
+        keystream += encrypt(counter.to_bytes(16, "big"))
         counter = (counter + 1) % (1 << 128)
-    return bytes(out)
+    return _xor_with_mask(data, bytes(keystream[: len(data)]))
 
 
 def eax_twofish_encrypt(plaintext: bytes, nonce: bytes = NEW_IV, header: bytes = b"") -> tuple[bytes, bytes]:
@@ -158,16 +198,34 @@ def eax_twofish_encrypt(plaintext: bytes, nonce: bytes = NEW_IV, header: bytes =
     return ciphertext, tag
 
 
-def eax_twofish_decrypt(ciphertext: bytes, tag: bytes, nonce: bytes = NEW_IV, header: bytes = b"") -> bytes:
+def eax_twofish_decrypt(
+    ciphertext: bytes,
+    tag: bytes,
+    nonce: bytes = NEW_IV,
+    header: bytes = b"",
+    verify: bool = True,
+) -> bytes:
+    """Decrypt an EAX payload, optionally without authenticating it.
+
+    EAX runs the block cipher twice over the data: once for CTR and once for the
+    CMAC that produces the tag. Verification therefore accounts for about half
+    the work, and on a 2.8 MB lab that is seconds.
+
+    `verify=False` is for reading a file whose contents are about to be parsed
+    anyway -- inventory, version probes, donor indexing. Corruption still shows
+    up immediately, as XML that will not parse. Every path that writes a file
+    keeps verification on.
+    """
     if len(tag) != TAG_LEN:
         raise ValueError("invalid EAX tag length")
     cipher = _twofish_cls()(NEW_KEY)
     nonce_mac = _omac(cipher, 0, nonce)
-    header_mac = _omac(cipher, 1, header)
-    body_mac = _omac(cipher, 2, ciphertext)
-    expected_tag = _xor_bytes(_xor_bytes(nonce_mac, header_mac), body_mac)
-    if expected_tag != tag:
-        raise ValueError("EAX authentication tag verification failed")
+    if verify:
+        header_mac = _omac(cipher, 1, header)
+        body_mac = _omac(cipher, 2, ciphertext)
+        expected_tag = _xor_bytes(_xor_bytes(nonce_mac, header_mac), body_mac)
+        if expected_tag != tag:
+            raise ValueError("EAX authentication tag verification failed")
     return _ctr_crypt(cipher, nonce_mac, ciphertext)
 
 
@@ -178,13 +236,13 @@ def encode_pkt_modern(xml_bytes: bytes) -> bytes:
     return stage1_obfuscate(ciphertext + tag)
 
 
-def decode_pkt_modern(pkt_bytes: bytes) -> bytes:
+def decode_pkt_modern(pkt_bytes: bytes, verify: bool = True) -> bytes:
     if len(pkt_bytes) < TAG_LEN:
         raise ValueError("pkt blob is too short")
     stage1 = stage1_deobfuscate(pkt_bytes)
     ciphertext = stage1[:-TAG_LEN]
     tag = stage1[-TAG_LEN:]
-    stage2 = eax_twofish_decrypt(ciphertext, tag)
+    stage2 = eax_twofish_decrypt(ciphertext, tag, verify=verify)
     payload = stage2_xor(stage2)
     return quncompress(payload)
 
@@ -274,10 +332,14 @@ def detect_pkt_format(pkt_bytes: bytes) -> str:
         return "unknown"
 
 
-def decode_pkt_auto(pkt_bytes: bytes) -> tuple[bytes, str]:
-    """Decode either container variant, reporting which one matched."""
+def decode_pkt_auto(pkt_bytes: bytes, verify: bool = True) -> tuple[bytes, str]:
+    """Decode either container variant, reporting which one matched.
+
+    Pass `verify=False` when the result is about to be parsed as XML anyway --
+    it skips the CMAC pass, roughly halving the block-cipher work.
+    """
     try:
-        return decode_pkt_modern(pkt_bytes), "modern"
+        return decode_pkt_modern(pkt_bytes, verify=verify), "modern"
     except Exception as modern_error:
         try:
             return decode_pkt_legacy(pkt_bytes), "legacy"

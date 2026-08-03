@@ -98,3 +98,65 @@ def test_modern_decode_still_rejects_a_legacy_file() -> None:
     """The two containers must stay distinguishable, not silently interchangeable."""
     with pytest.raises(Exception):
         decode_pkt_modern(encode_pkt_legacy(_lab_xml()))
+
+
+def test_bulk_stage_transforms_match_the_byte_at_a_time_definition() -> None:
+    """The stage masks are 256-periodic, which is what makes bulk XOR valid.
+
+    Stage 2 masks byte `i` with `(length - i) & 0xFF`; stage 1 uses
+    `(length - i * length) & 0xFF`, and stepping `i` by 256 adds `256 * length`,
+    zero modulo 256. Getting that wrong would corrupt every file silently, so
+    the optimised versions are pinned against the original definitions.
+    """
+    import random
+
+    from pkt_codec import stage1_deobfuscate, stage1_obfuscate, stage2_xor
+
+    def reference_stage2(data: bytes) -> bytes:
+        length = len(data)
+        return bytes(byte ^ ((length - index) & 0xFF) for index, byte in enumerate(data))
+
+    def reference_stage1_obfuscate(clear: bytes) -> bytes:
+        length = len(clear)
+        out = bytearray(length)
+        for index, byte in enumerate(clear):
+            out[length - 1 - index] = byte ^ ((length - index * length) & 0xFF)
+        return bytes(out)
+
+    random.seed(11)
+    for size in (0, 1, 15, 16, 17, 255, 256, 257, 4096, 10007):
+        payload = bytes(random.getrandbits(8) for _ in range(size))
+        assert stage2_xor(payload) == reference_stage2(payload)
+        assert stage1_obfuscate(payload) == reference_stage1_obfuscate(payload)
+        assert stage1_deobfuscate(stage1_obfuscate(payload)) == payload
+
+
+def test_skipping_verification_returns_identical_bytes() -> None:
+    """EAX runs the cipher twice -- once for CTR, once for the tag.
+
+    Inspection paths parse the result as XML immediately, so corruption surfaces
+    there anyway and the authentication pass is pure cost.
+    """
+    from pkt_codec import decode_pkt_auto, encode_pkt_modern
+
+    payload = b"<PACKETTRACER5><VERSION>9.0.0.0810</VERSION><DEVICES/></PACKETTRACER5>"
+    blob = encode_pkt_modern(payload)
+
+    verified, _ = decode_pkt_auto(blob)
+    unverified, _ = decode_pkt_auto(blob, verify=False)
+
+    assert verified == unverified == payload
+
+
+def test_a_corrupt_tag_is_still_rejected_when_verifying() -> None:
+    import pytest
+
+    from pkt_codec import decode_pkt_modern, encode_pkt_modern, stage1_deobfuscate, stage1_obfuscate
+
+    blob = encode_pkt_modern(b"<PACKETTRACER5><VERSION>9.0.0.0810</VERSION></PACKETTRACER5>")
+    stage1 = bytearray(stage1_deobfuscate(blob))
+    stage1[-1] ^= 0xFF  # damage the tag
+    damaged = stage1_obfuscate(bytes(stage1))
+
+    with pytest.raises(ValueError, match="tag verification failed"):
+        decode_pkt_modern(damaged)

@@ -283,3 +283,74 @@ def test_no_wireless_ops_without_a_named_network() -> None:
 
 def test_ordinary_words_after_ssid_are_not_read_as_a_network_name() -> None:
     assert "ssid" not in parse_intent("1 wireless router qur ssid olsun").wireless_settings
+
+
+def test_orphaned_donor_images_are_dropped() -> None:
+    """A donor's picture bank is inherited whole, however few devices survive.
+
+    A four-device home network came out at 2.8 MB: 3.6 MB of orphaned JPEGs
+    against 58 KB of devices. The bank also carries the paths they came from --
+    `../../../Users/78-USER/Downloads/...` -- so every generated lab
+    republished a stranger's photos and their account name.
+    """
+    import xml.etree.ElementTree as ET
+
+    from generate_pkt import prune_unused_images
+
+    root = ET.fromstring(
+        "<PACKETTRACER5><PIXMAPBANK>"
+        "<IMAGE><IMAGE_PATH>/home/someone/holiday.jpg</IMAGE_PATH>"
+        "<IMAGE_CONTENT>AAAA</IMAGE_CONTENT></IMAGE>"
+        "<IMAGE><IMAGE_PATH>/home/someone/used.jpg</IMAGE_PATH>"
+        "<IMAGE_CONTENT>BBBB</IMAGE_CONTENT></IMAGE>"
+        "</PIXMAPBANK><DEVICES><DEVICE>"
+        "<CUSTOM_IMAGE_LOGICAL>/home/someone/used.jpg</CUSTOM_IMAGE_LOGICAL>"
+        "</DEVICE></DEVICES></PACKETTRACER5>"
+    )
+
+    removed = prune_unused_images(root)
+
+    remaining = [image.findtext("IMAGE_PATH") for image in root.findall(".//PIXMAPBANK/IMAGE")]
+    assert removed == 1
+    assert remaining == ["/home/someone/used.jpg"]
+
+
+def test_a_referenced_image_is_never_dropped() -> None:
+    import xml.etree.ElementTree as ET
+
+    from generate_pkt import prune_unused_images
+
+    root = ET.fromstring(
+        "<PACKETTRACER5><PIXMAPBANK>"
+        "<IMAGE><IMAGE_PATH>bg.png</IMAGE_PATH></IMAGE>"
+        "</PIXMAPBANK><WORKSPACE>"
+        "<CLUSTER_BG_IMAGE>bg.png</CLUSTER_BG_IMAGE>"
+        "</WORKSPACE></PACKETTRACER5>"
+    )
+
+    assert prune_unused_images(root) == 0
+    assert len(root.findall(".//PIXMAPBANK/IMAGE")) == 1
+
+
+def test_a_pathless_bank_entry_is_left_alone() -> None:
+    """It carries no content either; guessing at its purpose is not worth it."""
+    import xml.etree.ElementTree as ET
+
+    from generate_pkt import prune_unused_images
+
+    root = ET.fromstring(
+        "<PACKETTRACER5><PIXMAPBANK>"
+        "<IMAGE><IMAGE_PATH></IMAGE_PATH><IMAGE_CONTENT></IMAGE_CONTENT></IMAGE>"
+        "</PIXMAPBANK></PACKETTRACER5>"
+    )
+
+    assert prune_unused_images(root) == 0
+    assert len(root.findall(".//PIXMAPBANK/IMAGE")) == 1
+
+
+def test_a_lab_with_no_picture_bank_is_untouched() -> None:
+    import xml.etree.ElementTree as ET
+
+    from generate_pkt import prune_unused_images
+
+    assert prune_unused_images(ET.fromstring("<PACKETTRACER5><DEVICES/></PACKETTRACER5>")) == 0

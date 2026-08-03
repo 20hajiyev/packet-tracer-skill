@@ -99,7 +99,7 @@ def _device_counts_of(path: Path) -> dict[str, int]:
     from pkt_codec import decode_pkt_auto, parse_pkt_xml
 
     try:
-        xml, _container = decode_pkt_auto(path.read_bytes())
+        xml, _container = decode_pkt_auto(path.read_bytes(), verify=False)
         root = parse_pkt_xml(xml)
     except Exception:  # noqa: BLE001 - unreadable labs are simply not donors
         return {}
