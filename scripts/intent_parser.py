@@ -461,9 +461,12 @@ KNOWN_DEVICE_MODELS = {
     819, 829, 1240, 1941, 2504, 2620, 2621, 2811, 2901, 2911, 2950, 2960,
     3560, 3650, 3702, 4321, 4331, 8200, 5505, 5506, 1841, 1921, 3945,
 }
-# Nobody asks for more devices than this, and Packet Tracer would not open the
-# result if they did. A larger number is a model, a year, or a typo.
-MAX_REASONABLE_DEVICE_COUNT = 200
+# A ceiling only to catch stray four-digit numbers that are neither counts nor
+# known models. It was 200, which silently turned "500 komputer" -- an ordinary
+# enterprise request -- into a single PC, because the bare-name fallback then
+# supplied 1. Real labs do carry hundreds of devices, so the ceiling has to sit
+# well above anything a person would actually ask for.
+MAX_REASONABLE_DEVICE_COUNT = 2000
 
 
 def _is_device_count(value: int) -> bool:

@@ -254,3 +254,18 @@ def test_a_satisfied_model_produces_no_note() -> None:
     _note_model_substitutions(plan, [{"name": "R1", "type": "Router", "model": "ISR4331"}])
 
     assert not any("not available" in note for note in plan.assumptions_used)
+
+
+def test_a_large_but_ordinary_count_is_not_capped() -> None:
+    """The model guard used a ceiling of 200, which silently turned
+    "500 komputer" into a single PC: the number was rejected as a count and the
+    bare-name fallback then supplied 1. Enterprise labs really do have hundreds
+    of hosts."""
+    assert parse_intent("500 komputer 20 switch 4 router qur").device_counts == {
+        "Router": 4,
+        "Switch": 20,
+        "PC": 500,
+    }
+    assert parse_intent("1000 pc 40 switch qur").device_counts == {"Switch": 40, "PC": 1000}
+    # And a model designation is still not a count.
+    assert parse_intent("2911 router qur").device_counts == {"Router": 1}
