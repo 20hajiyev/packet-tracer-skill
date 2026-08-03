@@ -134,6 +134,14 @@ CORPUS: tuple[CorpusCase, ...] = (
         note="hosts named with nothing to plug into; a switch has to be inferred",
     ),
     CorpusCase(
+        "wireless_ssid",
+        "1 wireless router 2 laptop qur ssid EvSebeke wpa2 sifre Gizli123",
+        # The network name and secret are the proof. Without the wireless ops the
+        # lab keeps whatever network the donor was configured with.
+        requires_content=("EvSebeke", "Gizli123"),
+        note="names the wireless network and puts the clients on it",
+    ),
+    CorpusCase(
         "wireless_home",
         "1 wireless router 2 laptop qur",
         # Was reported as a donor limitation for weeks. It was a donor

@@ -1069,3 +1069,41 @@ and the planner did not -- the same two-models split as every other defect here.
 **Corpus: 15/16 generated, 15 opened, 0 unexpected.** Every case except the
 deliberate refusal now works. No capability gaps and no donor limitations
 remain.
+
+
+## The blocked list is now entirely measured
+
+`wireless_mutation` and `wireless_client_association` were the last two entries
+with nothing recording why they were there. They could not be tested before,
+because until the donor pool was widened there was no wireless donor to test
+against.
+
+Two labs generated with them allowed opened in Packet Tracer: a home network
+with a named WPA2 network and two laptops (13.5 s, SSID present 16 times), and
+one with three laptops, two tablets and an explicit channel (10.1 s, SSID
+present 31 times). Both carry the passphrase in the saved file. The default is
+on; `PACKET_TRACER_WIRELESS_CONFIG=0` restores the old behaviour.
+
+That closes the pattern. Five categories sat on `SAFE_OPEN_BLOCKED_MUTATIONS`
+with no evidence -- `device_prune`, `remove_link`, `end_device_mutation`,
+`wireless_mutation`, `wireless_client_association` -- and every one proved safe
+the moment a file was actually opened. Two of them forbade operations the
+donor-prune architecture depends on. What remains blocked is what remains
+untested: `port_reassignment` and `workspace_physical_mutation`.
+
+### Wireless configuration had to be emitted first
+
+The block was only half the problem. `pkt_editor` has implemented
+`set_wireless_ssid` and `associate_wireless_client` all along, and
+`_extract_wireless_ops` reads them from the command form
+`set AP1 ssid TEST security wpa2-psk passphrase test12345`. Nobody writes a
+prompt that way, so "ssid EvSebeke wpa2 sifre Gizli123" produced a wireless lab
+still carrying the donor's own network name -- the same gap shape as router
+DHCP and telnet.
+
+One detail worth keeping: normalisation lowercases the whole prompt so the
+patterns can stay simple, but an SSID is user-visible and a lowercased
+passphrase is not even the same secret. Both are restored to the capitalisation
+the user typed.
+
+**Corpus: 16/17 generated, 16 opened, 0 unexpected.**

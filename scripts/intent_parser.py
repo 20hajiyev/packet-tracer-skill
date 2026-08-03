@@ -346,6 +346,7 @@ class IntentPlan:
     capabilities: list[str] = field(default_factory=list)
     network_style: str | None = None
     wireless_mode: str | None = None
+    wireless_settings: dict[str, object] = field(default_factory=dict)
     device_requirements: dict[str, int] = field(default_factory=dict)
     device_counts: dict[str, int] = field(default_factory=dict)
     department_groups: list[dict[str, object]] = field(default_factory=list)
@@ -1264,6 +1265,59 @@ def _extract_management_ops(prompt: str) -> list[dict[str, object]]:
     return ops
 
 
+def _extract_wireless_settings(normalized_prompt: str) -> dict[str, object]:
+    """SSID, security and passphrase as an ordinary sentence names them.
+
+    `_extract_wireless_ops` only understands the command form
+    `set AP1 ssid TEST security wpa2-psk passphrase test12345`. Nobody writing a
+    prompt types that, so "ssid EvSebeke wpa2 sifre 12345678" produced no
+    wireless operations at all -- the same shape as the DHCP and telnet gaps.
+    """
+    settings: dict[str, object] = {}
+    ssid = re.search(r"\bssid\s+(?:adi\s+)?([a-z0-9._-]{2,32})\b", normalized_prompt)
+    # `olsun`/`ile`/`ve` are ordinary words that can follow `ssid`; reading one
+    # as a network name would silently misname the network.
+    if ssid and ssid.group(1) not in {"olsun", "ile", "ve", "adi", "ismi", "qur"}:
+        settings["ssid"] = ssid.group(1)
+
+    for key in ("wpa2-enterprise", "wpa-enterprise", "wpa2-psk", "wpa-psk", "wpa2", "wpa", "wep", "open"):
+        if re.search(rf"\b{re.escape(key)}\b", normalized_prompt):
+            settings["security"] = key
+            break
+
+    # `sifre`/`parol` are the Azerbaijani words; `password`/`passphrase` the English.
+    secret = re.search(
+        r"\b(?:sifre|sifresi|parol|parolu|password|passphrase|key)\s+([a-z0-9._-]{4,63})\b",
+        normalized_prompt,
+    )
+    if secret:
+        settings["passphrase"] = secret.group(1)
+
+    channel = re.search(r"\bchannel\s+(\d{1,2})\b", normalized_prompt)
+    if channel:
+        settings["channel"] = int(channel.group(1))
+    return settings
+
+
+def _restore_wireless_casing(settings: dict[str, object], raw_prompt: str) -> dict[str, object]:
+    """Give the SSID and passphrase back the capitalisation the user typed.
+
+    Normalisation lowercases everything so the patterns can be simple, but a
+    network name and a passphrase are user-visible strings -- `EvSebeke` must
+    not reach Packet Tracer as `evsebeke`, and a lowercased passphrase would not
+    even be the same secret.
+    """
+    restored = dict(settings)
+    for key in ("ssid", "passphrase"):
+        value = str(restored.get(key) or "")
+        if not value:
+            continue
+        match = re.search(rf"\b{re.escape(value)}\b", raw_prompt, flags=re.IGNORECASE)
+        if match:
+            restored[key] = match.group(0)
+    return restored
+
+
 def _extract_wireless_ops(prompt: str) -> list[dict[str, object]]:
     ops: list[dict[str, object]] = []
     ssid_pattern = re.compile(
@@ -1815,6 +1869,9 @@ def parse_intent(prompt: str) -> IntentPlan:
         capabilities=capabilities,
         network_style=network_style,
         wireless_mode=wireless_mode,
+        wireless_settings=_restore_wireless_casing(
+            _extract_wireless_settings(normalized_prompt), prompt
+        ),
         device_requirements=device_requirements,
         device_counts=device_counts,
         department_groups=department_groups,

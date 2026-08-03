@@ -213,3 +213,73 @@ def test_configuration_evidence_covers_the_measured_blind_spots() -> None:
     assert "static_route" in config_capability_tags("ip route 0.0.0.0 0.0.0.0 10.0.0.1")
     assert "hsrp" in config_capability_tags("standby 1 ip 192.168.1.254")
     assert "hsrp" not in config_capability_tags("interface GigabitEthernet0/0")
+
+
+def test_wireless_config_is_on_by_default_because_it_was_measured(monkeypatch) -> None:
+    """The last unmeasured entries on the blocked list.
+
+    Until the donor pool was widened there was no wireless donor to test them
+    against. Two labs generated with them allowed opened in Packet Tracer: a
+    home network with a named WPA2 network and two laptops, and one with three
+    laptops, two tablets and an explicit channel.
+    """
+    from generate_pkt import _allowed_mutations, _wireless_config_enabled
+
+    monkeypatch.delenv("PACKET_TRACER_WIRELESS_CONFIG", raising=False)
+    assert _wireless_config_enabled()
+    allowed = _allowed_mutations()
+    assert "wireless_mutation" in allowed
+    assert "wireless_client_association" in allowed
+
+    monkeypatch.setenv("PACKET_TRACER_WIRELESS_CONFIG", "0")
+    assert "wireless_mutation" not in _allowed_mutations()
+
+
+def test_a_named_network_reaches_the_access_point_and_its_clients() -> None:
+    """`_extract_wireless_ops` only reads `set AP1 ssid TEST security ...`.
+
+    Nobody writes prompts that way, so an ordinary Azerbaijani sentence produced
+    a wireless lab still carrying the donor's own network name.
+    """
+    from generate_pkt import _synthesize_wireless_ops
+
+    plan = parse_intent("1 wireless router 2 laptop qur ssid EvSebeke wpa2 sifre Gizli123")
+    devices = [
+        {"name": "WRT1", "type": "WirelessRouter"},
+        {"name": "Laptop1", "type": "Laptop"},
+        {"name": "Laptop2", "type": "Laptop"},
+    ]
+
+    _synthesize_wireless_ops(plan, devices)
+
+    ssid_ops = [op for op in plan.wireless_ops if op["op"] == "set_wireless_ssid"]
+    joins = [op for op in plan.wireless_ops if op["op"] == "associate_wireless_client"]
+
+    assert [op["device"] for op in ssid_ops] == ["WRT1"]
+    assert ssid_ops[0]["ssid"] == "EvSebeke"
+    assert ssid_ops[0]["passphrase"] == "Gizli123"
+    assert ssid_ops[0]["auth_type"] == "4"  # wpa2
+    assert {op["device"] for op in joins} == {"Laptop1", "Laptop2"}
+
+
+def test_the_network_name_keeps_the_capitalisation_it_was_given() -> None:
+    """Normalisation lowercases everything, but an SSID is user-visible and a
+    lowercased passphrase is not even the same secret."""
+    plan = parse_intent("1 wireless router 2 laptop qur ssid EvSebeke wpa2 sifre Gizli123")
+
+    assert plan.wireless_settings["ssid"] == "EvSebeke"
+    assert plan.wireless_settings["passphrase"] == "Gizli123"
+
+
+def test_no_wireless_ops_without_a_named_network() -> None:
+    """With no SSID there is nothing to apply; the donor's own network stands."""
+    from generate_pkt import _synthesize_wireless_ops
+
+    plan = parse_intent("1 wireless router 2 laptop qur")
+    _synthesize_wireless_ops(plan, [{"name": "WRT1", "type": "WirelessRouter"}])
+
+    assert plan.wireless_ops == []
+
+
+def test_ordinary_words_after_ssid_are_not_read_as_a_network_name() -> None:
+    assert "ssid" not in parse_intent("1 wireless router qur ssid olsun").wireless_settings

@@ -28,7 +28,7 @@ from coverage_matrix import (
     select_capability_matrix_hits,
 )
 from feature_atlas import build_feature_gap_report
-from intent_parser import IntentPlan, distribute_hosts_across_vlans, parse_intent, strict_vlan_assignment
+from intent_parser import SECURITY_TO_AUTH, IntentPlan, distribute_hosts_across_vlans, parse_intent, strict_vlan_assignment
 from packet_tracer_env import (
     donor_compatibility,
     donor_tier_is_accepted,
@@ -1489,6 +1489,8 @@ SAFE_OPEN_ALLOWED_MUTATIONS = [
 ]
 # Measured 2026-08-03: see `_host_config_enabled`.
 DEFAULT_HOST_CONFIG = True
+# Measured 2026-08-03: see `_wireless_config_enabled`.
+DEFAULT_WIRELESS_CONFIG = True
 
 SAFE_OPEN_BLOCKED_MUTATIONS = [
     "link_rewrite",
@@ -1934,6 +1936,28 @@ def _host_config_enabled() -> bool:
     return DEFAULT_HOST_CONFIG
 
 
+def _wireless_config_enabled() -> bool:
+    """Whether wireless configuration may be applied.
+
+    On by default, and that default is a measurement. `wireless_mutation` and
+    `wireless_client_association` were the last entries on the blocked list with
+    nothing recording why -- and until the donor pool was widened there was no
+    wireless donor to test them against.
+
+    Two labs generated with it enabled were opened in Packet Tracer: a home
+    network with a named WPA2 network and two laptops (13.5s), and one with
+    three laptops, two tablets and an explicit channel (10.1s). Both opened,
+    with the SSID and passphrase present in the saved file. Set
+    `PACKET_TRACER_WIRELESS_CONFIG=0` to restore the old behaviour.
+    """
+    raw = (os.getenv("PACKET_TRACER_WIRELESS_CONFIG") or "").strip().lower()
+    if raw in {"1", "on", "true", "yes"}:
+        return True
+    if raw in {"0", "off", "false", "no"}:
+        return False
+    return DEFAULT_WIRELESS_CONFIG
+
+
 def _allowed_mutations() -> list[str]:
     """Allowed mutation categories for the active strategies."""
     allowed = list(SAFE_OPEN_ALLOWED_MUTATIONS)
@@ -1941,6 +1965,8 @@ def _allowed_mutations() -> list[str]:
         allowed.append("link_rewrite")
     if _host_config_enabled():
         allowed.append("end_device_mutation")
+    if _wireless_config_enabled():
+        allowed.extend(["wireless_mutation", "wireless_client_association"])
     return allowed
 
 
@@ -2453,6 +2479,63 @@ def _synthesize_service_ops(plan: IntentPlan, devices: list[dict[str, object]]) 
                     "record_type": "A",
                     "name": "www.local",
                     "value": "192.168.1.10",
+                },
+            )
+
+
+WIRELESS_AP_KINDS = {"WirelessRouter", "LightWeightAccessPoint", "AccessPoint"}
+WIRELESS_CLIENT_KINDS = {"Laptop", "Tablet", "Smartphone"}
+
+
+def _synthesize_wireless_ops(plan: IntentPlan, devices: list[dict[str, object]]) -> None:
+    """Name the network and put the wireless clients on it.
+
+    `pkt_editor` has implemented `set_wireless_ssid` and
+    `associate_wireless_client` all along, and `_extract_wireless_ops` reads
+    them from the command form `set AP1 ssid TEST security wpa2-psk ...`. Nobody
+    writes prompts that way, so an ordinary "ssid EvSebeke wpa2 sifre ..."
+    produced a wireless lab with the donor's network name still on it.
+    """
+    settings = dict(plan.wireless_settings or {})
+    access_points = [d for d in devices if _device_kind(d) in WIRELESS_AP_KINDS]
+    if not access_points:
+        return
+    # With no SSID named there is nothing to apply: the donor's own network is
+    # left alone rather than replaced with a guess.
+    ssid = str(settings.get("ssid") or "").strip()
+    if not ssid:
+        return
+
+    security = str(settings.get("security") or ("wpa2-psk" if settings.get("passphrase") else "open"))
+    auth_type, encrypt_type = SECURITY_TO_AUTH.get(security, ("0", "0"))
+    channel = int(settings.get("channel") or 1)
+
+    for access_point in access_points:
+        _append_unique_op(
+            plan.wireless_ops,
+            {
+                "op": "set_wireless_ssid",
+                "device": access_point["name"],
+                "ssid": ssid,
+                "security": security,
+                "auth_type": auth_type,
+                "encrypt_type": encrypt_type,
+                "passphrase": str(settings.get("passphrase") or ""),
+                "channel": channel,
+            },
+        )
+
+    primary = str(access_points[0]["name"])
+    for client in devices:
+        if _device_kind(client) in WIRELESS_CLIENT_KINDS:
+            _append_unique_op(
+                plan.wireless_ops,
+                {
+                    "op": "associate_wireless_client",
+                    "device": client["name"],
+                    "ap": primary,
+                    "ssid": ssid,
+                    "ip_mode": "dhcp",
                 },
             )
 
@@ -4616,6 +4699,7 @@ def build_prompt_blueprint(plan: IntentPlan, donor_roots: list[Path] | None = No
     prepared.links = links
     _synthesize_vlan_and_link_ops(prepared, devices, links)
     _synthesize_service_ops(prepared, devices)
+    _synthesize_wireless_ops(prepared, devices)
     prepared.capabilities = sorted(dict.fromkeys(prepared.capabilities))
     topology_plan = _build_topology_plan(prepared, devices, links)
     config_plan = _build_config_plan(prepared)

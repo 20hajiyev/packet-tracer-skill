@@ -842,7 +842,7 @@ def test_safe_open_profile_allows_rename_layout_and_config_only() -> None:
     assert safe_plan.switch_ops == plan.switch_ops
 
 
-def test_safe_open_profile_still_blocks_wireless_mutations() -> None:
+def test_safe_open_profile_blocks_only_what_is_still_untested() -> None:
     donor_root = ET.Element("PACKETTRACER5")
     devices = ET.SubElement(donor_root, "DEVICES")
     device = _make_device("AP1", "Access Point", "AccessPoint-PT")
@@ -864,26 +864,35 @@ def test_safe_open_profile_still_blocks_wireless_mutations() -> None:
 
     safe_plan, profiled_plan = _apply_safe_open_profile(donor_root, plan)
 
-    # End-device configuration used to be blocked here too, on no recorded
-    # evidence. It was measured on 2026-08-03 -- two generated labs opened in
-    # Packet Tracer -- and is allowed now. Wireless remains unmeasured.
-    assert "wireless_mutation" in profiled_plan.blocked_mutations
+    # This list was largely unmeasured precaution. device_prune, remove_link,
+    # end_device_mutation, wireless_mutation and wireless_client_association
+    # were all blocked with nothing recording why, and every one of them proved
+    # safe once a file was actually opened. What remains blocked is what remains
+    # untested.
+    assert "wireless_mutation" not in profiled_plan.blocked_mutations
     assert "end_device_mutation" not in profiled_plan.blocked_mutations
-    assert not safe_plan.wireless_ops
+    assert safe_plan.wireless_ops
     assert safe_plan.end_device_ops
+    assert set(profiled_plan.blocked_mutations) <= {
+        "port_reassignment",
+        "workspace_physical_mutation",
+    }
 
 
-def test_safe_open_preview_reports_wireless_mutations() -> None:
+def test_safe_open_preview_no_longer_blocks_measured_wireless_work() -> None:
     plan = parse_intent(
         "set AP1 ssid TEST security wpa2-psk passphrase test12345 "
         "associate Tablet0 to AP1 ssid TEST dhcp "
         "set Tablet0 dns 192.168.10.20"
     )
     preview = _apply_safe_open_preview(plan)
-    assert "wireless_mutation" in preview.blocked_mutations
-    assert "wireless_client_association" in preview.blocked_mutations
+
+    # Measured 2026-08-03: two wireless labs generated with these allowed opened
+    # in Packet Tracer, with the SSID and passphrase present in the saved file.
+    assert "wireless_mutation" not in preview.blocked_mutations
+    assert "wireless_client_association" not in preview.blocked_mutations
     assert "end_device_mutation" not in preview.blocked_mutations
-    assert any("wireless_mutation" in gap for gap in preview.blocking_gaps)
+    assert not any("wireless_mutation" in gap for gap in preview.blocking_gaps)
 
 
 def test_cumulative_link_stages_include_expected_dependencies() -> None:
