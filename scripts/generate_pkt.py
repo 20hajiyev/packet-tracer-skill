@@ -4080,29 +4080,54 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
                 }
             )
             continue
-        # Take the next free access port on the target switch. The link-reuse
-        # pass has already claimed the ports it needs, so scanning the blueprint
-        # is enough to avoid a collision.
-        used_ports = {
-            str(link[end]["port"])
-            for link in blueprint.get("links", [])
-            for end in ("a", "b")
-            if str(link[end]["dev"]) == switch_name
-        }
-        switch_port = next(
-            (
-                candidate
-                for index in range(1, 49)
-                for candidate in (f"FastEthernet0/{index}",)
-                if candidate not in used_ports
-            ),
-            "FastEthernet0/1",
-        )
+        # The blueprint has usually already planned this host's connection, with
+        # a port of its own. Allocating a second one here meant every clone on a
+        # switch was wired twice -- and because the search scanned only ports
+        # already in the blueprint, all of them landed on `FastEthernet0/1`. At
+        # 100 hosts that was 16 cables on one interface and a lab Packet Tracer
+        # refused to open.
+        clone_name = str(clone["new_name"])
+        planned_port = ""
+        planned_link = None
+        for link in blueprint.get("links", []):
+            ends = {str(link[end]["dev"]): str(link[end]["port"]) for end in ("a", "b")}
+            if clone_name in ends and switch_name in ends:
+                planned_port = ends[switch_name]
+                planned_link = link
+                break
+
+        if planned_port:
+            switch_port = planned_port
+        else:
+            used_ports = {
+                str(link[end]["port"])
+                for link in blueprint.get("links", [])
+                for end in ("a", "b")
+                if str(link[end]["dev"]) == switch_name
+            }
+            switch_port = next(
+                (
+                    candidate
+                    for index in range(1, 49)
+                    for candidate in (f"FastEthernet0/{index}",)
+                    if candidate not in used_ports
+                ),
+                "",
+            )
+            if not switch_port:
+                gap = (
+                    f"{switch_name} has no free access port for {clone_name}. "
+                    "A switch cannot carry more hosts than it has interfaces; "
+                    "ask for more switches or fewer hosts each."
+                )
+                if gap not in adapted_plan.blocking_gaps:
+                    adapted_plan.blocking_gaps.append(gap)
+                continue
         adapted_plan.edit_operations.append(
             {
                 "op": "duplicate_host",
                 "device": source_final,
-                "new_name": str(clone["new_name"]),
+                "new_name": clone_name,
                 "switch": switch_name,
                 "switch_port": switch_port,
                 "host_port": "FastEthernet0",
@@ -4110,13 +4135,14 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
                 "y": int(clone["y"]),
             }
         )
-        blueprint.setdefault("links", []).append(
-            {
-                "a": {"dev": switch_name, "port": switch_port},
-                "b": {"dev": str(clone["new_name"]), "port": "FastEthernet0"},
-                "media": "straight-through",
-            }
-        )
+        if planned_link is None:
+            blueprint.setdefault("links", []).append(
+                {
+                    "a": {"dev": switch_name, "port": switch_port},
+                    "b": {"dev": clone_name, "port": "FastEthernet0"},
+                    "media": "straight-through",
+                }
+            )
 
     _resolve_port_conflicts(
         adapted_plan,

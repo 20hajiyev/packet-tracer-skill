@@ -354,3 +354,26 @@ def test_a_lab_with_no_picture_bank_is_untouched() -> None:
     from generate_pkt import prune_unused_images
 
     assert prune_unused_images(ET.fromstring("<PACKETTRACER5><DEVICES/></PACKETTRACER5>")) == 0
+
+
+def test_a_cloned_host_reuses_the_link_the_blueprint_planned() -> None:
+    """Clones were wired twice, and the second cable always took the same port.
+
+    The blueprint already plans a connection for every host, with a port of its
+    own. The clone path allocated a second one by scanning ports already in the
+    blueprint -- which, for a host whose link was in that very list, always
+    returned `FastEthernet0/1`. At 100 hosts that put 16 cables on one interface
+    and Packet Tracer refused the lab.
+    """
+    from intent_parser import parse_intent
+
+    from generate_pkt import _build_donor_prune_plan, build_prompt_blueprint
+
+    blueprint, prepared = build_prompt_blueprint(parse_intent("100 komputer 6 switch 1 router qur"))
+    adapted, _ = _build_donor_prune_plan(prepared, blueprint)
+
+    clones = [op for op in adapted.edit_operations if op["op"] == "duplicate_host"]
+    assert clones, "this topology needs cloned hosts"
+
+    ports = [(str(op["switch"]), str(op["switch_port"])) for op in clones]
+    assert len(ports) == len(set(ports)), "two clones were given the same switch port"
