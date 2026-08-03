@@ -1159,3 +1159,57 @@ generated lab shared those too.
 
 Generation of that case went 39 s to 15 s, and the corpus median from 5 s to
 3.6 s. **16/17 generated, 16 opened, 0 unexpected.**
+
+
+## What Packet Tracer and NetPilot actually offer
+
+Researched the simulator's own documentation and the nearest comparable product
+before continuing, because both bear on whether the donor-prune architecture is
+the right one.
+
+### Packet Tracer's programmatic surfaces
+
+The install ships two APIs, and they are not what their names suggest.
+
+**NetconRestAPI** is not a way to control Packet Tracer. It is a simulated Cisco
+DNA-Center-style northbound controller that runs *inside* a topology -- tickets,
+inventory, discovery, flow analysis -- for teaching network automation.
+
+**IpcAPI** is the real external surface: 2758 documented classes, used by ExApps
+that connect to a running Packet Tracer. It exposes inspection and configuration
+of existing objects, plus `fileNew`, `fileOpen`, `getActiveFile` and
+`Options.saveFile`. What it does **not** expose is topology construction:
+`Network` has `getDevice`, `getDeviceCount`, `getLinkAt` and no `addDevice`; the
+`addDevice*` methods on `Device` turn out to be `addDeviceExternalAttributes`,
+which set attribute values.
+
+So IPC is not an alternative generation path. It is a possible future
+verification channel -- worth remembering that it can open and save files.
+
+### NetPilot
+
+The closest comparable product. Vendor claims, not measured here: plain-English
+or assignment-PDF in, configured `.pkt` out in about two minutes, with VLANs,
+OSPF, ACLs, NAT, ASA rules, wireless and IoT; can import a broken `.pkt`,
+diagnose it and hand back a working one; runs entirely in a browser with no
+Packet Tracer installed; free tier plus a paid tier; scoped to CCNA/CCNP, with
+CCIE-scale topics explicitly out.
+
+The interesting part is the architecture that implies. Running with no Packet
+Tracer means no donor lab to prune, so device prototypes must come from a
+library extracted in advance. Our equivalent of that library is the donor, which
+is why `generate_from_blueprint` -- the supposedly from-scratch path -- still
+fails with "donor has only 0 prototype(s) for Router with model 2911".
+
+### Two defects that came out of testing that path
+
+`2911 router qur` parsed as **two thousand nine hundred and eleven routers**.
+Model designations sit exactly where a count goes, and the planner worked on it
+for over ten minutes before failing. Known model numbers and any count above 200
+are no longer read as counts.
+
+And a named model was silently ignored: asking for a 2911 produced a PT8200
+because that is what the donor carries, with nothing said about it. The
+substitution is now recorded in `assumptions_used`.
+
+**Corpus: 17/18 generated, 17 opened, 0 unexpected.**

@@ -347,6 +347,7 @@ class IntentPlan:
     network_style: str | None = None
     wireless_mode: str | None = None
     wireless_settings: dict[str, object] = field(default_factory=dict)
+    requested_models: list[str] = field(default_factory=list)
     device_requirements: dict[str, int] = field(default_factory=dict)
     device_counts: dict[str, int] = field(default_factory=dict)
     department_groups: list[dict[str, object]] = field(default_factory=list)
@@ -431,6 +432,41 @@ def _any_device_alias_pattern() -> str:
     )
 
 
+# Cisco model designations sit right next to the device word -- `2911 router`,
+# `2960 switch` -- exactly where a count goes. Reading one as a count made
+# `2911 router qur` request two thousand nine hundred and eleven routers, which
+# planned for minutes before failing.
+KNOWN_DEVICE_MODELS = {
+    819, 829, 1240, 1941, 2504, 2620, 2621, 2811, 2901, 2911, 2950, 2960,
+    3560, 3650, 3702, 4321, 4331, 8200, 5505, 5506, 1841, 1921, 3945,
+}
+# Nobody asks for more devices than this, and Packet Tracer would not open the
+# result if they did. A larger number is a model, a year, or a typo.
+MAX_REASONABLE_DEVICE_COUNT = 200
+
+
+def _is_device_count(value: int) -> bool:
+    return 0 <= value <= MAX_REASONABLE_DEVICE_COUNT and value not in KNOWN_DEVICE_MODELS
+
+
+def _extract_requested_models(normalized_prompt: str) -> list[str]:
+    """Model designations the prompt names, e.g. `2911`, `ISR4331`, `2960-24TT`.
+
+    Recorded so the answer can be honest about them. A generated lab takes its
+    device models from whichever donor supplied the prototype, so asking for a
+    2911 and receiving a PT8200 is the normal outcome -- but it used to happen
+    silently, which reads as the request having been honoured.
+    """
+    found: list[str] = []
+    for match in re.finditer(r"\b(isr\s?\d{3,4}|\d{3,4})(?:-[a-z0-9]+)?\b", normalized_prompt):
+        token = match.group(0).replace(" ", "").upper()
+        # Only the leading number identifies the family: `2960-24TT` is a 2960.
+        leading = re.match(r"[A-Z]*(\d{3,4})", token)
+        if leading and int(leading.group(1)) in KNOWN_DEVICE_MODELS and token not in found:
+            found.append(token)
+    return found
+
+
 def _extract_natural_device_counts(normalized_prompt: str) -> dict[str, int]:
     """Count devices per type from a natural prompt.
 
@@ -451,11 +487,15 @@ def _extract_natural_device_counts(normalized_prompt: str) -> dict[str, int]:
         trailing = re.compile(
             rf"\b(?:{alias_pattern})\s+(\d+)\b(?!\s*(?:dene|eded|tane)?\s*(?:{any_alias})\b)"
         )
-        leading_values = [int(value) for value in leading.findall(normalized_prompt)]
+        leading_values = [
+            int(value) for value in leading.findall(normalized_prompt) if _is_device_count(int(value))
+        ]
         if leading_values:
             counts[device_type] = max(leading_values)
             continue
-        trailing_values = [int(value) for value in trailing.findall(normalized_prompt)]
+        trailing_values = [
+            int(value) for value in trailing.findall(normalized_prompt) if _is_device_count(int(value))
+        ]
         if trailing_values:
             counts[device_type] = max(trailing_values)
             continue
@@ -1869,6 +1909,7 @@ def parse_intent(prompt: str) -> IntentPlan:
         capabilities=capabilities,
         network_style=network_style,
         wireless_mode=wireless_mode,
+        requested_models=_extract_requested_models(normalized_prompt),
         wireless_settings=_restore_wireless_casing(
             _extract_wireless_settings(normalized_prompt), prompt
         ),

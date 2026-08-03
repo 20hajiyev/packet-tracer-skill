@@ -134,6 +134,13 @@ CORPUS: tuple[CorpusCase, ...] = (
         note="hosts named with nothing to plug into; a switch has to be inferred",
     ),
     CorpusCase(
+        "named_model",
+        "2911 router ve 2960 switch ile 3 pc qur",
+        # The model number sits exactly where a count goes; this asked for two
+        # thousand nine hundred and eleven routers and planned for minutes.
+        note="device models named in the prompt must not be read as counts",
+    ),
+    CorpusCase(
         "wireless_ssid",
         "1 wireless router 2 laptop qur ssid EvSebeke wpa2 sifre Gizli123",
         # The network name and secret are the proof. Without the wireless ops the

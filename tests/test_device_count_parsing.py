@@ -197,3 +197,60 @@ def test_a_wireless_router_counts_as_something_to_connect_to() -> None:
     plan = parse_intent("1 wireless router 2 laptop qur")
 
     assert "Switch" not in plan.device_requirements
+
+
+def test_a_model_number_is_not_a_device_count() -> None:
+    """`2911 router qur` asked for two thousand nine hundred and eleven routers.
+
+    Cisco model designations sit exactly where a count goes, and the planner
+    spent minutes on the request before failing.
+    """
+    assert parse_intent("2911 router qur").device_counts == {"Router": 1}
+    assert parse_intent("2911 router ve 2960 switch ile 3 pc qur").device_counts == {
+        "Router": 1,
+        "Switch": 1,
+        "PC": 3,
+    }
+
+
+def test_real_counts_are_still_read() -> None:
+    """The guard must not swallow ordinary numbers."""
+    assert parse_intent("100 komputer 1 switch qur").device_counts == {"Switch": 1, "PC": 100}
+    assert parse_intent("2 switch 1 router 4 komputer qur").device_counts == {
+        "Router": 1,
+        "Switch": 2,
+        "PC": 4,
+    }
+
+
+def test_requested_models_are_recorded() -> None:
+    assert parse_intent("2911 router qur").requested_models == ["2911"]
+    assert parse_intent("2960-24TT switch qur").requested_models == ["2960-24TT"]
+    assert parse_intent("1 ISR4331 router qur").requested_models == ["ISR4331"]
+    assert parse_intent("1 router 1 switch 3 pc qur").requested_models == []
+
+
+def test_an_unavailable_model_is_reported_not_silently_swapped() -> None:
+    """Device models come from whichever donor supplied the prototype.
+
+    The local donors carry PT8200 and ISR4331, so asking for a 2911 -- the model
+    most CCNA material uses -- quietly produced something else.
+    """
+    from generate_pkt import _note_model_substitutions
+
+    plan = parse_intent("1 router 2911 1 switch 3 pc qur")
+    _note_model_substitutions(
+        plan,
+        [{"name": "R1", "type": "Router", "model": "PT8200"}],
+    )
+
+    assert any("2911" in note and "not available" in note for note in plan.assumptions_used)
+
+
+def test_a_satisfied_model_produces_no_note() -> None:
+    from generate_pkt import _note_model_substitutions
+
+    plan = parse_intent("1 ISR4331 router qur")
+    _note_model_substitutions(plan, [{"name": "R1", "type": "Router", "model": "ISR4331"}])
+
+    assert not any("not available" in note for note in plan.assumptions_used)

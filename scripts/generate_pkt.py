@@ -2426,6 +2426,34 @@ def _synthesize_links(plan: IntentPlan, devices: list[dict[str, object]]) -> lis
     return links
 
 
+def _note_model_substitutions(plan: IntentPlan, devices: list[dict[str, object]]) -> None:
+    """Say so when the lab uses a different device model than was asked for.
+
+    A generated lab takes its device models from whichever donor supplied the
+    prototype, and the local donors carry `PT8200` and `ISR4331` routers. Asking
+    for a 2911 -- the model most CCNA material uses -- quietly produced a
+    PT8200, which reads as the request having been honoured.
+    """
+    requested = [str(model) for model in getattr(plan, "requested_models", []) if model]
+    if not requested:
+        return
+    supplied = {str(device.get("model") or "") for device in devices if device.get("model")}
+    unmet = [
+        model
+        for model in requested
+        if not any(model.upper() in given.upper() or given.upper() in model.upper() for given in supplied)
+    ]
+    if not unmet:
+        return
+    note = (
+        f"Requested model(s) {', '.join(unmet)} were not available; used "
+        f"{', '.join(sorted(supplied)) or 'the donor default'} instead. "
+        "Device models come from the donor lab that supplied the prototype."
+    )
+    if note not in plan.assumptions_used:
+        plan.assumptions_used.append(note)
+
+
 def _synthesize_service_ops(plan: IntentPlan, devices: list[dict[str, object]]) -> None:
     """Emit the service operations that do not depend on VLANs.
 
@@ -4751,6 +4779,7 @@ def build_prompt_blueprint(plan: IntentPlan, donor_roots: list[Path] | None = No
     _synthesize_vlan_and_link_ops(prepared, devices, links)
     _synthesize_service_ops(prepared, devices)
     _synthesize_wireless_ops(prepared, devices)
+    _note_model_substitutions(prepared, devices)
     prepared.capabilities = sorted(dict.fromkeys(prepared.capabilities))
     topology_plan = _build_topology_plan(prepared, devices, links)
     config_plan = _build_config_plan(prepared)
