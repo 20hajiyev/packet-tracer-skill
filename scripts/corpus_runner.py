@@ -136,9 +136,11 @@ CORPUS: tuple[CorpusCase, ...] = (
     CorpusCase(
         "wireless_home",
         "1 wireless router 2 laptop qur",
-        expects="donor_limited",
-        note="the local donor is a wired campus lab and carries no wireless router; "
-        "a model the donor lacks cannot be cloned into existence",
+        # Was reported as a donor limitation for weeks. It was a donor
+        # *selection* limitation: the base pool held one lab, and this machine
+        # had wireless-capable labs all along.
+        requires_content=(">WRT1</NAME>", ">Laptop2</NAME>"),
+        note="needs a donor the primary pool does not contain; exercises local-lab widening",
     ),
 )
 

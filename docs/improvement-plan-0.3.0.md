@@ -1023,3 +1023,49 @@ shape is untouched.
 Both open: one-of-each in 10.2s, ten PCs on an inferred switch in 13.6s.
 
 **Corpus: 14/16 generated, 14 opened, 0 unexpected.**
+
+
+## The last "donor limitation" was a selection bug
+
+`wireless_home` had been classified donor-limited: "the local donor is a wired
+campus lab and carries no wireless router; a model the donor lacks cannot be
+cloned into existence." The first clause was true. The conclusion was not.
+
+Measured: **143 local labs carry the running build**, several with wireless
+routers, access points, laptops and IP phones. The skill never looked at them.
+The base-donor pool is one file -- `_compat_donor_candidate()` resolves a single
+lab, bundled samples fail the exact-build policy, and curated roots are empty
+unless `--donor-root` is passed. Whatever that one lab lacked was declared
+impossible.
+
+### Indexing without paying for it
+
+A full lab summary costs ~770 ms, so summarising 143 labs would cost ~110 s
+against a 5-7 s generation. Three things keep it cheap:
+
+- **Version comes from the header.** `peek_pkt_header` is ~13 ms, so labs on the
+  wrong build are never decoded.
+- **The index is on disk**, keyed by size and mtime, so a warm run is little more
+  than a `stat` per file: 2.4 s cold, 0.4 s warm.
+- **The walk is bounded.** `Documents` holds 414,000 entries and takes 12 s to
+  traverse fully -- twice a whole generation -- almost all of it inside
+  checkouts and dependency trees. Depth is capped and code directories skipped.
+
+Widening runs **only on the failure path**, after the ranked pool has already
+been tried, so the common case is untouched.
+
+### Two more defects fell out of it
+
+The skill was selecting **its own generated output** as a donor -- a lab derived
+from a lab, carrying every simplification the first pass made. `output/`,
+`scratchpad/` and friends are now excluded, which took the local pool from 117
+entries to 16 real ones.
+
+And widening alone still failed: the donor holds `WirelessRouterNewGeneration`
+and `WirelessEndDevice`, while the planner matched device types by exact string
+and reported "no spare WirelessRouter". Selection understood the equivalences
+and the planner did not -- the same two-models split as every other defect here.
+
+**Corpus: 15/16 generated, 15 opened, 0 unexpected.** Every case except the
+deliberate refusal now works. No capability gaps and no donor limitations
+remain.

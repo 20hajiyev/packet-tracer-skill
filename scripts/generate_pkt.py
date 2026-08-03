@@ -243,6 +243,102 @@ def _compat_donor_candidate() -> SampleCandidate | None:
     )
 
 
+DEFAULT_LOCAL_DONOR_LIMIT = 4
+
+
+def _spare_pool_for_type(
+    pools: dict[str, list[dict[str, object]]], device_type: str
+) -> list[dict[str, object]]:
+    """Spares that can serve `device_type`, including equivalent models.
+
+    Packet Tracer's type names are not the words a prompt uses, and they differ
+    between device generations: a laptop is `WirelessEndDevice` in one lab and
+    `Laptop` in another, a home router is `WirelessRouterNewGeneration`. Exact
+    matching meant a donor full of wireless routers reported none.
+
+    Selection already understood these equivalences; the planner did not, which
+    is the same two-models-of-one-concept split that has caused every other
+    defect here.
+    """
+    exact = pools.get(device_type)
+    if exact:
+        return exact
+    try:
+        from local_donors import TYPE_EQUIVALENTS
+    except ImportError:  # pragma: no cover
+        return []
+    for name in TYPE_EQUIVALENTS.get(device_type, ()):  # ordered, closest first
+        pool = pools.get(name)
+        if pool:
+            return pool
+    return []
+
+
+def _local_donor_candidates(
+    *,
+    exclude: set[str] | None = None,
+    limit: int | None = None,
+    required_types: dict[str, int] | None = None,
+) -> list[SampleCandidate]:
+    """The user's own labs, as generation bases.
+
+    Bounded because summarising a lab costs ~770 ms: this machine holds 117
+    eligible labs, and decoding all of them would take longer than ninety
+    generation runs. The cap is on how many are *summarised*, not on how many
+    are discovered -- discovery is a cached header read.
+    """
+    try:
+        from local_donors import discover_local_donors
+    except ImportError:  # pragma: no cover - the widening is optional
+        return []
+
+    excluded = {str(Path(item).resolve()).lower() for item in (exclude or set())}
+    cap = limit if limit is not None else int(
+        os.getenv("PACKET_TRACER_LOCAL_DONOR_LIMIT") or DEFAULT_LOCAL_DONOR_LIMIT
+    )
+
+    candidates: list[SampleCandidate] = []
+    # Filtering on what a lab contains is what makes this useful: without it the
+    # first `cap` labs in alphabetical order get summarised, and a request for a
+    # wireless router happily decodes a dozen wired campus labs.
+    discovered = discover_local_donors(
+        required_types=required_types or None,
+        stop_after=cap + len(excluded) if required_types else 0,
+    )
+    for donor in discovered:
+        if len(candidates) >= cap:
+            break
+        if str(donor.path.resolve()).lower() in excluded:
+            continue
+        try:
+            sample = summarize_pkt_descriptor(
+                donor.path,
+                relative_path=donor.path.name,
+                origin="local-lab",
+                prototype_eligible=True,
+                trust_level="trusted",
+                role="compatibility",
+                license_or_permission="local-user",
+                promotion_status="validated_compat",
+                validation_status="validated",
+                donor_eligible=True,
+            )
+        except Exception:  # noqa: BLE001 - an unreadable lab is simply skipped
+            continue
+        sample.version = donor.version
+        sample.packet_tracer_version = donor.version
+        candidates.append(
+            SampleCandidate(
+                sample=sample,
+                capability_score=90,
+                topology_score=0,
+                total_score=90,
+                reasons=["local-lab"],
+            )
+        )
+    return candidates
+
+
 def _rank_generation_donors(
     plan: IntentPlan,
     topology_tags: list[str],
@@ -3478,7 +3574,7 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
     standalone_targets.sort(key=lambda item: _name_sort_key(str(item["name"])))
     for target in standalone_targets:
         device_type = _device_kind(target)
-        available_pool = spare_candidates_by_type.get(device_type, [])
+        available_pool = _spare_pool_for_type(spare_candidates_by_type, device_type)
         if not available_pool:
             # Same shortfall as inside a switch group, on the path for devices
             # that hang off no switch. Clone one the donor already has rather
@@ -3905,6 +4001,27 @@ def _build_donor_prune_plan(
     if evaluation is not None:
         adapted_plan, archetype_plan, _, _ = evaluation
         return adapted_plan, archetype_plan
+
+    # Nothing in the ranked pool worked. That pool is one file in practice: the
+    # resolved compatibility donor, since bundled samples fail the exact-build
+    # policy and curated roots are empty unless `--donor-root` was passed. So a
+    # request the chosen donor could not serve was reported as impossible --
+    # `1 wireless router 2 laptop qur` came back as a donor limitation while
+    # this machine held labs with wireless routers, access points and laptops.
+    #
+    # Widening happens only here, on the failure path, because summarising a
+    # lab costs ~770 ms and the common case already succeeded above.
+    extra_candidates = _local_donor_candidates(
+        exclude={str(candidate.sample.path) for candidate in donor_candidates},
+        required_types=dict(plan.device_requirements),
+    )
+    if extra_candidates:
+        widened = _rerank_candidates_for_blueprint(extra_candidates, blueprint)
+        evaluation, more_diagnostics = _evaluate_donor_prune_candidates(plan, blueprint, widened)
+        diagnostics = list(diagnostics) + list(more_diagnostics)
+        if evaluation is not None:
+            adapted_plan, archetype_plan, _, _ = evaluation
+            return adapted_plan, archetype_plan
 
     blocked_plan = _copy_plan(plan)
     summary = "No ranked donor candidate passed donor-prune compatibility validation."
