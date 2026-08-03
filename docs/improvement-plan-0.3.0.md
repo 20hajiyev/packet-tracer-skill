@@ -1431,3 +1431,32 @@ the other 90), and the editor skips a standby group with no address instead of
 raising.
 
 **Corpus: 25 cases, 24 generated, 24 opened, 0 unexpected. 536 tests.**
+
+
+## Drawing on the workspace
+
+Packet Tracer's annotation tools -- notes, rectangles, ellipses, lines, and the
+colours that go with them -- were not reachable from this skill at all.
+
+The formats were measured, not guessed. A rectangle in `Ipsec2.pkt` and an
+ellipse in `Outside_Nat.pkt` gave the field names; the tag vocabulary
+(`RECTANGLES`, `ELLIPSES`, `LINES`, `POLYGONS`, `NOTES`, `FILL_COLOR`,
+`FILL_FLAG`) came out of the binary itself. `Color` is the outline and `Filled`
+decides whether the interior is painted with it. The containers sit directly
+under the document root.
+
+`pkt_annotate` exposes all of it, with a palette named in English and
+Azerbaijani so a prompt can ask for a `qirmizi cerceve`. Verified against real
+opens: twenty rectangles (ten filled, ten outline), four ellipses, six lines and
+thirteen notes in one lab, which opens in 10.1 s.
+
+Generated labs now draw themselves: each switch block gets a coloured frame and
+a `SW2 - VLAN 10` label, with a title note above the topology. Inherited
+annotations are cleared first, because the donor's frames were drawn for the
+donor's layout and would box the wrong devices.
+
+**One thing this got wrong first.** The block grouping divided by the number of
+access switches, and a wireless home lab has none -- so `wireless_ssid` and
+`wireless_home` stopped generating entirely. Decoration must never be what stops
+a lab being produced, so the whole annotation pass is now guarded: if anything
+inside it fails, the lab is written without drawings.
