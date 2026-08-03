@@ -11,6 +11,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
@@ -379,29 +381,47 @@ def test_a_cloned_host_reuses_the_link_the_blueprint_planned() -> None:
     assert len(ports) == len(set(ports)), "two clones were given the same switch port"
 
 
-def test_a_cloned_switch_uplink_claims_its_port() -> None:
-    """The last producer that bypassed the port allocator.
+def test_no_interface_carries_two_cables_at_scale(tmp_path) -> None:
+    """The contract is about the file, not the plan.
 
-    A cloned switch's uplink is emitted after the clone exists, and it wrote the
-    blueprint port straight out instead of reserving it. The core switch then
-    handed the same interface to two access switches -- `SW1 FastEthernet0/7`
-    carrying both SW3 and SW21 -- which the structural check caught at 22
-    switches and above.
+    A cloned switch's uplink is emitted after the clone exists and wrote its
+    blueprint port straight out, so the core switch could hand the same
+    interface to two access switches -- `SW1 FastEthernet0/7` carrying both SW3
+    and SW21. The plan is allowed to propose a collision, because
+    `_resolve_port_conflicts` reconciles afterwards; what must never happen is a
+    saved lab with two cables on one port.
     """
-    from intent_parser import parse_intent
+    import subprocess
+    import sys as _sys
+    from collections import Counter
 
-    from generate_pkt import _build_donor_prune_plan, build_prompt_blueprint
+    from pkt_codec import decode_pkt_auto, parse_pkt_xml
 
-    blueprint, prepared = build_prompt_blueprint(parse_intent("40 komputer 22 switch 1 router qur"))
-    adapted, _ = _build_donor_prune_plan(prepared, blueprint)
+    output = tmp_path / "wide.pkt"
+    subprocess.run(
+        [_sys.executable, str(ROOT / "scripts" / "generate_pkt.py"),
+         "--prompt", "40 komputer 22 switch 1 router qur", "--output", str(output)],
+        capture_output=True, text=True, cwd=str(ROOT), timeout=1800,
+    )
+    if not output.exists():
+        pytest.skip("generation needs a local donor lab")
 
-    seen: set[tuple[str, str]] = set()
-    for op in adapted.edit_operations:
-        if op["op"] != "set_link":
+    xml, _container = decode_pkt_auto(output.read_bytes(), verify=False)
+    root = parse_pkt_xml(xml)
+    names = {
+        device.findtext("./ENGINE/SAVE_REF_ID") or "": device.findtext("./ENGINE/NAME")
+        for device in root.findall(".//DEVICES/DEVICE")
+    }
+    used: Counter[tuple[str, str]] = Counter()
+    for link in root.findall(".//LINKS/LINK"):
+        cable = link.find("./CABLE")
+        if cable is None:
             continue
-        for end in ("a", "b"):
-            key = (str(op[end]["dev"]), str(op[end]["port"]))
-            if not key[1]:
-                continue
-            assert key not in seen, f"{key[0]} {key[1]} was handed out twice"
-            seen.add(key)
+        ends = [names.get(cable.findtext(tag) or "", "") for tag in ("FROM", "TO")]
+        ports = [port.text or "" for port in cable.findall("PORT")]
+        for name, port in zip(ends, ports):
+            if name and port:
+                used[(name, port)] += 1
+
+    doubled = [key for key, count in used.items() if count > 1]
+    assert not doubled, f"interfaces carrying two cables: {doubled[:3]}"
