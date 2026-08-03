@@ -425,3 +425,39 @@ def test_no_interface_carries_two_cables_at_scale(tmp_path) -> None:
 
     doubled = [key for key, count in used.items() if count > 1]
     assert not doubled, f"interfaces carrying two cables: {doubled[:3]}"
+
+
+def _security(prompt: str) -> list[str]:
+    from generate_pkt import _synthesize_security_ops
+
+    plan = parse_intent(prompt)
+    devices = [
+        {"name": "R1", "type": "Router", "model": "ISR4331"},
+        {"name": "SW1", "type": "Switch"},
+        {"name": "SW2", "type": "Switch"},
+    ]
+    _synthesize_security_ops(plan, devices)
+    return sorted({str(op["op"]) for op in plan.router_ops + plan.switch_ops})
+
+
+def test_nat_emits_the_acl_it_needs_as_well() -> None:
+    """NAT overload without a matching ACL configures nothing."""
+    assert _security("1 router 1 switch 4 pc qur nat olsun") == [
+        "add_acl_rule",
+        "set_acl",
+        "set_pat_overload",
+    ]
+
+
+def test_acl_alone_does_not_pull_in_nat() -> None:
+    assert _security("2 router 2 switch 6 pc qur acl olsun") == ["add_acl_rule", "set_acl"]
+
+
+def test_layer_two_hardening_is_emitted() -> None:
+    assert _security("2 switch 1 router 4 pc qur stp olsun") == ["set_stp"]
+    assert _security("2 switch 1 router 4 pc qur etherchannel lacp olsun") == ["set_etherchannel"]
+    assert _security("2 switch 1 router 4 pc qur port security olsun") == ["set_port_security"]
+
+
+def test_a_plain_topology_gets_no_security_configuration() -> None:
+    assert _security("1 router 1 switch 3 pc qur") == []

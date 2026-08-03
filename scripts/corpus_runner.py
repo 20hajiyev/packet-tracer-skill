@@ -153,6 +153,24 @@ CORPUS: tuple[CorpusCase, ...] = (
         note="the same emission path as OSPF, different protocol",
     ),
     CorpusCase(
+        "nat_internet",
+        "1 router 1 switch 4 komputer qur nat olsun",
+        requires_content=("ip nat",),
+        note="NAT overload plus the ACL that feeds it",
+    ),
+    CorpusCase(
+        "acl_security",
+        "2 router 2 switch 6 komputer qur acl olsun",
+        requires_content=("access-list",),
+        note="named standard ACL with a permit rule",
+    ),
+    CorpusCase(
+        "stp_hardening",
+        "2 switch 1 router 4 komputer qur stp olsun",
+        requires_content=("spanning-tree",),
+        note="rapid-pvst with the core as root",
+    ),
+    CorpusCase(
         "wireless_ssid",
         "1 wireless router 2 laptop qur ssid EvSebeke wpa2 sifre Gizli123",
         # The network name and secret are the proof. Without the wireless ops the

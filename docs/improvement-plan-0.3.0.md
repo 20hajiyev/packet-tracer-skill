@@ -1390,3 +1390,22 @@ so the picture agrees with the wiring.
 
 The same layout applies at every size, so a four-switch lab now fits in
 x 180..2620, y 110..820 instead of sprawling.
+
+
+## Security and switching capabilities
+
+ACL, NAT/PAT, STP, EtherChannel and port security were all recognised by the
+parser and emitted by nobody -- the fifth appearance of that gap after DHCP,
+telnet, wireless and routing. `pkt_editor` had implemented every operation.
+
+Verified against real opens: `nat olsun` writes `ip nat` twice, `acl olsun`
+writes four `access-list` lines, `stp olsun` writes twenty-two `spanning-tree`
+lines. NAT emits the ACL that feeds it, because overload without a matching list
+configures nothing.
+
+The last producer bypassing the port allocator is also gone: a cloned switch's
+uplink wrote its blueprint port straight out, so the core could hand
+`FastEthernet0/7` to both SW3 and SW21. The 500-host lab now passes the
+structural check with no failures.
+
+**Corpus: 23 cases, 22 generated, 22 opened, 0 unexpected.**

@@ -2776,6 +2776,119 @@ def _synthesize_routing_ops(plan: IntentPlan, devices: list[dict[str, object]]) 
         )
 
 
+def _synthesize_security_ops(plan: IntentPlan, devices: list[dict[str, object]]) -> None:
+    """Emit ACLs, NAT and the layer-2 hardening the prompt asked for.
+
+    Every one of these already exists in `pkt_editor` -- `set_acl`,
+    `add_acl_rule`, `apply_acl`, `set_pat_overload`, `set_stp`,
+    `set_etherchannel`, `set_port_security`. The parser recognises the words.
+    Nothing joined them, so "nat olsun" produced a lab with no NAT, the same gap
+    that hid behind DHCP, telnet, wireless and routing.
+    """
+    routers = [device for device in devices if _device_kind(device) == "Router"]
+    switches = [device for device in devices if _device_kind(device) == "Switch"]
+    capabilities = set(plan.capabilities)
+    lan = f"192.168.{plan.vlan_ids[0]}.0" if plan.vlan_ids else "192.168.1.0"
+
+    if routers and {"acl", "acl_standard", "acl_extended"} & capabilities:
+        router = routers[0]
+        _append_unique_op(
+            plan.router_ops,
+            {"op": "set_acl", "device": router["name"], "acl_kind": "standard", "acl_name": "LAN-ACCESS"},
+        )
+        _append_unique_op(
+            plan.router_ops,
+            {
+                "op": "add_acl_rule",
+                "device": router["name"],
+                "acl_name": "LAN-ACCESS",
+                "acl_kind": "standard",
+                "action": "permit",
+                "source": f"{lan} 0.0.0.255",
+                "destination": "any",
+            },
+        )
+
+    # NAT and PAT both mean "let this LAN reach the outside" in a lab prompt.
+    if routers and {"nat", "pat", "nat_dynamic", "nat_static"} & capabilities:
+        router = routers[0]
+        outside = _router_port(router, 1)
+        _append_unique_op(
+            plan.router_ops,
+            {"op": "set_acl", "device": router["name"], "acl_kind": "standard", "acl_name": "NAT-POOL"},
+        )
+        _append_unique_op(
+            plan.router_ops,
+            {
+                "op": "add_acl_rule",
+                "device": router["name"],
+                "acl_name": "NAT-POOL",
+                "acl_kind": "standard",
+                "action": "permit",
+                "source": f"{lan} 0.0.0.255",
+                "destination": "any",
+            },
+        )
+        _append_unique_op(
+            plan.router_ops,
+            {
+                "op": "set_pat_overload",
+                "device": router["name"],
+                "acl": "NAT-POOL",
+                "interface": outside,
+                "overload": True,
+                "modulus": "",
+                "domain": "",
+                "username": "",
+                "password": "",
+            },
+        )
+
+    if switches and {"stp", "rstp", "pvst"} & capabilities:
+        # Rapid PVST+ is what a modern campus runs, and the core is the root.
+        for index, switch in enumerate(switches):
+            _append_unique_op(
+                plan.switch_ops,
+                {
+                    "op": "set_stp",
+                    "device": switch["name"],
+                    "mode": "rapid-pvst",
+                    "vlan": plan.vlan_ids[0] if plan.vlan_ids else 1,
+                    "root": index == 0,
+                    "channel": 0,
+                },
+            )
+
+    if switches and {"etherchannel", "lacp", "pagp"} & capabilities and len(switches) >= 2:
+        mode = "active" if "lacp" in capabilities else ("desirable" if "pagp" in capabilities else "on")
+        for switch in switches[:2]:
+            _append_unique_op(
+                plan.switch_ops,
+                {
+                    "op": "set_etherchannel",
+                    "device": switch["name"],
+                    "channel": 1,
+                    "mode": mode,
+                    "interfaces": ["GigabitEthernet0/1", "GigabitEthernet0/2"],
+                    "domain": "",
+                    "version": "",
+                },
+            )
+
+    if switches and "port_security" in capabilities:
+        for switch in switches:
+            _append_unique_op(
+                plan.switch_ops,
+                {
+                    "op": "set_port_security",
+                    "device": switch["name"],
+                    "port": "FastEthernet0/1",
+                    "maximum": 2,
+                    "violation": "restrict",
+                },
+            )
+
+
 def _management_vlan_id(plan: IntentPlan) -> int | None:
     """The VLAN reserved for switch management, if the prompt asked for one."""
     if "management_vlan" not in set(plan.capabilities):
@@ -4998,6 +5111,7 @@ def build_prompt_blueprint(plan: IntentPlan, donor_roots: list[Path] | None = No
     _synthesize_service_ops(prepared, devices)
     _synthesize_wireless_ops(prepared, devices)
     _synthesize_routing_ops(prepared, devices)
+    _synthesize_security_ops(prepared, devices)
     _note_model_substitutions(prepared, devices)
     prepared.capabilities = sorted(dict.fromkeys(prepared.capabilities))
     topology_plan = _build_topology_plan(prepared, devices, links)
