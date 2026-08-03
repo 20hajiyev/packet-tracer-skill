@@ -2506,6 +2506,7 @@ def _synthesize_links(plan: IntentPlan, devices: list[dict[str, object]]) -> lis
                 "media": "straight-through",
             }
         )
+    _add_wan_link(plan, routers, links)
     return links
 
 
@@ -3214,6 +3215,37 @@ def _management_vlan_id(plan: IntentPlan) -> int | None:
     if plan.vlan_ids:
         return max(plan.vlan_ids)
     return 99
+
+
+
+def _add_wan_link(
+    plan: IntentPlan, routers: list[dict[str, object]], links: list[dict[str, object]]
+) -> None:
+    """Join two routers over a serial link when the prompt asks for a WAN.
+
+    A two-router PPP lab was being built with the PPP configuration in place and
+    no cable between the routers -- two isolated sites and a serial encapsulation
+    configured on an interface with nothing on the other end.
+
+    Serial is the medium every CCNA WAN lab uses; `apply_cable_type` maps it to
+    the `eSerial` link family.
+    """
+    if len(routers) < 2:
+        return
+    if not set(plan.capabilities) & {"ppp", "gre", "wan", "vpn", "ipsec", "static_route"}:
+        return
+    left, right = routers[0], routers[1]
+    pair = {str(left["name"]), str(right["name"])}
+    for link in links:
+        if {str(link["a"]["dev"]), str(link["b"]["dev"])} == pair:
+            return
+    links.append(
+        {
+            "a": {"dev": left["name"], "port": "Serial0/0/0"},
+            "b": {"dev": right["name"], "port": "Serial0/0/0"},
+            "media": "serial",
+        }
+    )
 
 
 def _synthesize_vlan_and_link_ops(plan: IntentPlan, devices: list[dict[str, object]], links: list[dict[str, object]]) -> None:

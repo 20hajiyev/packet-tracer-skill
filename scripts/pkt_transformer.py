@@ -527,21 +527,60 @@ def _prototype_link_xml(source_sample_path: str, left_type: str, right_type: str
     return ET.tostring(_generic_link_prototype(), encoding="unicode")
 
 
-def apply_cable_type(cable: ET.Element, media: str) -> None:
-    media_key = media.lower()
+#
+# A cable has two halves in the file, and they are not interchangeable.
+# Measured across 140 bundled labs:
+#
+#   LINK/TYPE   eCopper 393, eSerial 55, eCoaxial 12, eOctal 11, ePhoneLine 3
+#   CABLE/TYPE  eStraightThrough 274, eCrossOver 119, absent 81
+#
+# `LINK/TYPE` is the family; `CABLE/TYPE` is only the copper sub-type and is
+# absent for everything else. Writing `eSerialDCE` or `eFiber` into `CABLE/TYPE`
+# -- which is what this did -- put the value in the wrong element and never set
+# the family, so a serial or fibre link came out as plain copper.
+CABLE_FAMILIES = {
+    "copper": ("eCopper", "eStraightThrough"),
+    "straight-through": ("eCopper", "eStraightThrough"),
+    "straight": ("eCopper", "eStraightThrough"),
+    "crossover": ("eCopper", "eCrossOver"),
+    "cross-over": ("eCopper", "eCrossOver"),
+    "fiber": ("eFiber", ""),
+    "fibre": ("eFiber", ""),
+    "serial": ("eSerial", ""),
+    "serial-dce": ("eSerial", ""),
+    "serial-dte": ("eSerial", ""),
+    "coaxial": ("eCoaxial", ""),
+    "coax": ("eCoaxial", ""),
+    "console": ("eOctal", ""),
+    "octal": ("eOctal", ""),
+    "phone": ("ePhoneLine", ""),
+    "phoneline": ("ePhoneLine", ""),
+}
+
+
+def apply_cable_type(cable: ET.Element, media: str, link: ET.Element | None = None) -> None:
+    """Set the cable family on the link and the copper sub-type on the cable.
+
+    `link` is optional so existing callers keep working, but without it only the
+    copper sub-type can be set -- a serial cable needs the family, which lives
+    one level up.
+    """
+    family, subtype = CABLE_FAMILIES.get(media.strip().lower(), ("", ""))
+
+    if link is not None and family:
+        node = link.find("TYPE")
+        if node is None:
+            node = ET.SubElement(link, "TYPE")
+        node.text = family
+
     node = cable.find("TYPE")
     if node is None:
         return
-    mapping = {
-        "copper": "eStraightThrough",
-        "straight-through": "eStraightThrough",
-        "straight": "eStraightThrough",
-        "crossover": "eCrossOver",
-        "cross-over": "eCrossOver",
-        "serial": "eSerialDCE",
-        "fiber": "eFiber",
-    }
-    node.text = mapping.get(media_key, node.text or "eStraightThrough")
+    if subtype:
+        node.text = subtype
+    elif family and family != "eCopper":
+        # Non-copper links carry no cable sub-type at all in a real save.
+        cable.remove(node)
 
 
 #
@@ -611,11 +650,13 @@ def port_capacity(device: ET.Element) -> dict[str, int]:
     missing, and inventing `GigabitEthernet0/3` on a 2960-24TT produced a file
     Packet Tracer refused to open.
     """
-    nodes = _port_nodes(device)
-    return {
-        "FastEthernet": sum(1 for node in nodes if "FastEthernet" in node.findtext("TYPE", "")),
-        "GigabitEthernet": sum(1 for node in nodes if "GigabitEthernet" in node.findtext("TYPE", "")),
-    }
+    nodes = device.findall(".//PORT")
+    counts = {"FastEthernet": 0, "GigabitEthernet": 0, "Serial": 0}
+    for node in nodes:
+        family = PORT_TYPE_FAMILIES.get((node.findtext("TYPE") or "").strip())
+        if family in counts:
+            counts[family] += 1
+    return counts
 
 
 # Hosts carry a single unslotted interface. Switches and routers slot theirs.
@@ -638,11 +679,16 @@ def port_exists(device: ET.Element, port_name: str) -> bool:
     canonical = _canonical_port_name(port_name)
     device_type = _device_type(device)
 
-    # Names outside the two Ethernet families are not modelled here: `Serial2/0`
-    # on a router, `Port 0` on an access point, `RS 232` on a laptop, the
-    # `Switch` pass-through on an IP phone. Reporting those as missing made real
-    # links look invalid, which is the damaging direction -- a legitimate link
-    # gets dropped. Say "not refuted" instead of "does not exist".
+    # Serial is modelled now, so it gets a real answer: a router with no serial
+    # card cannot carry `Serial0/0/0`, and letting that through produced a WAN
+    # lab whose PPP configuration sat on an interface that was never cabled.
+    if canonical.startswith("Serial"):
+        return port_capacity(device).get("Serial", 0) > 0
+
+    # Everything else is genuinely outside this module -- `Port 0` on an access
+    # point, `RS 232` on a laptop, the `Switch` pass-through on an IP phone.
+    # Reporting those as missing made real links look invalid, which is the
+    # damaging direction: a legitimate link gets dropped.
     if not canonical.startswith(("FastEthernet", "GigabitEthernet")):
         return True
 

@@ -20,7 +20,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from pkt_transformer import port_capacity, port_exists  # noqa: E402
 
 
-def _device(device_type: str, fast: int, gig: int) -> ET.Element:
+def _device(device_type: str, fast: int, gig: int, serial: int = 0) -> ET.Element:
     device = ET.Element("DEVICE")
     engine = ET.SubElement(device, "ENGINE")
     ET.SubElement(engine, "NAME").text = "D1"
@@ -33,11 +33,16 @@ def _device(device_type: str, fast: int, gig: int) -> ET.Element:
     for _ in range(gig):
         port = ET.SubElement(slot, "PORT")
         ET.SubElement(port, "TYPE").text = "eCopperGigabitEthernet"
+    for _ in range(serial):
+        port = ET.SubElement(slot, "PORT")
+        ET.SubElement(port, "TYPE").text = "eSerial"
     return device
 
 
 def test_capacity_counts_each_interface_kind() -> None:
+    # `Serial` joined the count when serial links needed a real answer.
     assert port_capacity(_device("Switch", fast=24, gig=2)) == {
+        "Serial": 0,
         "FastEthernet": 24,
         "GigabitEthernet": 2,
     }
@@ -89,7 +94,12 @@ def test_unmodelled_port_kinds_are_not_refuted() -> None:
     """
     device = _device("Switch", fast=24, gig=2)
 
-    assert port_exists(device, "Serial2/0")
+    # Serial is modelled now, so a device with no serial card gets a real "no".
+    # Letting it through produced a WAN lab whose PPP configuration sat on an
+    # interface that was never cabled.
+    assert not port_exists(device, "Serial2/0")
+    assert port_exists(_device("Router", fast=0, gig=2, serial=2), "Serial0/0/0")
+    # Families this module does not model stay "not refuted".
     assert port_exists(device, "Port 0")
     # The Ethernet families are still checked strictly.
     assert not port_exists(device, "FastEthernet0/99")
@@ -171,3 +181,64 @@ def test_a_multilayer_switch_keeps_its_wider_uplink_range() -> None:
 
     assert _switch_uplink_port({"name": "CORE", "model": "3650-24PS"}, 8) == "GigabitEthernet1/0/8"
     assert _switch_uplink_port({"name": "DIST", "model": "3560-24PS"}, 8) == "GigabitEthernet0/8"
+
+
+def test_a_router_without_a_serial_card_cannot_take_a_serial_link() -> None:
+    """The donor's router has four gigabit interfaces and no serial card.
+
+    Letting `Serial0/0/0` through produced a WAN lab with `encapsulation ppp`
+    configured on an interface that was never cabled -- the link was emitted,
+    the editor silently did nothing with it, and the file looked fine.
+    """
+    from pkt_transformer import port_exists
+
+    assert not port_exists(_device("Router", fast=0, gig=4), "Serial0/0/0")
+    assert port_exists(_device("Router", fast=0, gig=4, serial=2), "Serial0/0/0")
+
+
+def test_real_link_endpoints_all_validate() -> None:
+    """Saved labs are the oracle: if a lab links on port P, P must exist.
+
+    Across twelve local labs that is 782 endpoints, and it was 33 short before
+    serial, fibre and wireless families were counted.
+    """
+    import sys as _sys
+    from collections import Counter
+
+    _sys.path.insert(0, str(ROOT / "scripts"))
+    from local_donors import discover_local_donors
+    from pkt_codec import decode_pkt_auto, parse_pkt_xml
+    from pkt_transformer import port_exists
+
+    donors = discover_local_donors()[:4]
+    if not donors:
+        pytest.skip("no local labs to check against")
+
+    missing: Counter[tuple[str, str]] = Counter()
+    checked = 0
+    for donor in donors:
+        try:
+            xml, _container = decode_pkt_auto(donor.path.read_bytes(), verify=False)
+        except Exception:  # noqa: BLE001
+            continue
+        root = parse_pkt_xml(xml)
+        devices = {
+            device.findtext("./ENGINE/SAVE_REF_ID") or "": device
+            for device in root.findall(".//DEVICES/DEVICE")
+        }
+        for link in root.findall(".//LINKS/LINK"):
+            cable = link.find("./CABLE")
+            if cable is None:
+                continue
+            refs = [cable.findtext(tag) or "" for tag in ("FROM", "TO")]
+            ports = [port.text or "" for port in cable.findall("PORT")]
+            for ref, port in zip(refs, ports):
+                device = devices.get(ref)
+                if device is None or not port:
+                    continue
+                checked += 1
+                if not port_exists(device, port):
+                    missing[(device.findtext("./ENGINE/TYPE") or "?", port)] += 1
+
+    assert checked > 100, "expected a meaningful number of endpoints"
+    assert not missing, f"real interfaces reported as missing: {missing.most_common(3)}"

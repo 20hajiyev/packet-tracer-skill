@@ -1519,3 +1519,39 @@ Also settled while looking: Cisco's own help says the Drawing Palette creates
 missing. `POLYGON` in the binary belongs to the physical-workspace geo view.
 Note styling does not exist at all: across 150 samples every note has exactly
 five fields and no font, size or colour.
+
+
+## Cable types
+
+A cable has two halves in the file and they are not interchangeable. Measured
+across 140 bundled labs:
+
+| element | values |
+|---|---|
+| `LINK/TYPE` | eCopper 393, eSerial 55, eCoaxial 12, eOctal 11, ePhoneLine 3 |
+| `CABLE/TYPE` | eStraightThrough 274, eCrossOver 119, absent 81 |
+
+`LINK/TYPE` is the family; `CABLE/TYPE` is only the copper sub-type and is
+absent for everything else. `apply_cable_type` was writing `eSerialDCE` and
+`eFiber` into `CABLE/TYPE` -- the wrong element, and never setting the family --
+so asking for a serial or fibre cable produced plain copper. All seven families
+map correctly now, and a non-copper link drops the sub-type element as a real
+save does.
+
+`port_capacity` also counts serial interfaces now, so `port_exists` gives a real
+answer for `Serial0/0/0` instead of the "not refuted" it returns for families
+this module does not model. The real-lab invariant still holds: 782 endpoints
+across twelve labs, none reported missing, and it is a test now rather than a
+one-off script.
+
+### What still does not work, and why
+
+A two-router PPP lab gets `encapsulation ppp` on both routers and **no cable
+between them**. The link is planned and emitted; the editor silently does
+nothing with it, because the donor's router has four gigabit interfaces and no
+serial card. That is a genuine donor limitation rather than a bug in the
+planner -- but it is currently silent, which is the part that needs fixing.
+
+One attempt at fixing it -- validating the requested port inside `claim_port`
+rather than only the alternatives -- turned six links into thirteen and produced
+a file Packet Tracer refused. Reverted rather than shipped half-understood.

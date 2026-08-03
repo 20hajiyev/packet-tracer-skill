@@ -1195,7 +1195,7 @@ def _ensure_link(
         "IS_MANAGED_IN_RACK_VIEW",
         cable.findtext("IS_MANAGED_IN_RACK_VIEW", default="false") or "false",
     )
-    apply_cable_type(cable, media)
+    apply_cable_type(cable, media, link)
 
 
 def _prefix_to_mask(prefix: int) -> str:
