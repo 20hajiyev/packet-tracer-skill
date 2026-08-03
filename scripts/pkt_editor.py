@@ -1398,6 +1398,22 @@ def _apply_switch_op(device: ET.Element, operation: dict[str, object]) -> None:
 
 
 def _apply_router_op(device: ET.Element, operation: dict[str, object]) -> None:
+    """Apply one router operation.
+
+    A missing field used to escape as a bare `KeyError` from inside donor
+    validation, so `'DNS'`, `'virtual_ipv6'` and `'interface'` all surfaced as
+    "no ranked donor candidate passed compatibility validation" -- three
+    separate hours spent looking at donors when the fault was in the operation.
+    """
+    try:
+        return _apply_router_op_inner(device, operation)
+    except KeyError as missing:
+        raise KeyError(
+            f"operation {operation.get('op', '?')!r} is missing field {missing.args[0]!r}"
+        ) from missing
+
+
+def _apply_router_op_inner(device: ET.Element, operation: dict[str, object]) -> None:
     if operation["op"] == "set_subinterface":
         for target in _config_targets(device):
             _append_config_block(

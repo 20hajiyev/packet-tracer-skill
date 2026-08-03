@@ -1483,3 +1483,39 @@ with nothing running on it. An AAA server also gets its RADIUS port set, since
 nothing authenticates against a server that is not listening.
 
 **Corpus: 27 cases, 26 generated, 26 opened, 0 unexpected. 550 tests.**
+
+
+## Three annotation formats, corrected by one saved file
+
+The first drawing pass shipped rectangles and ellipses that rendered, and lines
+and notes that did not. A screenshot showed the gap immediately: twenty
+rectangles and four ellipses on screen, and nothing of the six lines or thirteen
+notes.
+
+No bundled Cisco sample contains a drawing-palette line or a logical note, so
+there was nothing to measure against -- both had been written by analogy with
+the rectangle, and both were wrong. The user drew one line and three notes in
+Packet Tracer and saved. That file settled all three questions at once, because
+Packet Tracer rewrites what it loads into its own form:
+
+**Lines are not rectangles.** They use `StartX/StartY/EndX/EndY` and carry no
+`Filled`. Written with corner fields, Packet Tracer read them, converted them,
+and dropped them from the view.
+
+**Notes live under `PHYSICALWORKSPACE/NOTES`** even though they show on the
+logical workspace. Written at the document root, Packet Tracer moved them and
+emptied the text, leaving each parked at the 50000,50000 sentinel.
+
+**A filled shape can have its own outline colour.** Packet Tracer writes
+`<Filled OUTLINECOLOR="#000000" OUTLINED="false">1</Filled>`, so a pale panel
+can carry a strong border -- something the first version had no way to express.
+
+Verified on screen after the fix: seven notes with their text, eight lines
+including a diagonal and a vertical, and five filled panels each with a
+contrasting border.
+
+Also settled while looking: Cisco's own help says the Drawing Palette creates
+**lines, rectangles and ellipses** -- that is the whole palette, so nothing is
+missing. `POLYGON` in the binary belongs to the physical-workspace geo view.
+Note styling does not exist at all: across 150 samples every note has exactly
+five fields and no font, size or colour.

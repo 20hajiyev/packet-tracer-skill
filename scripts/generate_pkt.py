@@ -3130,6 +3130,81 @@ def _synthesize_voice_ops(plan: IntentPlan, devices: list[dict[str, object]]) ->
         )
 
 
+def _synthesize_wan_ops(plan: IntentPlan, devices: list[dict[str, object]]) -> None:
+    """Configure the serial and tunnel side of a two-site lab.
+
+    `set_ppp_interface`, `set_gre_tunnel`, `set_ipsec_transform_set` and
+    `set_crypto_map` all exist in `pkt_editor`. As with everything else here,
+    the parser knew the words and nothing built the operations.
+
+    All of these need two routers -- a PPP link, a tunnel or an IPsec peer with
+    only one end is not a WAN.
+    """
+    routers = [device for device in devices if _device_kind(device) == "Router"]
+    if len(routers) < 2:
+        return
+    capabilities = set(plan.capabilities)
+    left, right = routers[0], routers[1]
+
+    if "ppp" in capabilities:
+        # CHAP unless the prompt says otherwise; PAP in a lab is a teaching
+        # choice rather than a default.
+        auth = "pap" if "pap" in plan.prompt.lower() else "chap"
+        for router in (left, right):
+            _append_unique_op(
+                plan.router_ops,
+                {
+                    "op": "set_ppp_interface",
+                    "device": router["name"],
+                    "interface": "Serial0/0/0",
+                    "authentication": auth,
+                },
+            )
+
+    if capabilities & {"gre", "ipv6_tunneling"}:
+        for index, (router, peer) in enumerate(((left, right), (right, left))):
+            _append_unique_op(
+                plan.router_ops,
+                {
+                    "op": "set_gre_tunnel",
+                    "device": router["name"],
+                    # The tunnel is its own interface; `source` is the physical
+                    # one it rides on.
+                    "interface": "Tunnel0",
+                    "source": "Serial0/0/0",
+                    "destination": f"10.0.0.{2 if index == 0 else 1}",
+                    "ip": f"172.16.0.{index + 1}",
+                    "prefix": 30,
+                },
+            )
+
+    if capabilities & {"ipsec", "vpn"} and "gre" not in capabilities:
+        for router in (left, right):
+            _append_unique_op(
+                plan.router_ops,
+                {
+                    "op": "set_ipsec_transform_set",
+                    "device": router["name"],
+                    "name": "VPN-SET",
+                    "encryption": "esp-aes",
+                    "integrity": "esp-sha-hmac",
+                },
+            )
+        for index, (router, peer) in enumerate(((left, right), (right, left))):
+            _append_unique_op(
+                plan.router_ops,
+                {
+                    "op": "set_crypto_map",
+                    "device": router["name"],
+                    "map_name": "VPN-MAP",
+                    "sequence": 10,
+                    "peer": f"10.0.0.{2 if index == 0 else 1}",
+                    "transform_set": "VPN-SET",
+                    "acl_name": "VPN-TRAFFIC",
+                },
+            )
+
+
 def _management_vlan_id(plan: IntentPlan) -> int | None:
     """The VLAN reserved for switch management, if the prompt asked for one."""
     if "management_vlan" not in set(plan.capabilities):
@@ -5355,6 +5430,7 @@ def build_prompt_blueprint(plan: IntentPlan, donor_roots: list[Path] | None = No
     _synthesize_security_ops(prepared, devices)
     _synthesize_resilience_ops(prepared, devices)
     _synthesize_voice_ops(prepared, devices)
+    _synthesize_wan_ops(prepared, devices)
     _note_model_substitutions(prepared, devices)
     prepared.capabilities = sorted(dict.fromkeys(prepared.capabilities))
     topology_plan = _build_topology_plan(prepared, devices, links)

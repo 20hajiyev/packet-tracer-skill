@@ -62,25 +62,58 @@ def test_an_ellipse_uses_its_own_cluster_tag() -> None:
 
 
 def test_a_note_carries_its_text_and_sits_above_the_devices() -> None:
+    """Notes live under PHYSICALWORKSPACE despite showing on the logical view.
+
+    Written at the document root, Packet Tracer moved them and emptied the text,
+    parking each one at the 50000,50000 sentinel -- which is why none of
+    thirteen notes appeared in the first attempt.
+    """
     root = _root()
     add_note(root, (150, 170), "Ofis sebekesi\nVLAN 10")
 
-    note = root.find("NOTES/NOTE")
+    note = root.find("PHYSICALWORKSPACE/NOTES/NOTE")
     assert note is not None
     assert note.findtext("TEXT") == "Ofis sebekesi\nVLAN 10"
     assert note.find("TEXT").get("translate") == "true"
     assert int(note.findtext("Z") or 0) > 40000
 
 
-def test_lines_are_stored_with_corner_fields() -> None:
+def test_lines_use_start_and_end_not_corners() -> None:
+    """A line is not a rectangle.
+
+    Written with the rectangle's corner fields, Packet Tracer read the file,
+    rewrote every line into Start/End and dropped them from the view.
+    """
     root = _root()
-    add_line(root, (10, 20), (300, 20), color="red")
+    add_line(root, (10, 20), (300, 40), color="red")
 
     line = root.find("LINES/LINE")
     assert line is not None
-    assert line.findtext("TopLeftX") == "10"
-    assert line.findtext("BottomRightX") == "300"
+    assert line.findtext("StartX") == "10"
+    assert line.findtext("EndY") == "40"
+    assert line.find("TopLeftX") is None
+    assert line.find("Filled") is None
     assert line.findtext("LINECLUSTERID") == "1-1"
+
+
+def test_a_filled_shape_can_carry_a_separate_outline_colour() -> None:
+    """`Filled` holds the border as attributes, which the first version missed."""
+    root = _root()
+    add_rectangle(root, (0, 0), (10, 10), color="lightblue", filled=True, outline="blue")
+
+    filled = root.find("RECTANGLES/RECTANGLE/Filled")
+    assert filled is not None
+    assert filled.text == "1"
+    assert filled.get("OUTLINED") == "true"
+    assert filled.get("OUTLINECOLOR") == "#4678dc"
+
+
+def test_an_unoutlined_shape_says_so_explicitly() -> None:
+    root = _root()
+    add_rectangle(root, (0, 0), (10, 10), color="red", filled=True)
+
+    filled = root.find("RECTANGLES/RECTANGLE/Filled")
+    assert filled.get("OUTLINED") == "false"
 
 
 def test_colours_can_be_named_in_either_language_or_given_as_rgb() -> None:
@@ -104,7 +137,7 @@ def test_clearing_removes_inherited_drawings() -> None:
 
     assert root.find("RECTANGLES") is None
     assert root.find("ELLIPSES") is None
-    assert root.find("NOTES") is None
+    assert root.find("PHYSICALWORKSPACE/NOTES") is None
 
 
 def test_annotation_failure_never_stops_generation() -> None:
