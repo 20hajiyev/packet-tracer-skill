@@ -4946,6 +4946,114 @@ def generate_from_prompt(
         print(f"Loaded reference-only samples: {len(references)}")
 
 
+def _resolve_edit_link_ports(pkt_path: Path, plan: IntentPlan) -> None:
+    """Fill in real, free ports on link edits phrased without them.
+
+    A sentence like `SW1 ve SW2 arasinda link qur` names no interface, so the
+    operation arrives with empty port names. Writing that out produced a file
+    Packet Tracer refuses to open -- naming a port a device does not have is a
+    measured way to break a lab, and an empty name is exactly that.
+
+    Ports are resolved against the file being edited: existing links tell us
+    what is taken, and the device's own port list tells us what exists. A link
+    whose ports cannot be resolved is dropped, with the reason recorded, rather
+    than written out broken.
+    """
+    link_ops = [
+        op
+        for op in plan.edit_operations
+        if op.get("op") == "set_link"
+        and (not str(op.get("a", {}).get("port") or "") or not str(op.get("b", {}).get("port") or ""))
+    ]
+    if not link_ops:
+        return
+
+    from pkt_codec import parse_pkt_xml
+    from pkt_transformer import port_capacity, port_exists
+
+    root = parse_pkt_xml(decode_pkt_modern(pkt_path.read_bytes()))
+    devices = {
+        (device.findtext("./ENGINE/NAME") or ""): device
+        for device in root.findall(".//DEVICES/DEVICE")
+    }
+    taken: set[tuple[str, str]] = set()
+    save_ref_to_name = {
+        device.findtext("./ENGINE/SAVE_REF_ID") or "": name for name, device in devices.items()
+    }
+    for link in root.findall(".//LINKS/LINK"):
+        cable = link.find("./CABLE")
+        if cable is None:
+            continue
+        ends = [save_ref_to_name.get(cable.findtext(tag) or "", "") for tag in ("FROM", "TO")]
+        ports = [port.text or "" for port in cable.findall("PORT")]
+        for name, port in zip(ends, ports):
+            if name and port:
+                taken.add((name, port))
+
+    def pick(device_name: str) -> str:
+        """A free interface the device actually has.
+
+        Candidate names follow the same per-kind rules generation uses, and each
+        is confirmed with `port_exists`. Two rounds of guessing at name patterns
+        produced `FastEthernet0` for a switch and `FastEthernet0/1` for a PC --
+        neither device has those, and Packet Tracer rejects a lab referencing an
+        interface that does not exist.
+        """
+        device = devices.get(device_name)
+        if device is None:
+            return ""
+        kind = (device.findtext("./ENGINE/TYPE") or "").strip()
+        capacity = port_capacity(device)
+
+        if kind in {"Pc", "PC", "Server", "Printer", "Laptop", "WirelessEndDevice"}:
+            candidates = ["FastEthernet0", "GigabitEthernet0"]
+        elif kind in {"Tablet", "Smartphone", "TabletPC", "Pda"}:
+            candidates = ["Wireless0"]
+        else:
+            # Infrastructure port names vary by model: a 2960 has
+            # `GigabitEthernet0/1` and an ISR router has `GigabitEthernet0/0/1`.
+            # Guessing the shape produced a name R1 does not have, and the lab
+            # would not open. Take the shape from ports this device is already
+            # using in this very file, and only vary the last number.
+            candidates = []
+            for used_device, used_port in sorted(taken):
+                if used_device != device_name:
+                    continue
+                match = re.match(r"^(.*?)(\d+)$", used_port)
+                if not match:
+                    continue
+                prefix, last = match.group(1), int(match.group(2))
+                for offset in range(1, max(capacity.values(), default=8) + 2):
+                    candidates.append(f"{prefix}{last + offset}")
+            if not candidates:
+                candidates = [
+                    f"{family}0/{index}"
+                    for family in ("GigabitEthernet", "FastEthernet")
+                    for index in range(1, capacity.get(family, 0) + 1)
+                ]
+
+        for candidate in candidates:
+            if (device_name, candidate) in taken:
+                continue
+            if port_exists(device, candidate):
+                taken.add((device_name, candidate))
+                return candidate
+        return ""
+
+    for operation in list(link_ops):
+        left, right = operation["a"], operation["b"]
+        left["port"] = str(left.get("port") or "") or pick(str(left["dev"]))
+        right["port"] = str(right.get("port") or "") or pick(str(right["dev"]))
+        if not left["port"] or not right["port"]:
+            plan.edit_operations.remove(operation)
+            gap = (
+                f"Could not find a free port for the link between {left['dev']} and "
+                f"{right['dev']}; name the interfaces explicitly."
+            )
+            if gap not in plan.blocking_gaps:
+                plan.blocking_gaps.append(gap)
+
+
 def edit_from_prompt(
     pkt_path: Path,
     prompt: str,
@@ -4968,6 +5076,8 @@ def edit_from_prompt(
         plan.end_device_ops,
         plan.management_ops,
     )
+    _resolve_edit_link_ports(pkt_path, plan)
+
     if not any(operation_buckets):
         raise PlanningError(
             "No edit was understood from that request, so the file was left alone. "

@@ -82,3 +82,55 @@ def test_unknown_port_kinds_are_rejected() -> None:
 
     assert not port_exists(device, "Serial0/0")
     assert not port_exists(device, "")
+
+
+def test_a_full_interface_name_survives_canonicalisation() -> None:
+    """`_canonical_port_name` sliced two characters off unconditionally.
+
+    It assumed the abbreviated form, so `FastEthernet0` came back as
+    `FastEthernetstEthernet0`, and every caller passing the full name -- which
+    is the form a saved lab stores -- got nonsense. `port_exists` then reported
+    real interfaces as missing.
+    """
+    from pkt_transformer import _canonical_port_name
+
+    assert _canonical_port_name("FastEthernet0") == "FastEthernet0"
+    assert _canonical_port_name("GigabitEthernet0/0/1") == "GigabitEthernet0/0/1"
+    assert _canonical_port_name("Fa0/1") == "FastEthernet0/1"
+    assert _canonical_port_name("Gi0/2") == "GigabitEthernet0/2"
+
+
+def test_a_host_interface_is_unslotted() -> None:
+    """Every lab on disk links its PCs on `FastEthernet0`.
+
+    The switch rule was being applied to hosts, which accepted the slotted
+    `FastEthernet0/1` that no PC has and rejected the name they all use.
+    """
+    import xml.etree.ElementTree as ET
+
+    from pkt_transformer import port_exists
+
+    host = ET.fromstring(
+        "<DEVICE><ENGINE><TYPE>Pc</TYPE>"
+        "<PORT><TYPE>eCopperFastEthernet</TYPE></PORT></ENGINE></DEVICE>"
+    )
+
+    assert port_exists(host, "FastEthernet0")
+    assert not port_exists(host, "FastEthernet0/1")
+
+
+def test_a_multi_slot_router_interface_is_accepted() -> None:
+    """An ISR spells interfaces `GigabitEthernet0/0/1`, where the last number is
+    a position within a slot rather than an index into the whole card."""
+    import xml.etree.ElementTree as ET
+
+    from pkt_transformer import port_exists
+
+    router = ET.fromstring(
+        "<DEVICE><ENGINE><TYPE>Router</TYPE>"
+        + "<PORT><TYPE>eCopperGigabitEthernet</TYPE></PORT>" * 4
+        + "</ENGINE></DEVICE>"
+    )
+
+    assert port_exists(router, "GigabitEthernet0/0/1")
+    assert port_exists(router, "GigabitEthernet0/0/2")

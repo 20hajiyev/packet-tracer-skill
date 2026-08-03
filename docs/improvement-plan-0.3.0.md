@@ -1253,3 +1253,43 @@ The binary carries `--no-gui`, `--ipc-port`, `--pt-ipc-port`, `--ipc-arg` and
 measured: run against a good lab and one stamped with a wrong build, it behaves
 identically, never exits, and reports nothing to the console. It is not an
 oracle without an IPC client. Recorded so nobody spends the afternoon twice.
+
+
+## Natural edit phrasings, and the port bug underneath them
+
+Nine of eleven realistic edit requests produced no operations at all, though
+`pkt_editor` implements every one. Only the command form was parsed. Natural
+phrasings now reach the editor for VLAN creation, linking, deletion and link
+removal, and all of them were verified by opening the result.
+
+Adding link edits exposed a chain of defects, each found by opening a file
+rather than by reasoning about it.
+
+**Empty ports.** `SW1 ve SW2 arasinda link qur` names no interface, so the
+operation carried empty port names. Packet Tracer rejected the lab -- naming an
+interface a device does not have is a measured way to break a file, and an empty
+name is exactly that.
+
+**Guessed ports.** Resolving them by assembling a name pattern produced
+`FastEthernet0` for a switch, then `FastEthernet0/1` for a PC, then
+`GigabitEthernet0/1` for an ISR router that numbers its interfaces
+`GigabitEthernet0/0/x`. Each guess produced a file that would not open. Port
+shapes are now taken from interfaces the device is already using **in the file
+being edited**, and only the trailing number varies.
+
+**And the validator was broken.** `_canonical_port_name` sliced two characters
+off its input unconditionally, assuming the abbreviated `Fa0/1` form. Given the
+full name a saved lab actually stores, `FastEthernet0` came back as
+`FastEthernetstEthernet0`. So `port_exists` -- the helper whose entire job is to
+stop invalid interfaces reaching a lab -- reported real interfaces as missing
+for every caller that passed a full name.
+
+Its host rule was wrong too: it applied the switch numbering to PCs, accepting
+the slotted `FastEthernet0/1` that no PC has and rejecting `FastEthernet0`,
+which is what every lab on disk uses.
+
+Measured after the fix: PC `FastEthernet0` true and `FastEthernet0/1` false,
+switch the reverse, ISR `GigabitEthernet0/0/1` true. A created link now opens in
+13.4 s.
+
+**Corpus: 17/18 generated, 17 opened, 0 unexpected. 517 tests.**

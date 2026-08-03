@@ -554,12 +554,24 @@ def _parse_port_index(port_name: str) -> int | None:
 
 
 def _canonical_port_name(port_name: str) -> str:
-    lowered = port_name.strip()
-    if lowered.lower().startswith("fa"):
-        return "FastEthernet" + lowered[2:]
-    if lowered.lower().startswith("gi"):
-        return "GigabitEthernet" + lowered[2:]
-    return lowered
+    """Expand an abbreviated interface name, and leave a full one alone.
+
+    This assumed its input was always the short form and sliced two characters
+    off unconditionally, so `FastEthernet0` came back as
+    `FastEthernetstEthernet0`. Every caller that passed a full name -- which is
+    the form stored in a saved lab -- got a nonsense string, and `port_exists`
+    then reported real interfaces as missing.
+    """
+    trimmed = port_name.strip()
+    lowered = trimmed.lower()
+    for prefix, expanded in (("fastethernet", "FastEthernet"), ("gigabitethernet", "GigabitEthernet")):
+        if lowered.startswith(prefix):
+            return expanded + trimmed[len(prefix):]
+    if lowered.startswith("fa"):
+        return "FastEthernet" + trimmed[2:]
+    if lowered.startswith("gi"):
+        return "GigabitEthernet" + trimmed[2:]
+    return trimmed
 
 
 def port_capacity(device: ET.Element) -> dict[str, int]:
@@ -578,16 +590,40 @@ def port_capacity(device: ET.Element) -> dict[str, int]:
     }
 
 
+# Hosts carry a single unslotted interface. Switches and routers slot theirs.
+HOST_DEVICE_TYPES = {"PC", "Server", "Printer", "Laptop", "Tablet", "Smartphone", "WirelessEndDevice"}
+
+
 def port_exists(device: ET.Element, port_name: str) -> bool:
-    """Whether `port_name` names an interface this device actually has."""
+    """Whether `port_name` names an interface this device actually has.
+
+    Numbering differs by device kind, and getting it backwards is how invalid
+    interfaces reach a saved lab -- Packet Tracer then refuses to open it.
+
+    A host's interface is bare: `FastEthernet0`. The slotted form the switch
+    rule accepts, `FastEthernet0/1`, does not exist on a PC. This used to answer
+    exactly the wrong way round for hosts, calling the real name missing and the
+    imaginary one present, while every lab on disk links its PCs on
+    `FastEthernet0`.
+    """
     canonical = _canonical_port_name(port_name)
+    device_type = _device_type(device)
     for kind, count in port_capacity(device).items():
         if not canonical.startswith(kind):
             continue
+        if device_type in HOST_DEVICE_TYPES:
+            # `FastEthernet0` and, for tolerance, a bare `FastEthernet`.
+            return count > 0 and canonical in {kind, f"{kind}0"}
         index = _parse_port_index(canonical)
         if index is None:
             return canonical == kind or canonical == f"{kind}0"
-        if _device_type(device) == "Router":
+        if device_type == "Router":
+            # Routers number from zero. Multi-slot models such as the ISR spell
+            # interfaces `GigabitEthernet0/0/1`, where the trailing number is a
+            # position within a slot rather than an index into the whole card,
+            # so those are bounded by the count instead.
+            if canonical.count("/") >= 2:
+                return 0 <= index <= count
             return 0 <= index < count
         return 0 < index <= count
     return False

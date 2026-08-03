@@ -751,6 +751,63 @@ def _extract_link_edit_operations(links: list[dict[str, object]]) -> list[dict[s
     return [{"op": "set_link", **link} for link in links]
 
 
+def _extract_natural_edit_operations(prompt: str) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    """Edit requests as an ordinary sentence phrases them.
+
+    `pkt_editor` implements every operation below already. Only the command form
+    was ever parsed -- `set SW1 vlan 20 name SALES` -- so nine of eleven
+    realistic requests produced no operations at all, and `--edit` wrote the
+    input back out unchanged.
+
+    Returns `(edit_operations, switch_operations)`; the editor routes those two
+    buckets differently.
+    """
+    text = _transliterate(prompt)
+    edits: list[dict[str, object]] = []
+    switch_ops: list[dict[str, object]] = []
+
+    def add(bucket: list[dict[str, object]], operation: dict[str, object]) -> None:
+        if operation not in bucket:
+            bucket.append(operation)
+
+    # `SW1 de vlan 20 yarat` / `SW1 uzerinde vlan 20 ac`
+    for device, vlan in re.findall(
+        r"\b([A-Za-z0-9_-]+)\s*(?:de|da|uzerinde|ustunde)?\s*vlan\s+(\d+)\s*(?:yarat|ac|elave et|qur)",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        add(switch_ops, {"op": "set_vlan", "device": device, "vlan": int(vlan), "name": f"VLAN{vlan}"})
+
+    # `PC1 ve SW1 arasinda link qur` / `PC1 ile SW1 i birlesdir`
+    link_patterns = (
+        r"\b([A-Za-z0-9_-]+)\s+(?:ve|ile)\s+([A-Za-z0-9_-]+)\s*(?:i|ni|nu)?\s*aras[ıi]nda\s+(?:link|kabel|elaqe)\s*(?:qur|cek|yarat)",
+        r"\b([A-Za-z0-9_-]+)\s+(?:ve|ile)\s+([A-Za-z0-9_-]+)\s*(?:i|ni|nu)?\s*birlesdir",
+    )
+    for pattern in link_patterns:
+        for left, right in re.findall(pattern, text, flags=re.IGNORECASE):
+            # Ports are left unset on purpose: the planner picks free ones, and
+            # naming a port the device lacks makes Packet Tracer reject the file.
+            add(edits, {"op": "set_link", "a": {"dev": left, "port": ""}, "b": {"dev": right, "port": ""}, "media": "copper"})
+
+    # `R1 ve SW1 arasindaki linki sil`
+    for left, right in re.findall(
+        r"\b([A-Za-z0-9_-]+)\s+(?:ve|ile)\s+([A-Za-z0-9_-]+)\s*aras[ıi]ndak[ıi]\s+(?:link|kabel|elaqe)\w*\s+(?:sil|kes|qopar)",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        add(edits, {"op": "remove_link", "a": {"dev": left, "port": ""}, "b": {"dev": right, "port": ""}})
+
+    # `PC3 u sil` -- the trailing vowel is the Azerbaijani accusative suffix.
+    for device in re.findall(
+        r"\b([A-Za-z][A-Za-z0-9_-]*\d[A-Za-z0-9_-]*)\s*(?:i|u|ni|nu|nı|yi)?\s+(?:sil|cixart|kenar et)\b",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        add(edits, {"op": "prune_device", "device": device})
+
+    return edits, switch_ops
+
+
 def _extract_switch_ops(prompt: str) -> list[dict[str, object]]:
     ops: list[dict[str, object]] = []
     for segment in _command_segments(prompt):
@@ -1682,8 +1739,15 @@ def parse_intent(prompt: str) -> IntentPlan:
             if operation not in edit_operations:
                 edit_operations.append(operation)
     edit_operations.extend(_extract_link_edit_operations(links))
+    natural_edits, natural_switch_ops = _extract_natural_edit_operations(prompt)
+    for operation in natural_edits:
+        if operation not in edit_operations:
+            edit_operations.append(operation)
 
     switch_ops = _extract_switch_ops(prompt)
+    for operation in natural_switch_ops:
+        if operation not in switch_ops:
+            switch_ops.append(operation)
     router_ops = _extract_router_ops(prompt)
     server_ops = _extract_server_ops(prompt)
     wireless_ops = _extract_wireless_ops(prompt)
