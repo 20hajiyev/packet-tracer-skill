@@ -457,7 +457,33 @@ def _extract_natural_device_counts(normalized_prompt: str) -> dict[str, int]:
         trailing_values = [int(value) for value in trailing.findall(normalized_prompt)]
         if trailing_values:
             counts[device_type] = max(trailing_values)
+            continue
+        # A device named with no number at all means one of it. `router switch pc
+        # qur` was refused with "this prompt does not describe a topology" -- a
+        # message contradicted by the prompt itself, which names three devices.
+        #
+        # Applied per device type and only when that type carries no count
+        # anywhere, so `2 switch ve router qur` still reads as two switches and
+        # one router rather than flattening either.
+        bare = re.compile(rf"\b(?:{alias_pattern})\b")
+        if bare.search(_without_longer_aliases(normalized_prompt, aliases)):
+            counts[device_type] = 1
     return counts
+
+
+def _without_longer_aliases(text: str, aliases: list[str]) -> str:
+    """Blank out longer device names that merely contain one of `aliases`.
+
+    `wireless router` contains `router`, so a bare scan credited both a wireless
+    router and a plain one from `1 wireless router 2 laptop qur`. A counted
+    match never had this problem because the digit anchors it; only the
+    no-number fallback needs the guard.
+    """
+    masked = text
+    for other in {alias for group in NATURAL_DEVICE_ALIASES.values() for alias in group}:
+        if any(alias != other and alias in other for alias in aliases):
+            masked = re.sub(rf"\b{re.escape(other)}\b", " ", masked)
+    return masked
 
 
 def _extract_vlan_ids(normalized_prompt: str) -> list[int]:
@@ -1484,6 +1510,19 @@ def parse_intent(prompt: str) -> IntentPlan:
         device_type = str(device["type"])
         device_requirements[device_type] = device_requirements.get(device_type, 0) + 1
 
+    # Hosts have to plug into something. "bir sebeke lazimdir 10 kompyuter
+    # ucun" named ten PCs and no switch, so all ten became standalone targets
+    # and generation refused when the donor ran out of spare PCs -- reported as
+    # a donor limit, though the real problem was a topology with no switch in
+    # it. One switch is the smallest thing that makes the request buildable.
+    HOST_TYPES = {"PC", "Server", "Printer", "Laptop", "Tablet", "Smartphone"}
+    host_total = sum(count for kind, count in device_requirements.items() if kind in HOST_TYPES)
+    if host_total and not device_requirements.get("Switch") and not device_requirements.get("WirelessRouter"):
+        device_requirements["Switch"] = 1
+        inferred_switch = True
+    else:
+        inferred_switch = False
+
     department_groups = _build_department_groups(normalized_prompt, department_count, per_department_devices, vlan_ids)
     if department_groups:
         device_requirements["Switch"] = max(device_requirements.get("Switch", 0), department_count)
@@ -1732,6 +1771,10 @@ def parse_intent(prompt: str) -> IntentPlan:
 
     if department_groups and "Switch" not in device_counts:
         assumptions_used.append("Added one switch per department group.")
+    if inferred_switch:
+        assumptions_used.append(
+            "Added one switch: the prompt named hosts but nothing for them to connect to."
+        )
     if department_groups and not network_style:
         network_style = "campus"
         assumptions_used.append("Interpreted department-based prompt as campus style.")

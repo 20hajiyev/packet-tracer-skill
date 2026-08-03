@@ -144,3 +144,56 @@ def test_prepositional_on_is_never_read_as_a_count() -> None:
 
 def test_komutator_is_a_switch() -> None:
     assert parse_intent("5 kompyuter 1 komutator qur").device_counts == {"Switch": 1, "PC": 5}
+
+
+def test_a_device_named_without_a_number_means_one() -> None:
+    """`router switch pc qur` was refused as "does not describe a topology".
+
+    The message was contradicted by the prompt itself, which names three
+    devices. Only the count was missing.
+    """
+    assert parse_intent("router switch pc qur").device_counts == {
+        "Router": 1,
+        "Switch": 1,
+        "PC": 1,
+    }
+
+
+def test_counted_and_bare_devices_mix_correctly() -> None:
+    """The fallback is per device type, so it must not flatten counted ones."""
+    assert parse_intent("2 switch ve router qur").device_counts == {"Router": 1, "Switch": 2}
+
+
+def test_a_longer_device_name_is_not_also_counted_as_the_shorter_one() -> None:
+    """`wireless router` contains `router`, and the bare scan credited both."""
+    assert parse_intent("1 wireless router 2 laptop qur").device_counts == {
+        "WirelessRouter": 1,
+        "Laptop": 2,
+    }
+
+
+def test_a_prompt_with_no_devices_still_refuses() -> None:
+    assert parse_intent("sebeke haqqinda melumat ver").device_counts == {}
+
+
+def test_hosts_with_nothing_to_connect_to_get_a_switch() -> None:
+    """Ten PCs and no switch became ten standalone targets, and generation
+    refused when the donor ran out of spare PCs -- reported as a donor limit
+    though the real problem was a topology with nothing to plug into."""
+    plan = parse_intent("bir sebeke lazimdir 10 kompyuter ucun")
+
+    assert plan.device_requirements == {"PC": 10, "Switch": 1}
+    assert any("nothing for them to connect to" in note for note in plan.assumptions_used)
+
+
+def test_no_switch_is_invented_when_one_was_asked_for() -> None:
+    plan = parse_intent("1 switch ve 5 komputer qur")
+
+    assert plan.device_requirements == {"Switch": 1, "PC": 5}
+    assert not any("nothing for them to connect to" in note for note in plan.assumptions_used)
+
+
+def test_a_wireless_router_counts_as_something_to_connect_to() -> None:
+    plan = parse_intent("1 wireless router 2 laptop qur")
+
+    assert "Switch" not in plan.device_requirements

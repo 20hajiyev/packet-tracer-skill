@@ -989,3 +989,37 @@ Catalogue gains: vlan 6 → 227, rip 6 → 42, dhcp_pool 23 → 53, static_route
 0 → 22, access_port 2 → 21, acl 6 → 24, trunk 0 → 16.
 
 **Corpus: 12/14 generated, 12 opened, 0 unexpected.**
+
+
+## The two refusals T1 turned up
+
+Both were sound prompts the skill declined, and neither refusal was honest about
+why.
+
+### A device named with no number
+
+`router switch pc qur` was refused with "This prompt does not describe a
+topology. Say which devices you want" -- a message the prompt itself
+contradicts, since it names three devices. Only the count was missing, and a
+device named without a number means one of it.
+
+Applied per device type, and only when that type carries no count anywhere, so
+`2 switch ve router qur` still reads as two switches and one router.
+
+One guard was needed: `wireless router` contains `router`, so the bare scan
+credited a wireless router *and* a plain one. Counted matches never had this
+problem because the digit anchors them; only the fallback needs longer names
+masked out first.
+
+### Hosts with nothing to plug into
+
+`bir sebeke lazimdir 10 kompyuter ucun` named ten PCs and no switch. All ten
+became standalone targets, the donor ran out of spare PCs, and the refusal
+blamed the donor -- when the real problem was a topology with nothing to connect
+to. One switch is now inferred, recorded in `assumptions_used` rather than done
+silently. A wireless router counts as something to connect to, so the home-lab
+shape is untouched.
+
+Both open: one-of-each in 10.2s, ten PCs on an inferred switch in 13.6s.
+
+**Corpus: 14/16 generated, 14 opened, 0 unexpected.**

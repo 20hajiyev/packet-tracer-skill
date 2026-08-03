@@ -124,6 +124,16 @@ CORPUS: tuple[CorpusCase, ...] = (
         note="more routers than the donor has; needs router duplication",
     ),
     CorpusCase(
+        "bare_device_names",
+        "router switch pc qur",
+        note="devices named with no counts; one of each is the only sensible reading",
+    ),
+    CorpusCase(
+        "hosts_without_a_switch",
+        "bir sebeke lazimdir 10 kompyuter ucun",
+        note="hosts named with nothing to plug into; a switch has to be inferred",
+    ),
+    CorpusCase(
         "wireless_home",
         "1 wireless router 2 laptop qur",
         expects="donor_limited",
