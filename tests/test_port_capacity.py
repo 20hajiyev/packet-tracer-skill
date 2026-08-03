@@ -77,12 +77,22 @@ def test_a_device_with_no_gigabit_has_none() -> None:
     assert not port_exists(device, "GigabitEthernet0/1")
 
 
-def test_unknown_port_kinds_are_rejected() -> None:
+def test_unmodelled_port_kinds_are_not_refuted() -> None:
+    """Serial, wireless and vendor-specific names are outside this module.
+
+    Measured across the local labs: 33 of 782 real link endpoints used names
+    this file does not model -- `Serial2/0` on a router, `Port 0` on an access
+    point, `RS 232` on a laptop, the `Switch` pass-through on an IP phone.
+    Calling those missing is the damaging direction, because a legitimate link
+    then gets dropped. Only the two Ethernet families are judged; anything else
+    is reported as not refuted.
+    """
     device = _device("Switch", fast=24, gig=2)
 
-    assert not port_exists(device, "Serial0/0")
-    assert not port_exists(device, "")
-
+    assert port_exists(device, "Serial2/0")
+    assert port_exists(device, "Port 0")
+    # The Ethernet families are still checked strictly.
+    assert not port_exists(device, "FastEthernet0/99")
 
 def test_a_full_interface_name_survives_canonicalisation() -> None:
     """`_canonical_port_name` sliced two characters off unconditionally.

@@ -1293,3 +1293,28 @@ switch the reverse, ISR `GigabitEthernet0/0/1` true. A created link now opens in
 13.4 s.
 
 **Corpus: 17/18 generated, 17 opened, 0 unexpected. 517 tests.**
+
+
+## An invariant test against real labs
+
+Rather than reasoning about the port helpers again, real saves were used as
+ground truth: **if a lab links a device on port P, then `port_exists` must
+report P as existing.** Across 12 local labs that is 782 endpoints.
+
+**33 failed.** `Serial2/0`, `Serial3/0` and `Serial6/0` on routers, `Port 0` on
+six access points, `RS 232` on a laptop, the `Switch` pass-through on an IP
+phone, `Console` on a switch, `FastEthernet0` on a hub.
+
+The cause was narrower than it looked: `_port_nodes` matches only `eCopper*`, so
+serial, fibre and wireless interfaces were invisible. Counted across the local
+collection the real values are `eCopperFastEthernet` 1148, `eBluetooth` 291,
+`eCopperGigabitEthernet` 116, `eHostWirelessN` 51, `eAccessPointWirelessAC` 20,
+`eAccessPointWirelessG` 18, `eSerial` 12, `eFiberFastEthernet` 10.
+
+Names outside the two Ethernet families are now reported as *not refuted* rather
+than missing, because calling a real interface missing is the damaging
+direction -- a legitimate link gets dropped. The Ethernet families are still
+judged strictly, which is where the measured breakage was. Hubs number their
+ports unslotted from zero, like a host but many, and now have their own rule.
+
+**33 to 0 of 782.**

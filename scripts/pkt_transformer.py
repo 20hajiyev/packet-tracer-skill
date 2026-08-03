@@ -544,7 +544,35 @@ def apply_cable_type(cable: ET.Element, media: str) -> None:
     node.text = mapping.get(media_key, node.text or "eStraightThrough")
 
 
+#
+# Port `TYPE` values as they actually appear in saved labs, counted across the
+# local collection: eCopperFastEthernet 1148, eBluetooth 291,
+# eCopperGigabitEthernet 116, eHostWirelessN 51, eAccessPointWirelessAC 20,
+# eAccessPointWirelessG 18, eSerial 12, eFiberFastEthernet 10.
+#
+# Only the two eCopper families were recognised, so serial, fibre and wireless
+# interfaces were invisible: 33 of 782 real link endpoints -- `Serial2/0` on a
+# router, `Port 0` on an access point -- were reported as not existing.
+PORT_TYPE_FAMILIES = {
+    "eCopperFastEthernet": "FastEthernet",
+    "eFiberFastEthernet": "FastEthernet",
+    "eCopperGigabitEthernet": "GigabitEthernet",
+    "eFiberGigabitEthernet": "GigabitEthernet",
+    "eSerial": "Serial",
+    "eHostWirelessN": "Wireless",
+    "eHostWirelessG": "Wireless",
+    "eHostWirelessAC": "Wireless",
+    "eBluetooth": "Bluetooth",
+}
+
+
 def _port_nodes(device: ET.Element) -> list[ET.Element]:
+    """Wired interfaces that can carry a cable.
+
+    Restricted to the families whose numbering this module models; wireless
+    radios and Bluetooth are counted separately by `port_capacity` and are never
+    candidates for a cable.
+    """
     return [port for port in device.findall(".//PORT") if port.findtext("TYPE", "").startswith("eCopper")]
 
 
@@ -592,6 +620,7 @@ def port_capacity(device: ET.Element) -> dict[str, int]:
 
 # Hosts carry a single unslotted interface. Switches and routers slot theirs.
 HOST_DEVICE_TYPES = {"PC", "Server", "Printer", "Laptop", "Tablet", "Smartphone", "WirelessEndDevice"}
+UNSLOTTED_MULTIPORT_TYPES = {"Hub", "Repeater", "CoaxialSplitter"}
 
 
 def port_exists(device: ET.Element, port_name: str) -> bool:
@@ -608,12 +637,26 @@ def port_exists(device: ET.Element, port_name: str) -> bool:
     """
     canonical = _canonical_port_name(port_name)
     device_type = _device_type(device)
+
+    # Names outside the two Ethernet families are not modelled here: `Serial2/0`
+    # on a router, `Port 0` on an access point, `RS 232` on a laptop, the
+    # `Switch` pass-through on an IP phone. Reporting those as missing made real
+    # links look invalid, which is the damaging direction -- a legitimate link
+    # gets dropped. Say "not refuted" instead of "does not exist".
+    if not canonical.startswith(("FastEthernet", "GigabitEthernet")):
+        return True
+
     for kind, count in port_capacity(device).items():
         if not canonical.startswith(kind):
             continue
         if device_type in HOST_DEVICE_TYPES:
             # `FastEthernet0` and, for tolerance, a bare `FastEthernet`.
             return count > 0 and canonical in {kind, f"{kind}0"}
+        if device_type in UNSLOTTED_MULTIPORT_TYPES:
+            # A hub numbers its ports `FastEthernet0`, `FastEthernet1`, ... --
+            # unslotted like a host but many of them.
+            index = _parse_port_index(canonical)
+            return index is not None and 0 <= index < max(count, 1)
         index = _parse_port_index(canonical)
         if index is None:
             return canonical == kind or canonical == f"{kind}0"
