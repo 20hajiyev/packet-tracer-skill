@@ -461,3 +461,70 @@ def test_layer_two_hardening_is_emitted() -> None:
 
 def test_a_plain_topology_gets_no_security_configuration() -> None:
     assert _security("1 router 1 switch 3 pc qur") == []
+
+
+def _resilience(prompt: str) -> list[str]:
+    from generate_pkt import _synthesize_resilience_ops
+
+    plan = parse_intent(prompt)
+    devices = [
+        {"name": "R1", "type": "Router", "model": "ISR4331"},
+        {"name": "R2", "type": "Router", "model": "ISR4331"},
+        {"name": "SW1", "type": "Switch"},
+    ]
+    _synthesize_resilience_ops(plan, devices)
+    return sorted({str(op["op"]) for op in plan.router_ops})
+
+
+def test_plain_ipv6_is_a_capability() -> None:
+    """`ipv6` on its own was only a network-style tag, so "ipv6 olsun" reached
+    the planner with nothing attached to it."""
+    assert "ipv6" in parse_intent("2 router 2 switch 6 pc qur ipv6 olsun").capabilities
+    assert "ipv6" in parse_intent("1 router 1 switch 3 pc qur dual stack olsun").capabilities
+
+
+def test_ipv6_brings_addressing_and_routing_together() -> None:
+    assert _resilience("2 router 2 switch 6 pc qur ipv6 olsun") == [
+        "enable_ipv6_unicast_routing",
+        "set_ipv6_address",
+    ]
+    assert "set_ospfv3_interface" in _resilience("2 router 2 switch 6 pc qur ipv6 ospfv3 olsun")
+    assert "set_ipv6_slaac" in _resilience("2 router 2 switch 6 pc qur ipv6 slaac olsun")
+
+
+def test_hsrp_carries_a_virtual_address() -> None:
+    """Without one the standby group configures nothing, and the missing field
+    surfaced as a donor-compatibility failure rather than an operation error."""
+    from generate_pkt import _synthesize_resilience_ops
+
+    plan = parse_intent("2 router 2 switch 6 pc qur hsrp olsun")
+    _synthesize_resilience_ops(
+        plan,
+        [
+            {"name": "R1", "type": "Router", "model": "ISR4331"},
+            {"name": "R2", "type": "Router", "model": "ISR4331"},
+        ],
+    )
+
+    groups = [op for op in plan.router_ops if op["op"] == "set_hsrp_ipv6"]
+    assert len(groups) == 2
+    assert all(op["virtual_ipv6"] for op in groups)
+    assert {op["priority"] for op in groups} == {110, 90}, "one router must win the election"
+
+
+def test_hsrp_needs_two_routers_to_mean_anything() -> None:
+    from generate_pkt import _synthesize_resilience_ops
+
+    plan = parse_intent("1 router 1 switch 3 pc qur hsrp olsun")
+    _synthesize_resilience_ops(plan, [{"name": "R1", "type": "Router", "model": "ISR4331"}])
+
+    assert not [op for op in plan.router_ops if op["op"] == "set_hsrp_ipv6"]
+
+
+def test_an_hsrp_op_without_an_address_is_skipped_not_raised() -> None:
+    import xml.etree.ElementTree as ET
+
+    from pkt_editor import _apply_router_op
+
+    device = ET.fromstring("<DEVICE><ENGINE><NAME>R1</NAME></ENGINE></DEVICE>")
+    _apply_router_op(device, {"op": "set_hsrp_ipv6", "group": 1, "interface": "Gi0/0", "priority": 100})

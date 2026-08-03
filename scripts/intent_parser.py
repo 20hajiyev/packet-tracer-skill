@@ -53,6 +53,9 @@ CAPABILITY_PATTERNS = {
     "ssh_ios": [r"\bssh\b", r"\bip ssh\b", r"\bcrypto key\b"],
     "ntp_ios": [r"\bntp\b", r"\bntp server\b"],
     "syslog_ios": [r"\bsyslog\b", r"\blogging host\b"],
+    # Plain `ipv6` was only ever a network-style tag, never a capability, so
+    # "ipv6 olsun" produced nothing for the planner to act on.
+    "ipv6": [r"\bipv6\b", r"\bdual[- ]?stack\b"],
     "ipv6_slaac": [r"\bslaac\b", r"\bipv6\s+slaac\b"],
     "dhcpv6_stateful": [r"\bdhcpv6\b", r"\bstateful dhcpv6\b", r"\bipv6 stateful\b"],
     "dhcpv6_stateless": [r"\bstateless dhcpv6\b", r"\bipv6 stateless\b"],

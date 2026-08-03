@@ -171,6 +171,18 @@ CORPUS: tuple[CorpusCase, ...] = (
         note="rapid-pvst with the core as root",
     ),
     CorpusCase(
+        "hsrp_redundancy",
+        "2 router 2 switch 6 komputer qur hsrp olsun",
+        requires_content=("standby",),
+        note="first-hop redundancy; needs a virtual address or it configures nothing",
+    ),
+    CorpusCase(
+        "ipv6_dual_stack",
+        "2 router 2 switch 6 komputer qur ipv6 ve ospfv3 olsun",
+        requires_content=("ipv6 unicast-routing", "2001:db8"),
+        note="plain `ipv6` was not even a capability until measured",
+    ),
+    CorpusCase(
         "wireless_ssid",
         "1 wireless router 2 laptop qur ssid EvSebeke wpa2 sifre Gizli123",
         # The network name and secret are the proof. Without the wireless ops the

@@ -1409,3 +1409,25 @@ uplink wrote its blueprint port straight out, so the core could hand
 structural check with no failures.
 
 **Corpus: 23 cases, 22 generated, 22 opened, 0 unexpected.**
+
+
+## Redundancy and IPv6
+
+HSRP, IPv6 addressing, SLAAC and OSPFv3 join the emitted set. `pkt_editor` had
+all of them; nothing built the operations.
+
+Two defects surfaced on the way.
+
+**`ipv6` was not a capability.** It existed only as a network-style tag, so
+"ipv6 olsun" reached the planner with nothing attached and produced a v4-only
+lab. Verified after the fix: 330 `ipv6` lines in the saved file, opens in 10.1 s.
+
+**HSRP failed as a donor problem.** `set_hsrp_ipv6` requires a `virtual_ipv6`
+field, and the missing key surfaced as "no ranked donor candidate passed
+compatibility validation: 'virtual_ipv6'" -- pointing at the donor rather than
+the operation, exactly as the `DNS` service-name failure did. The field is
+supplied now (both routers share the virtual address, one takes priority 110 and
+the other 90), and the editor skips a standby group with no address instead of
+raising.
+
+**Corpus: 25 cases, 24 generated, 24 opened, 0 unexpected. 536 tests.**

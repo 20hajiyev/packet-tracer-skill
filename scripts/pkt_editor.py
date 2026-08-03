@@ -1486,7 +1486,14 @@ def _apply_router_op(device: ET.Element, operation: dict[str, object]) -> None:
             _append_config_block(target, f"interface {operation['interface']}", [f" ipv6 rip {operation['process_name']} enable", " no shutdown"])
         return
     elif operation["op"] == "set_hsrp_ipv6":
-        body = [" standby version 2", f" standby {operation['group']} ipv6 {operation['virtual_ipv6']}"]
+        # A standby group with no virtual address configures nothing, and the
+        # KeyError surfaced as "no ranked donor candidate passed compatibility
+        # validation: 'virtual_ipv6'" -- pointing at the donor rather than the
+        # operation. Same shape as the `DNS` service-name failure.
+        virtual = str(operation.get("virtual_ipv6") or "").strip()
+        if not virtual:
+            return
+        body = [" standby version 2", f" standby {operation['group']} ipv6 {virtual}"]
         if operation.get("priority"):
             body.append(f" standby {operation['group']} priority {operation['priority']}")
             body.append(f" standby {operation['group']} preempt")

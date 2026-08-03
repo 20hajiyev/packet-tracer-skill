@@ -2889,6 +2889,88 @@ def _synthesize_security_ops(plan: IntentPlan, devices: list[dict[str, object]])
             )
 
 
+def _synthesize_resilience_ops(plan: IntentPlan, devices: list[dict[str, object]]) -> None:
+    """Emit first-hop redundancy and the IPv6 side of a dual-stack lab.
+
+    `set_hsrp_ipv6`, `enable_ipv6_unicast_routing`, `set_ipv6_address`,
+    `set_ipv6_slaac` and `set_ospfv3_interface` all exist in `pkt_editor`. Only
+    the joining was missing -- and `ipv6` on its own was not even a capability,
+    so "ipv6 olsun" reached the planner with nothing attached to it.
+    """
+    routers = [device for device in devices if _device_kind(device) == "Router"]
+    if not routers:
+        return
+    capabilities = set(plan.capabilities)
+
+    # HSRP needs two routers to be worth anything: one active, one standby.
+    if "hsrp" in capabilities and len(routers) >= 2:
+        for index, router in enumerate(routers[:2]):
+            _append_unique_op(
+                plan.router_ops,
+                {
+                    "op": "set_hsrp_ipv6",
+                    "device": router["name"],
+                    "interface": _router_port(router, 1),
+                    "group": 1,
+                    # Both routers share one virtual address -- that is the
+                    # whole point of a standby group.
+                    "virtual_ipv6": "2001:db8:1::254",
+                    # The first router wins the election; the second stands by.
+                    "priority": 110 if index == 0 else 90,
+                },
+            )
+
+    wants_ipv6 = capabilities & {"ipv6", "ipv6_slaac", "ospfv3", "dhcpv6_stateful", "dhcpv6_stateless"}
+    if not wants_ipv6:
+        return
+
+    for index, router in enumerate(routers):
+        interface = _router_port(router, 1)
+        _append_unique_op(
+            plan.router_ops,
+            {
+                "op": "enable_ipv6_unicast_routing",
+                "device": router["name"],
+                "interface": interface,
+                "address": f"2001:db8:{index + 1}::1",
+                "prefix": 64,
+            },
+        )
+        _append_unique_op(
+            plan.router_ops,
+            {
+                "op": "set_ipv6_address",
+                "device": router["name"],
+                "interface": interface,
+                "address": f"2001:db8:{index + 1}::1",
+                "prefix": 64,
+            },
+        )
+        if "ipv6_slaac" in capabilities:
+            _append_unique_op(
+                plan.router_ops,
+                {
+                    "op": "set_ipv6_slaac",
+                    "device": router["name"],
+                    "interface": interface,
+                    "prefix": f"2001:db8:{index + 1}::",
+                    "prefix_len": 64,
+                },
+            )
+        if "ospfv3" in capabilities:
+            _append_unique_op(
+                plan.router_ops,
+                {
+                    "op": "set_ospfv3_interface",
+                    "device": router["name"],
+                    "interface": interface,
+                    "process_id": 1,
+                    "asn": 1,
+                    "area": 0,
+                },
+            )
+
+
 def _management_vlan_id(plan: IntentPlan) -> int | None:
     """The VLAN reserved for switch management, if the prompt asked for one."""
     if "management_vlan" not in set(plan.capabilities):
@@ -5112,6 +5194,7 @@ def build_prompt_blueprint(plan: IntentPlan, donor_roots: list[Path] | None = No
     _synthesize_wireless_ops(prepared, devices)
     _synthesize_routing_ops(prepared, devices)
     _synthesize_security_ops(prepared, devices)
+    _synthesize_resilience_ops(prepared, devices)
     _note_model_substitutions(prepared, devices)
     prepared.capabilities = sorted(dict.fromkeys(prepared.capabilities))
     topology_plan = _build_topology_plan(prepared, devices, links)
