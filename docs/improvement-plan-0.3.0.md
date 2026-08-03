@@ -1368,3 +1368,25 @@ Two tests asserted the old refusal. They now assert the measured behaviour, and
 loudly, which a table cannot.
 
 **Corpus: 19/20 generated, 19 opened, 0 unexpected. 521 tests.**
+
+
+## Large labs have to be readable
+
+A 500-host lab was structurally correct and impossible to follow. Hosts were
+dealt into one global six-wide grid regardless of which switch they belonged to,
+so the canvas ran **y 110..10570** -- ten thousand units of vertical scroll --
+with a host and the switch it plugs into hundreds of units apart.
+
+Each access switch now owns a block: the switch on top, its hosts in a compact
+grid beneath it, blocks laid left to right and wrapped into rows. Hosts are
+dealt round-robin across switches, matching how the link planner assigns them,
+so the picture agrees with the wiring.
+
+| | before | after |
+|---|---|---|
+| canvas (500 hosts) | x 180..5550, y 110..10570 | x 180..3910, y 110..3290 |
+| shape | narrow column | roughly square |
+| open time | 16.7 s | 13.4 s |
+
+The same layout applies at every size, so a four-switch lab now fits in
+x 180..2620, y 110..820 instead of sprawling.

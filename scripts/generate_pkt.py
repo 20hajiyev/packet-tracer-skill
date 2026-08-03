@@ -2311,19 +2311,78 @@ def _seed_devices_from_plan(plan: IntentPlan) -> list[dict[str, object]]:
             for index, router in enumerate(routers[1:], start=1):
                 router.setdefault("x", 200 + index * 160)
                 router.setdefault("y", 110)
-        if switches:
-            switches[0].setdefault("x", 520)
-            switches[0].setdefault("y", 260)
-            for index, switch in enumerate(switches[1:], start=1):
-                switch.setdefault("x", 220 + (index - 1) * 220)
-                switch.setdefault("y", 420)
-        for index, host in enumerate(hosts):
-            host.setdefault("x", 180 + (index % 6) * 150)
-            host.setdefault("y", 610 + (index // 6) * 120)
+        _lay_out_switch_blocks(switches, hosts)
     for index, device in enumerate(devices):
         device.setdefault("x", 200 + (index % 5) * 150)
         device.setdefault("y", 180 + (index // 5) * 130)
     return devices
+
+
+# Layout geometry. Values are Packet Tracer logical-workspace units; a device
+# icon is roughly 60 wide, so 130 leaves a comfortable gap.
+HOST_COLUMN_STEP = 130
+HOST_ROW_STEP = 110
+HOSTS_PER_BLOCK_ROW = 5
+BLOCK_GAP = 120
+BLOCK_ROW_GAP = 200
+CORE_ROW_Y = 260
+ACCESS_ROW_Y = 460
+FIRST_HOST_Y = 600
+MAX_BLOCKS_PER_ROW = 6
+
+
+def _lay_out_switch_blocks(
+    switches: list[dict[str, object]], hosts: list[dict[str, object]]
+) -> None:
+    """Place each access switch directly above the hosts that hang off it.
+
+    Hosts used to be dealt into one global six-wide grid regardless of which
+    switch they belonged to. On a 500-host lab that produced a column of devices
+    ten thousand units tall, with a host and its switch hundreds of units apart
+    -- structurally correct and impossible to read.
+
+    Each access switch now owns a block: the switch on top, its hosts in a
+    compact grid underneath, blocks laid left to right and wrapped into rows.
+    Related devices stay together and the canvas stays roughly square.
+    """
+    if not switches:
+        for index, host in enumerate(hosts):
+            host.setdefault("x", 180 + (index % HOSTS_PER_BLOCK_ROW) * HOST_COLUMN_STEP)
+            host.setdefault("y", FIRST_HOST_Y + (index // HOSTS_PER_BLOCK_ROW) * HOST_ROW_STEP)
+        return
+
+    core = switches[0]
+    access = switches[1:] or switches
+    # A lone switch is both core and access, and keeps its hosts beneath it.
+    core_is_access = not switches[1:]
+
+    # Deal hosts round-robin across the access switches, matching how the link
+    # planner assigns them, so the picture agrees with the wiring.
+    buckets: list[list[dict[str, object]]] = [[] for _ in access]
+    for index, host in enumerate(hosts):
+        buckets[index % len(access)].append(host)
+
+    block_width = (HOSTS_PER_BLOCK_ROW - 1) * HOST_COLUMN_STEP + BLOCK_GAP
+    tallest_rows = 0
+    for block_index, (switch, block_hosts) in enumerate(zip(access, buckets)):
+        column = block_index % MAX_BLOCKS_PER_ROW
+        row = block_index // MAX_BLOCKS_PER_ROW
+        origin_x = 180 + column * block_width
+        rows_before = tallest_rows if row else 0
+        origin_y = ACCESS_ROW_Y + row * (BLOCK_ROW_GAP + rows_before * HOST_ROW_STEP)
+
+        switch.setdefault("x", origin_x + (HOSTS_PER_BLOCK_ROW - 1) * HOST_COLUMN_STEP // 2)
+        switch.setdefault("y", origin_y)
+        for host_index, host in enumerate(block_hosts):
+            host.setdefault("x", origin_x + (host_index % HOSTS_PER_BLOCK_ROW) * HOST_COLUMN_STEP)
+            host.setdefault("y", origin_y + 140 + (host_index // HOSTS_PER_BLOCK_ROW) * HOST_ROW_STEP)
+        tallest_rows = max(tallest_rows, -(-len(block_hosts) // HOSTS_PER_BLOCK_ROW))
+
+    if not core_is_access:
+        # Centre the core over the first row of blocks.
+        span = min(len(access), MAX_BLOCKS_PER_ROW)
+        core.setdefault("x", 180 + (span - 1) * block_width // 2)
+        core.setdefault("y", CORE_ROW_Y)
 
 
 def _plan_configs(plan: IntentPlan, devices: list[dict[str, object]]) -> dict[str, object]:
