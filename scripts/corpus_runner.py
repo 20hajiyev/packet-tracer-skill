@@ -141,6 +141,18 @@ CORPUS: tuple[CorpusCase, ...] = (
         note="device models named in the prompt must not be read as counts",
     ),
     CorpusCase(
+        "ospf_routing",
+        "2 router 3 switch 6 komputer qur vlanlarda 10,20 ospf olsun",
+        requires_content=("router ospf",),
+        note="routing was refused by a hand-maintained acceptance table until measured",
+    ),
+    CorpusCase(
+        "eigrp_routing",
+        "2 router 2 switch 4 komputer qur eigrp olsun",
+        requires_content=("router eigrp",),
+        note="the same emission path as OSPF, different protocol",
+    ),
+    CorpusCase(
         "wireless_ssid",
         "1 wireless router 2 laptop qur ssid EvSebeke wpa2 sifre Gizli123",
         # The network name and secret are the proof. Without the wireless ops the

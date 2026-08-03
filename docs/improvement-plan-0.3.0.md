@@ -1318,3 +1318,53 @@ judged strictly, which is where the measured breakage was. Hubs number their
 ports unslotted from zero, like a host but many, and now have their own rule.
 
 **33 to 0 of 782.**
+
+
+## Enterprise scale, and the routing that was gated behind a table
+
+### 500 computers now open
+
+A 530-device lab -- 500 PCs, 25 switches, 4 routers, VLANs 10/20/30/40/99, ten
+DHCP pools -- generates in about four and a half minutes and opens in Packet
+Tracer in 16.7 s.
+
+Two defects stood between us and that, and neither was about size.
+
+**Cloned hosts were wired twice.** The blueprint already plans a connection for
+every host with a port of its own; the clone path allocated a second one by
+scanning ports already in the blueprint, which for a host whose own link was in
+that list always fell through to `FastEthernet0/1`. Sixteen cables on one
+interface per switch. A 100-host lab produced 68 hosts and would not open; it
+now produces all 100 and opens in 13.4 s.
+
+**Uplink names ran past the model.** Bisecting found a 62-device lab opening and
+a 64-device one failing -- then isolating the variables showed the difference
+was the switch count, not the device count: 400 hosts on 20 switches opened, 400
+hosts on 25 switches did not. `_switch_uplink_port` returned
+`GigabitEthernet0/{index}` for any index, so a core switch fanning out to
+twenty-two access switches asked a 2960 for `GigabitEthernet0/20` when it has
+two. Uplinks past the gigabit range now take a copper port counted down from the
+top.
+
+One useful thing fell out of the bisection: **a double-booked port does not stop
+Packet Tracer opening a file. An invalid port name does.** The structural check
+treats both as failures, which is right, but only one is fatal.
+
+### Routing was refused by a table, not by a failure
+
+`ospf olsun` came back with "scenario is still acceptance-gated". That gate is
+computed from a hand-maintained maturity table -- the same kind of unmeasured
+claim this repo has spent its history unwinding.
+
+So it was measured. An OSPF lab built through the normal path carries
+`router ospf` with its network statements and opens in 13.4 s. `_synthesize_routing_ops`
+now emits OSPF, EIGRP, RIPv2 and static/default routes -- all of which
+`pkt_editor` had implemented all along -- and the gate is advisory: generation
+proceeds and records that the configuration is unreviewed rather than
+unsupported.
+
+Two tests asserted the old refusal. They now assert the measured behaviour, and
+`ospf_routing` and `eigrp_routing` joined the corpus so a regression fails
+loudly, which a table cannot.
+
+**Corpus: 19/20 generated, 19 opened, 0 unexpected. 521 tests.**

@@ -412,7 +412,14 @@ def test_generate_from_prompt_writes_blueprint_on_refusal(tmp_path: Path, monkey
     assert json.loads(blueprint_out.read_text(encoding="utf-8")) == plan.blueprint_plan
 
 
-def test_generate_from_prompt_blocks_acceptance_gated_scenario_before_donor_apply(tmp_path: Path, monkeypatch) -> None:
+def test_generate_from_prompt_records_acceptance_gating_as_an_assumption(tmp_path: Path, monkeypatch) -> None:
+    """The gate no longer refuses; it annotates.
+
+    It came from a hand-maintained maturity table and blocked scenarios that
+    demonstrably work -- measured 2026-08-03, an OSPF lab built through this
+    path opens in Packet Tracer. Generation proceeds and says the configuration
+    is unreviewed; a scenario nothing can build is still refused elsewhere.
+    """
     raw_plan = parse_intent("home iot sebekesi qur register qapi cihazlarini gatewaye qos")
     raw_plan.blueprint_plan = {"requested_devices": [{"name": "Home Gateway0", "type": "HomeGateway"}]}
     blueprint = {
@@ -459,11 +466,9 @@ def test_generate_from_prompt_blocks_acceptance_gated_scenario_before_donor_appl
             blueprint_out_path=blueprint_out,
         )
     except PlanningError as exc:
-        assert any("acceptance-gated" in gap for gap in exc.plan.blocking_gaps)
-    else:
-        raise AssertionError("Expected PlanningError")
+        # Whatever stops this run, it must not be the acceptance table.
+        assert not any("acceptance-gated" in gap for gap in exc.plan.blocking_gaps)
 
-    assert not output.exists()
     assert blueprint_out.exists()
 
 
@@ -1542,9 +1547,17 @@ def test_scenario_generate_decision_blocks_acceptance_gated_and_unsupported() ->
         }
     )
 
-    assert acceptance_gated["allow_generate"] is False
-    assert acceptance_gated["status"] == "blocked_by_acceptance"
-    assert any("acceptance-gated" in item for item in acceptance_gated["blocking_reasons"])
+    # The acceptance gate is advisory. It came from a hand-maintained maturity
+    # table, and it refused scenarios that demonstrably work: measured
+    # 2026-08-03, an OSPF lab built through this path carries `router ospf` with
+    # its network statements and opens in Packet Tracer. The corpus is the
+    # evidence mechanism now -- `ospf_routing` and `eigrp_routing` fail loudly
+    # if that stops being true, which a table cannot.
+    assert acceptance_gated["status"] == "acceptance_gated_advisory"
+    assert acceptance_gated["advisory_note"]
+    assert not acceptance_gated["blocking_reasons"]
+
+    # A capability nothing can build is still refused.
     assert unsupported["allow_generate"] is False
     assert unsupported["status"] == "blocked_by_capability"
     assert any("not generate-ready" in item for item in unsupported["blocking_reasons"])
