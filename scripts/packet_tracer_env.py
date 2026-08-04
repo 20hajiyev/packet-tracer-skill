@@ -68,18 +68,67 @@ class CompatibilityDonorDetails:
 
 COMPATIBILITY_TIERS = ("exact", "same_minor", "same_major", "upgradeable", "incompatible")
 
-# Measured, not assumed: a donor whose build differs from the running Packet
-# Tracer produces a file Packet Tracer refuses to open. Relabelling the output
-# is not enough either — the first attempt swapped `9.0.0.0000` for the running
-# `9.0.0.0810` and Packet Tracer still rejected the file, because the donor's
-# internal structures were never migrated.
+# Measured against a running Packet Tracer 9.0.0.0810, one file at a time:
 #
-# So the base donor must be a lab the running install actually wrote. None of
-# the 292 bundled Cisco samples qualifies; the user's own saves do.
+#   6.2.0.0000  opens        8.0.0.0000  opens (original, re-encoded, relabelled)
+#   9.0.0.0000  opens        9.0.0.0172  opens
+#   9.0.0.4178  opens        9.0.0.9999  opens
+#   9.1.0.0000  REFUSED      99.9.9.9999 REFUSED
+#
+# So the gate is an ordering on the first three fields, and the build field is
+# ignored entirely. Anything at or below the installed release opens; anything
+# above it does not.
+#
+# An earlier reading of the same symptom concluded that the build had to match
+# exactly and that none of the bundled Cisco samples could serve as a donor.
+# That was inferred from generated files failing to open -- which they did, for
+# unrelated reasons -- and never tested against an untouched sample. The control
+# that settles it: the *original* 8.0.0.0000 sample opens, and a file whose
+# version was relabelled to a nonexistent build is refused, so the bridge does
+# report refusals rather than silently succeeding.
+#
+# The consequence would be large -- Packet Tracer ships hundreds of labs under
+# its own `saves/`, all at or below the installed release, so a fresh install
+# would need no downloaded donor at all. It is not switched on yet, because two
+# questions remain open:
+#
+#   * every measurement above opened an *untouched* or merely relabelled lab.
+#     Whether a lab *generated* from an older donor opens is untested, and an
+#     earlier session recorded that one was refused;
+#   * loosening the default here changes which donor gets picked, and at scale
+#     that produced switches carrying two cables on one interface.
+#
+# So the tier model is corrected to match what was measured, while the default
+# stays where evidence supports it. Set PACKET_TRACER_DONOR_POLICY=upgradeable
+# to opt in.
 DEFAULT_DONOR_POLICY = "exact"
 
 # Packet Tracer reliably upgrades saves from this major version onward on open.
 MINIMUM_UPGRADEABLE_MAJOR = 6
+
+
+def _release_fields(version: str | None) -> tuple[int, int, int] | None:
+    """The major.minor.patch a version names, padded, or None if unreadable."""
+    fields = _version_fields(version)
+    if not fields:
+        return None
+    padded = (*fields, 0, 0, 0)[:3]
+    return (padded[0], padded[1], padded[2])
+
+
+def donor_opens_in_target(donor_version: str | None, target_version: str | None = None) -> bool:
+    """Whether Packet Tracer will open a lab carrying `donor_version`.
+
+    The rule is measured, not assumed: the donor's major.minor.patch must not
+    exceed the installed release. The fourth field -- the build -- is ignored,
+    which is why a 9.0.0.9999 lab opens on a 9.0.0.0810 install.
+    """
+    target_version = target_version or get_packet_tracer_target_version()
+    donor = _release_fields(donor_version)
+    target = _release_fields(target_version)
+    if donor is None or target is None:
+        return False
+    return donor <= target
 
 
 def _version_fields(version: str | None) -> tuple[int, ...]:
@@ -104,6 +153,12 @@ def donor_compatibility(donor_version: str | None, target_version: str | None = 
         return "incompatible"
     if donor_version == target_version:
         return "exact"
+
+    # Similarity is not the gate; the ordering is. A 9.1.0 donor resembles a
+    # 9.0.0 target more closely than an 8.0.0 one does, yet Packet Tracer opens
+    # the 8.0.0 lab and refuses the 9.1.0 lab. Rank only what actually opens.
+    if not donor_opens_in_target(donor_version, target_version):
+        return "incompatible"
 
     donor_fields = _version_fields(donor_version)
     target_fields = _version_fields(target_version)

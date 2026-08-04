@@ -145,7 +145,23 @@ def local_donor_search_roots() -> list[Path]:
     override = (os.getenv("PKT_LOCAL_DONOR_ROOTS") or "").strip()
     if override:
         return [Path(part) for part in override.split(os.pathsep) if part.strip()]
-    return list(DEFAULT_SEARCH_ROOTS)
+
+    roots = list(DEFAULT_SEARCH_ROOTS)
+    # Packet Tracer installs several hundred labs under its own `saves/`, and
+    # measurement showed it opens every one of them: the version gate is an
+    # ordering on major.minor.patch, and a bundled sample is by definition at or
+    # below the installed release. They are searched last, so a user's own labs
+    # still win, but their presence is what lets a fresh machine generate
+    # without downloading a donor first.
+    try:
+        from packet_tracer_env import get_packet_tracer_saves_root
+
+        bundled = get_packet_tracer_saves_root()
+    except Exception:  # noqa: BLE001 - donor discovery must never fail a run
+        bundled = None
+    if bundled is not None and bundled not in roots:
+        roots.append(bundled)
+    return roots
 
 
 def local_donor_indexing_enabled() -> bool:

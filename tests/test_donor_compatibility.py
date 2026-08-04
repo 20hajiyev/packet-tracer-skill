@@ -37,7 +37,11 @@ TARGET = "9.0.0.0810"
         ("9.0.0.4178", "same_minor"),
         ("9.0.0.0112", "same_minor"),
         ("9.0.0.0172", "same_minor"),
-        ("9.1.0.0000", "same_major"),
+        # Measured, not classified by resemblance: Packet Tracer 9.0.0.0810
+        # refuses a 9.1.0.0000 lab outright, while opening the 8.2 and 7.1 labs
+        # below. A donor above the installed release is unusable however close
+        # its version string looks.
+        ("9.1.0.0000", "incompatible"),
         ("8.2.1.4208", "upgradeable"),
         ("7.1.0.0000", "upgradeable"),
         ("6.0.0.0002", "upgradeable"),
@@ -121,3 +125,27 @@ def test_tiers_are_ordered_strictest_first() -> None:
     for policy_index, policy in enumerate(COMPATIBILITY_TIERS[:-1]):
         for tier in COMPATIBILITY_TIERS[: policy_index + 1]:
             assert donor_tier_is_accepted(tier, policy)
+
+
+def test_a_donor_newer_than_the_install_is_never_openable() -> None:
+    """The gate is an ordering, not a resemblance.
+
+    Measured one file at a time against a running 9.0.0.0810: 6.2.0.0000 and
+    8.0.0.0000 labs open, 9.0.0.9999 opens (the build field is ignored), and
+    9.1.0.0000 is refused. A tier ladder that ranked 9.1.0 as "closer" than
+    8.0.0 had the shape of the problem wrong.
+    """
+    from packet_tracer_env import donor_opens_in_target
+
+    for version in ("6.2.0.0000", "8.0.0.0000", "9.0.0.0000", "9.0.0.9999", "9.0.0.0810"):
+        assert donor_opens_in_target(version, TARGET), version
+    for version in ("9.1.0.0000", "10.0.0.0000", "99.9.9.9999"):
+        assert not donor_opens_in_target(version, TARGET), version
+
+
+def test_an_install_that_reports_only_a_release_still_ranks_donors() -> None:
+    """A fresh install with no saved lab yields `9.0.0`, three fields only."""
+    from packet_tracer_env import donor_opens_in_target
+
+    assert donor_opens_in_target("9.0.0.0810", "9.0.0")
+    assert not donor_opens_in_target("9.1.0.0000", "9.0.0")
