@@ -1965,3 +1965,26 @@ gate: when a prompt asks for WAN, prefer a donor whose routers have serial
 ports, and fall back to copper silently rather than refusing. Note the Layer-3
 gate's lesson -- ask the donor index *before* planning, since planning cannot be
 retried.
+
+Cable coverage is nearly complete, measured against use rather than catalogue.
+
+Across 40 local labs, every link falls into three families:
+
+    eCopper      805   (eStraightThrough 594, eCrossOver 206, eRollOver 5)
+    eSerial       41
+    ePhoneLine     2
+
+Fiber, coaxial, octal and USB appear in none of them. That matches the earlier
+direct measurement of fiber: put on a 2960's copper port it produces a link
+that reports no fault and carries nothing, because those ports are copper.
+
+So the "19 kinds to ~70" target has a much smaller cable half than the
+catalogue suggests. Straight-through, crossover and serial are all emitted
+today. The one genuinely used family still missing from generation is
+rollover -- five occurrences, all console connections -- and that needs a
+console port pairing rather than a cable alias.
+
+Adding fiber, coaxial or USB aliases would let a prompt ask for a cable that no
+donor uses and that, where it was tested, does not carry traffic. Worth
+revisiting only alongside devices that have those ports: a Fiber Patch Panel
+for fiber, a Coaxial Splitter or cable modem for coaxial.
