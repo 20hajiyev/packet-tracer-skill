@@ -485,3 +485,54 @@ def test_a_bridge_address_that_is_already_unique_is_left_alone() -> None:
         ET.SubElement(engine, "BUILD_IN_ADDR").text = mac
 
     assert _assign_unique_macs(root) == []
+
+
+def test_a_cable_family_follows_the_interfaces_it_ends_on() -> None:
+    """A serial cable on a gigabit port is a lab Packet Tracer will not open.
+
+    Measured: asking for a serial link between routers produced one, the donor's
+    router had no serial card, the port repair moved the cable to
+    GigabitEthernet0/0/0 -- and left the family as eSerial. The file built and
+    would not load.
+    """
+    from generate_pkt import _reconcile_cable_media
+
+    root = ET.Element("PACKETTRACER5")
+    links = ET.SubElement(root, "LINKS")
+
+    mismatched = ET.SubElement(links, "LINK")
+    ET.SubElement(mismatched, "TYPE").text = "eSerial"
+    cable = ET.SubElement(mismatched, "CABLE")
+    ET.SubElement(cable, "TYPE").text = ""
+    ET.SubElement(cable, "PORT").text = "GigabitEthernet0/0/0"
+    ET.SubElement(cable, "PORT").text = "GigabitEthernet0/0/0"
+
+    genuine = ET.SubElement(links, "LINK")
+    ET.SubElement(genuine, "TYPE").text = "eCopper"
+    cable2 = ET.SubElement(genuine, "CABLE")
+    ET.SubElement(cable2, "TYPE").text = "eStraightThrough"
+    ET.SubElement(cable2, "PORT").text = "Serial0/0/0"
+    ET.SubElement(cable2, "PORT").text = "Serial0/0/0"
+
+    _reconcile_cable_media(root)
+
+    assert mismatched.findtext("TYPE") == "eCopper"
+    assert mismatched.find("CABLE").findtext("TYPE") == "eStraightThrough"
+    # And the other way round: two serial ends make a serial cable.
+    assert genuine.findtext("TYPE") == "eSerial"
+
+
+def test_a_copper_link_on_copper_ports_is_left_alone() -> None:
+    from generate_pkt import _reconcile_cable_media
+
+    root = ET.Element("PACKETTRACER5")
+    links = ET.SubElement(root, "LINKS")
+    link = ET.SubElement(links, "LINK")
+    ET.SubElement(link, "TYPE").text = "eCopper"
+    cable = ET.SubElement(link, "CABLE")
+    ET.SubElement(cable, "TYPE").text = "eCrossOver"
+    ET.SubElement(cable, "PORT").text = "FastEthernet0/1"
+    ET.SubElement(cable, "PORT").text = "FastEthernet0/1"
+
+    assert _reconcile_cable_media(root) == []
+    assert cable.findtext("TYPE") == "eCrossOver"

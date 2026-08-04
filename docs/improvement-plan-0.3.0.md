@@ -1943,3 +1943,25 @@ trying to keep them out of `kept_devices`.
 
 Until then the analog phone stays out of reach, and the reason is recorded
 rather than rediscovered.
+
+Router-to-router serial: planned now, but still copper in the file.
+
+`routerler arasinda serial kabel olsun` produced no router-to-router link at
+all. `_add_wan_link` gates on a `wan` capability that nothing ever produced --
+the pattern table had `ppp`, `gre` and `vpn` but no `wan` and no `serial`, so
+two routers in a lab were simply never connected to each other. Adding the
+patterns plans the link on `Serial0/0/0`.
+
+The file then would not open, which only Packet Tracer showed. The donor's
+router has no serial card, the port repair moved the cable to
+GigabitEthernet0/0/0, and left the family as `eSerial` -- a serial cable in a
+gigabit port. Cable family now follows the ports: serial only when both ends
+are, copper otherwise. The lab opens.
+
+What is still missing is a *real* serial link. Measured across 30 local donors
+with routers, exactly one carries a serial-capable router (four ports). So the
+link is achievable but rare, and it needs the same shape as the Layer-3 core
+gate: when a prompt asks for WAN, prefer a donor whose routers have serial
+ports, and fall back to copper silently rather than refusing. Note the Layer-3
+gate's lesson -- ask the donor index *before* planning, since planning cannot be
+retried.

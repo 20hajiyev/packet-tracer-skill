@@ -2195,6 +2195,7 @@ def _write_pkt_root(root: ET.Element, pkt_path: Path, xml_path: Path | None = No
     # route, and the fix never ran for it.
     _repair_invalid_link_ports(root)
     _assign_unique_macs(root)
+    _reconcile_cable_media(root)
     _trunk_uplinks_in_file(root)
     _align_router_access_vlan(root)
     _align_router_gateway(root)
@@ -4449,6 +4450,48 @@ def _align_router_gateway(root: ET.Element) -> list[str]:
     return []
 
 
+def _reconcile_cable_media(root: ET.Element) -> list[str]:
+    """Make each cable's family agree with the interfaces it ends on.
+
+    The port repair renames an interface the device does not have, and a serial
+    link on a router with no serial card lands on an Ethernet port -- leaving a
+    serial cable plugged into GigabitEthernet0/0/0. Packet Tracer refuses to
+    open that, measured: the lab built fine and would not load.
+
+    A cable is serial only when both ends are; otherwise it is copper.
+    """
+    changed: list[str] = []
+    for link in root.findall(".//LINKS/LINK"):
+        cable = link.find("./CABLE")
+        if cable is None:
+            continue
+        ports = [(node.text or "") for node in cable.findall("PORT")]
+        if len(ports) < 2:
+            continue
+        family = (link.findtext("TYPE") or "").strip()
+        both_serial = all(port.startswith("Serial") for port in ports)
+        if both_serial and family != "eSerial":
+            _set_link_family(link, cable, "eSerial", "")
+            changed.append(f"{ports[0]} <-> {ports[1]}: -> eSerial")
+        elif not both_serial and family == "eSerial":
+            _set_link_family(link, cable, "eCopper", "eStraightThrough")
+            changed.append(f"{ports[0]} <-> {ports[1]}: eSerial -> eCopper")
+    return changed
+
+
+def _set_link_family(
+    link: ET.Element, cable: ET.Element, family: str, subtype: str
+) -> None:
+    node = link.find("TYPE")
+    if node is None:
+        node = ET.SubElement(link, "TYPE")
+    node.text = family
+    sub = cable.find("TYPE")
+    if sub is None:
+        sub = ET.SubElement(cable, "TYPE")
+    sub.text = subtype
+
+
 def _assign_unique_macs(root: ET.Element) -> list[str]:
     """Give every interface in the lab its own MAC address.
 
@@ -6589,6 +6632,7 @@ def generate_from_prompt(
     _sanitize_runtime_sections(root)
     port_repairs = _repair_invalid_link_ports(root)
     mac_repairs = _assign_unique_macs(root)
+    media_notes = _reconcile_cable_media(root)
     trunk_notes = _trunk_uplinks_in_file(root)
     vlan_notes = _align_router_access_vlan(root)
     gateway_repairs = _align_router_gateway(root)

@@ -93,6 +93,15 @@ CAPABILITY_PATTERNS = {
     "ipsec": [r"\bipsec\b", r"\bike\b", r"\bphase 1\b", r"\bphase 2\b"],
     "gre": [r"\bgre\b", r"\bgre tunnel\b"],
     "ppp": [r"\bppp\b", r"\bchap\b", r"\bpap\b"],
+    # `_add_wan_link` gates the router-to-router link on a `wan` capability that
+    # nothing ever produced, so "routerler arasinda serial kabel olsun" came out
+    # with the two routers not connected to each other at all -- six copper
+    # links and no serial one. A prompt naming serial, WAN or a leased line is
+    # asking for exactly that link.
+    "wan": [
+        r"\bwan\b", r"\bserial\b", r"\bleased line\b",
+        r"\bpoint-to-point\b", r"\bnoqteden noqteye\b",
+    ],
     "security_edge": [r"\bsecurity edge\b", r"\bsecurity appliance\b", r"\bfirewall\b", r"\basa\b"],
     "asa_acl_nat": [r"\basa acl\b", r"\basa nat\b", r"\basa acl nat\b"],
     "asa_service_policy": [r"\basa service policy\b", r"\bservice policy\b"],
