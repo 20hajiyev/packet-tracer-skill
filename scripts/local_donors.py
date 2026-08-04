@@ -147,6 +147,16 @@ def local_donor_search_roots() -> list[Path]:
         return [Path(part) for part in override.split(os.pathsep) if part.strip()]
 
     roots = list(DEFAULT_SEARCH_ROOTS)
+
+    # A donor that ships with the skill. Everything else here depends on the
+    # user having Packet Tracer labs on disk -- their own, or the ones Packet
+    # Tracer installs -- so a machine with only the skill on it could not
+    # generate at all. This one carries a switch with hosts plus the device
+    # kinds no ordinary lab contains, and was built and saved through Packet
+    # Tracer itself, so it opens like any other.
+    shipped = Path(__file__).resolve().parent.parent / "templates" / "pt900" / "donors"
+    if shipped.exists():
+        roots.append(shipped)
     # Packet Tracer installs several hundred labs under its own `saves/`, and
     # measurement showed it opens every one of them: the version gate is an
     # ordering on major.minor.patch, and a bundled sample is by definition at or
