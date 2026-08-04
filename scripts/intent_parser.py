@@ -198,6 +198,18 @@ NATURAL_DEVICE_ALIASES = {
     "CCTVCamera": ["camera", "kamera", "cctv", "webcam"],
     "Hub": ["hub", "konsentrator"],
     "Repeater": ["repeater", "təkrarlayıcı", "tekrarlayici"],
+    # Added from what the donor pool actually holds, not from Packet Tracer's
+    # catalogue. Measured across 60 local donors: WirelessLanController appears
+    # in 3, Pda in 5, AnalogPhone and HomeVoip in 2 each. Patch panels, bridges,
+    # sniffers, Meraki gear, cell towers, TVs and coaxial splitters appear in
+    # none of them, so aliasing those would only turn a prompt into a refusal.
+    "WirelessLanController": [
+        "wlc", "wireless lan controller", "wireless controller",
+        "simsiz kontroller", "wlan controller",
+    ],
+    "AnalogPhone": ["analog phone", "analog telefon", "analoq telefon"],
+    "HomeVoip": ["home voip", "home phone", "ev telefonu", "voip phone"],
+    "Pda": ["pda", "handheld", "cib kompyuteri"],
 }
 
 NETWORK_STYLE_PATTERNS = {
@@ -850,6 +862,26 @@ def _extract_natural_edit_operations(prompt: str) -> tuple[list[dict[str, object
         flags=re.IGNORECASE,
     ):
         add(edits, {"op": "prune_device", "device": device})
+
+    # `cli R1: <commands>` hands the user's own IOS straight through. Newlines
+    # keep their indentation, which is what marks a block body -- `ip dhcp pool
+    # X` followed by an indented `network ...` is a pool, and the same two lines
+    # unindented are two unrelated globals. A semicolon is a plain separator for
+    # one-liners, so every part it produces is top level.
+    cli_pattern = re.compile(
+        r"(?:^|\s)cli\s+([A-Za-z0-9_-]+)\s*:\s*(.+?)"
+        r"(?=(?:\r?\n)\s*cli\s+[A-Za-z0-9_-]+\s*:|$)",
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    for device, body in cli_pattern.findall(prompt):
+        lines: list[str] = []
+        for raw_line in body.splitlines():
+            if ";" in raw_line:
+                lines.extend(part.strip() for part in raw_line.split(";") if part.strip())
+            elif raw_line.strip():
+                lines.append(raw_line.rstrip())
+        if lines:
+            add(edits, {"op": "apply_cli", "device": device, "lines": lines})
 
     return edits, switch_ops
 

@@ -239,3 +239,38 @@ def test_repeating_the_same_command_does_not_duplicate_it() -> None:
 
     lines = [node.text for node in config.findall("LINE")]
     assert lines.count("ip routing") == 1
+
+
+def test_a_prompt_can_carry_raw_ios_commands() -> None:
+    """`cli <device>: ...` is how a user's own configuration gets in.
+
+    Newlines keep their indentation, and indentation is what marks a block body:
+    `ip dhcp pool X` with an indented `network ...` under it is a pool, and the
+    same two lines unindented are two unrelated globals. A semicolon is a plain
+    separator, so every part it produces is top level -- the parser does not
+    guess which of two readings a one-liner meant.
+    """
+    from intent_parser import parse_intent
+
+    plan = parse_intent(
+        "cli R1: ip domain-name example.local\n"
+        "interface GigabitEthernet0/0/0\n"
+        "  description uplink to core\n"
+        "cli SW1: vlan 30; name Guest"
+    )
+
+    cli_ops = {op["device"]: op["lines"] for op in plan.edit_operations if op["op"] == "apply_cli"}
+    assert cli_ops["R1"] == [
+        "ip domain-name example.local",
+        "interface GigabitEthernet0/0/0",
+        "  description uplink to core",
+    ]
+    assert cli_ops["SW1"] == ["vlan 30", "name Guest"]
+
+
+def test_a_prompt_without_cli_produces_no_such_operation() -> None:
+    from intent_parser import parse_intent
+
+    plan = parse_intent("1 router 1 switch ve 3 komputer qur")
+
+    assert not [op for op in plan.edit_operations if op.get("op") == "apply_cli"]
