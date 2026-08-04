@@ -5189,6 +5189,47 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
             }
         )
 
+    # A clone whose name is already taken is dropped in silence: duplication
+    # returns early when a device of that name exists. The donor for
+    # `1 router 1 switch 3 komputer` holds PC0..PC3, and only PC0 was pruned --
+    # so the plan kept the donor's own PC2 and PC3 *and* asked for clones called
+    # PC2 and PC3. The clones never happened, and the surviving donor hosts were
+    # wireless: no Ethernet interface, cabled to the switch on FastEthernet0,
+    # holding APIPA addresses. The plan has to agree with itself first.
+    clone_names = {str(clone["new_name"]) for clone in pending_host_clones}
+    clone_sources = {
+        rename_map.get(str(clone["source"]), str(clone["source"]))
+        for clone in pending_host_clones
+    }
+    already_pruned = {
+        str(operation.get("device"))
+        for operation in adapted_plan.edit_operations
+        if operation.get("op") == "prune_device"
+    }
+    # Only the ones that cannot do the job. Pruning every colliding name was
+    # too broad: it removed donor devices the rest of the plan still referred
+    # to, donor-prune validation then failed, and generation quietly fell back
+    # to the blueprint path -- which writes links by positional index and left
+    # `hosts_only` and `nat_internet` failing the structural check. A device
+    # that can take a cable is a perfectly good host; only one with no wired
+    # interface has to give way to a clone.
+    cabled_donor_names = {
+        (device.findtext("./ENGINE/NAME") or "")
+        for device in donor_root.findall(".//DEVICES/DEVICE")
+        if any("copper" in (port.findtext("TYPE") or "").lower() for port in device.iter("PORT"))
+    }
+    for donor_device in donor_devices:
+        donor_name = str(donor_device["name"])
+        final_name = rename_map.get(donor_name, donor_name)
+        if (
+            final_name in clone_names
+            and final_name not in clone_sources
+            and final_name not in already_pruned
+            and donor_name not in cabled_donor_names
+        ):
+            adapted_plan.edit_operations.append({"op": "prune_device", "device": final_name})
+            already_pruned.add(final_name)
+
     for clone in pending_host_clones:
         source_final = rename_map.get(str(clone["source"]), str(clone["source"]))
         if source_final in parked_set:

@@ -615,15 +615,48 @@ def _replace_lines(target: ET.Element, lines: list[str]) -> None:
         node.text = line
 
 
+def _splice_into_config(existing: list[str], additions: list[str]) -> list[str]:
+    """Place new configuration where IOS will actually read it.
+
+    A running config ends with `end`, and everything appended after it is
+    ignored. Measured live: a generated lab carried
+
+        end
+        ip dhcp pool LAN
+         network 192.168.1.0 255.255.255.0
+         default-router 192.168.1.1
+
+    and its hosts sat on APIPA addresses, because the router had no pool at all.
+    The file looked configured; the device was not.
+
+    Interface settings were never affected -- those are written into a block
+    that already exists, ahead of `end` -- so the fault only ever showed on
+    newly added global configuration, which is why it looked intermittent.
+    """
+    if not additions:
+        return list(existing)
+
+    # Before `end` is not far enough. Splicing there put `ip dhcp pool LAN`
+    # after `line vty 0 4 / login`, and the pool still did nothing: the parser
+    # is replaying a config, and a global command arriving while it is inside a
+    # `line` submode has nowhere sensible to go. Cisco's own labs put the pool
+    # near the top -- line 13 of a 68-line config, with the first interface at
+    # line 36 -- so that is where new configuration belongs.
+    for index, line in enumerate(existing):
+        if line.startswith("interface "):
+            return [*existing[:index], *additions, *existing[index:]]
+    for index in range(len(existing) - 1, -1, -1):
+        if existing[index].strip() == "end":
+            return [*existing[:index], *additions, *existing[index:]]
+    return [*existing, *additions]
+
+
 def _append_unique_config_lines(parent: ET.Element | None, lines: list[str]) -> None:
     if parent is None:
         return
     existing = [line.text or "" for line in parent.findall("./LINE")]
-    merged = list(existing)
-    for line in lines:
-        if line not in merged:
-            merged.append(line)
-    _replace_lines(parent, merged)
+    additions = [line for line in lines if line not in existing]
+    _replace_lines(parent, _splice_into_config(existing, additions))
 
 
 # Settings whose value is a word rather than a number, so stripping numeric
@@ -709,7 +742,7 @@ def _append_config_block(parent: ET.Element | None, header: str, body: list[str]
     for index in range(0, max(len(existing) - len(block) + 1, 0)):
         if existing[index : index + len(block)] == block:
             return
-    _replace_lines(parent, [*existing, *block])
+    _replace_lines(parent, _splice_into_config(existing, block))
 
 
 def _device_index_map(root: ET.Element) -> dict[str, int]:
@@ -1324,8 +1357,17 @@ def _config_targets(device: ET.Element) -> list[ET.Element]:
     targets: list[ET.Element] = []
     for path in ["./ENGINE/RUNNINGCONFIG", "./ENGINE/STARTUPCONFIG"]:
         node = device.find(path)
-        if node is not None:
-            targets.append(node)
+        if node is None:
+            continue
+        # A donor can ship a device with an empty startup config. Writing into
+        # it turned the router's saved configuration into three lines -- just
+        # the DHCP pool that had been added -- so a reload would have wiped
+        # every interface. An empty startup config is the donor's state; a stub
+        # is worse than either leaving it alone or copying the whole running
+        # config, so leave it alone.
+        if path.endswith("STARTUPCONFIG") and not node.findall("./LINE"):
+            continue
+        targets.append(node)
     for node in device.findall(".//FILE_CONTENT/CONFIG"):
         targets.append(node)
     return targets

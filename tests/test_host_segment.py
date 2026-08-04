@@ -344,3 +344,99 @@ def test_addresses_that_are_already_unique_are_left_alone() -> None:
 
     assert _assign_unique_macs(root) == []
     assert [node.text for node in root.iter("MACADDRESS")] == ["0060.5C02.3E05", "0090.0C87.7BE8"]
+
+
+def test_new_global_configuration_lands_before_end() -> None:
+    """Everything after `end` is ignored, and that is where it used to go.
+
+    Measured live: a generated lab carried `ip dhcp pool LAN` after `end`, and
+    its hosts sat on APIPA addresses because the router had no pool at all. The
+    file looked configured; the device was not.
+
+    Interface settings were never affected -- those are written into a block
+    that already exists, ahead of `end` -- which is why the fault looked
+    intermittent rather than total.
+    """
+    from pkt_editor import _splice_into_config
+
+    existing = ["hostname R1", "!", "line vty 0 4", " login", "!", "end"]
+
+    spliced = _splice_into_config(existing, ["ip dhcp pool LAN", " network 192.168.1.0 255.255.255.0"])
+
+    assert spliced[-1] == "end"
+    assert spliced.index("ip dhcp pool LAN") < spliced.index("end")
+    assert spliced[:5] == existing[:5]
+
+
+def test_a_config_without_end_still_receives_the_lines() -> None:
+    from pkt_editor import _splice_into_config
+
+    assert _splice_into_config(["hostname R1"], ["ip routing"]) == ["hostname R1", "ip routing"]
+
+
+def test_splicing_nothing_changes_nothing() -> None:
+    from pkt_editor import _splice_into_config
+
+    existing = ["hostname R1", "end"]
+    assert _splice_into_config(existing, []) == existing
+
+
+def test_only_the_last_end_is_treated_as_the_terminator() -> None:
+    """`end` can appear inside a banner; the real one is the last."""
+    from pkt_editor import _splice_into_config
+
+    existing = ["banner motd ^", "the end", "^", "end"]
+
+    spliced = _splice_into_config(existing, ["ip routing"])
+
+    assert spliced == ["banner motd ^", "the end", "^", "ip routing", "end"]
+
+
+def test_an_empty_startup_config_is_left_empty() -> None:
+    """Writing into it produced a router whose saved config was three lines.
+
+    A donor can ship a device with no startup config -- Cisco's own labs do,
+    including the DHCP ones -- and appending to it left the router's startup
+    config holding nothing but the DHCP pool that had just been added. A reload
+    would have come back with no interfaces at all. Leaving it as the donor had
+    it matches every real lab measured.
+    """
+    from pkt_editor import _config_targets
+
+    device = ET.Element("DEVICE")
+    engine = ET.SubElement(device, "ENGINE")
+    running = ET.SubElement(engine, "RUNNINGCONFIG")
+    ET.SubElement(running, "LINE").text = "hostname R1"
+    ET.SubElement(engine, "STARTUPCONFIG")  # present but empty
+
+    targets = _config_targets(device)
+
+    assert targets == [running]
+
+
+def test_a_startup_config_with_content_is_still_written() -> None:
+    from pkt_editor import _config_targets
+
+    device = ET.Element("DEVICE")
+    engine = ET.SubElement(device, "ENGINE")
+    running = ET.SubElement(engine, "RUNNINGCONFIG")
+    ET.SubElement(running, "LINE").text = "hostname R1"
+    startup = ET.SubElement(engine, "STARTUPCONFIG")
+    ET.SubElement(startup, "LINE").text = "hostname R1"
+
+    assert _config_targets(device) == [running, startup]
+
+
+def test_global_configuration_lands_ahead_of_the_interfaces() -> None:
+    """Cisco writes global config near the top, before any interface block.
+
+    Splicing merely before `end` put it after `line vty 0 4 / login`, which is
+    not where any real config keeps it.
+    """
+    from pkt_editor import _splice_into_config
+
+    existing = ["hostname R1", "!", "interface GigabitEthernet0/0/0", " ip address 10.0.0.1 255.255.255.0", "!", "line vty 0 4", " login", "end"]
+
+    spliced = _splice_into_config(existing, ["ip dhcp pool LAN"])
+
+    assert spliced.index("ip dhcp pool LAN") < spliced.index("interface GigabitEthernet0/0/0")
