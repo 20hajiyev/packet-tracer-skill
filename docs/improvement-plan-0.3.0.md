@@ -1766,3 +1766,27 @@ groups for this prompt, and only promote when one does. `discover_local_donors`
 already filters on `required_types` and is cached, so the question is cheap.
 Making planning side-effect-free would be the deeper fix and is worth doing on
 its own merits.
+
+Device coverage is limited by donor *shape*, not by the alias table.
+
+Aliases for WirelessLanController, AnalogPhone, HomeVoip and Pda were added
+from what the donor pool holds -- measured across 60 donors, not copied from
+Packet Tracer's catalogue, which also lists patch panels, bridges, sniffers,
+Meraki gear, cell towers, TVs and coaxial splitters that no local donor has.
+
+Adding the alias is only half of it. `1 wlc 2 access point qur` still refuses:
+
+  Compatibility donor does not have a spare WirelessLanController device
+  for standalone target WirelessLanController1
+
+The donor `wlc_2504_simple_wlan.pkt` *does* have one -- that is why it was
+selected. It is not offered because donor-prune builds its spare pool out of
+switch groups, and a WLC lab has no switch with hosts on it, so nothing at all
+is queued as spare. The same shape explains the earlier refusal of a 56-device
+mixed-device prompt.
+
+So the next step for device coverage is not more aliases; it is that
+donor-prune should offer a device it holds even when that device sits outside a
+switch group. Until then the honest position is that a kind is supported when a
+donor carries it *and* the prompt's shape fits the donor's -- which is the
+donor-shape dependence that workstream 1 exists to remove.
