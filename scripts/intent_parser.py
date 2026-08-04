@@ -218,6 +218,18 @@ NATURAL_DEVICE_ALIASES = {
     ],
     "AnalogPhone": ["analog phone", "analog telefon", "analoq telefon"],
     "HomeVoip": ["home voip", "home phone", "ev telefonu", "voip phone"],
+    # These exist in Packet Tracer's palette and in no local donor, so the
+    # earlier note here said aliasing them would only produce refusals. That was
+    # true of the donors that happened to be on disk, not of the tool: a donor
+    # carrying them was built through the live bridge and saved with the running
+    # build, and the kinds normalise to themselves, so they resolve.
+    "Patch Panel": ["patch panel", "patch-panel", "patchpanel", "kross panel"],
+    "Bridge": ["bridge", "kopru", "körpü"],
+    "Sniffer": ["sniffer", "paket analizatoru", "packet sniffer"],
+    "SecurityAppliance": ["meraki", "meraki mx", "security appliance mx"],
+    "TV": ["tv", "televizor", "smart tv"],
+    "CoAxialSplitter": ["coaxial splitter", "koaksial splitter", "splitter"],
+    "CellTower": ["cell tower", "mobil qulle", "base station", "bts"],
 }
 
 NETWORK_STYLE_PATTERNS = {
