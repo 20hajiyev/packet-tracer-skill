@@ -1674,10 +1674,16 @@ Instrumenting the assignment (wrap the candidate functions and print what is
 chosen for `PC2`) is the cheap way in; the same technique found the write path
 for the duplicated-port bug in one run.
 
-Hosts on different access switches cannot reach each other. Within one switch
-they can: in the 22-switch lab PC1 -> PC22 (both on SW2) is 0% loss, while
-PC1 -> PC3 (SW2 to SW4, across the core) is 100%, on every attempt and long
-after STP would have converged.
+Hosts on different access switches cannot reach each other *above a certain
+size*. The first note here said this was general; measurement since narrowed it:
+
+  3 switches, 4 hosts   PC1(SW2) -> PC2(SW3)   0% loss
+  8 switches, 12 hosts  PC1(SW2) -> PC2(SW3)   100% loss
+  22 switches, 40 hosts PC1(SW2) -> PC3(SW4)   100% loss
+  22 switches           PC1 -> PC22, same switch, 0% loss
+
+So the L2 path works when the lab is small and fails when it is not, on every
+attempt and long after STP would have converged.
 
 Ruled out by measurement, so the next attempt should not revisit these:
 
@@ -1690,9 +1696,15 @@ Ruled out by measurement, so the next attempt should not revisit these:
   the finished file so the port names are the real ones;
 * duplicate MACs and duplicate addresses -- none of either.
 
-Worth trying next: read the switch MAC address table live, or step the
-simulation on a *small* multi-switch lab where the event list is not swamped,
-since the 64-device one reports zero frames. A two-switch lab with hosts on
-both switches is the smallest case that should reproduce it, and none of the
-corpus cases currently place hosts on more than one switch -- which is why this
-went unnoticed. Adding that case to the corpus is probably the first move.
+Also ruled out at the failing size: the configuration itself. Every uplink on
+the 8-switch lab reads `switchport mode trunk` + `switchport trunk allowed vlan
+all` on both ends, the topology is a clean star with no second path, and PC1
+and PC2 are both in VLAN 1 on the same /24.
+
+The simulation event list stays empty on these labs even after a ping, so the
+packet trace that found the duplicate-MAC bug is not available here. Reading the
+switch MAC address table live is the next thing to try, and comparing the 3- and
+8-switch labs directly is the cheapest way in, since one works and one does not.
+
+The 3-switch lab is worth adding to the corpus either way: no case currently
+places hosts on more than one switch, which is why this went unnoticed.
