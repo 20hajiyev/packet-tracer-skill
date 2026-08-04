@@ -6341,6 +6341,67 @@ def prepare_generation_plan(plan: IntentPlan) -> IntentPlan:
     return enriched
 
 
+# Below this many switches a lab is a single closet and one model is honest.
+# At or above it, a core that can route is what anyone would actually build.
+LAYER3_CORE_SWITCH_THRESHOLD = 3
+
+
+def _promote_layer3_core(plan: IntentPlan) -> IntentPlan | None:
+    """Trade one plain switch for a multilayer one, when a donor can serve it.
+
+    A prompt that just asks for switches gets the same model everywhere, which
+    is the complaint this answers. Asking for a Layer-3 switch already works, so
+    the only thing missing was asking.
+
+    The decision is made *before* planning, on purpose. The obvious shape --
+    plan with the promotion, fall back on PlanningError -- was tried and had to
+    be reverted: planning mutates state outside the plan it is given, so a
+    refused attempt leaves the process unable to plan the same prompt again, and
+    an 8-switch lab stopped generating at all. Asking the donor index first
+    costs a cached lookup and cannot fail that way.
+
+    Returns None when there is nothing to promote or nothing to promote onto.
+    """
+    if plan.device_requirements.get("MultiLayerSwitch"):
+        return None
+    switches = int(plan.device_requirements.get("Switch", 0) or 0)
+    if switches < LAYER3_CORE_SWITCH_THRESHOLD:
+        return None
+
+    try:
+        from local_donors import discover_local_donors
+
+        candidates = discover_local_donors(
+            required_types={"MultiLayerSwitch": 1}, stop_after=25
+        )
+    except Exception:  # noqa: BLE001 - a preference must never fail a run
+        return None
+    # `required_types` asks whether a donor *has* a kind, not how many, so the
+    # count has to be checked here. Passing `Switch: 21` through it matched any
+    # donor with a single switch, which is how the 21-switch prompt got promoted
+    # and then refused. Measured on this machine, the roomiest Layer-3 donor
+    # carries ten switches, so large labs correctly get no promotion.
+    # Hosts count too. Donor-prune reuses the hosts already attached to a donor
+    # switch, so a donor with seven switches and six PCs cannot serve a prompt
+    # wanting twelve -- the groups it hands out come up empty and the whole lab
+    # is refused. `company_network.pkt` is exactly that shape, which is why the
+    # switch count alone still let an 8-switch prompt through and lose.
+    wanted_hosts = int(plan.device_requirements.get("PC", 0) or 0)
+    if not any(
+        (donor.device_counts or {}).get("Switch", 0) >= switches - 1
+        and (donor.device_counts or {}).get("PC", 0)
+        + (donor.device_counts or {}).get("Pc", 0)
+        >= wanted_hosts
+        for donor in candidates
+    ):
+        return None
+
+    promoted = copy.deepcopy(plan)
+    promoted.device_requirements["Switch"] = switches - 1
+    promoted.device_requirements["MultiLayerSwitch"] = 1
+    return promoted
+
+
 def build_prompt_blueprint(plan: IntentPlan, donor_roots: list[Path] | None = None) -> tuple[dict[str, object], IntentPlan]:
     prepared = _apply_prompt_compatibility_requirements(plan, donor_roots)
     if prepared.blocking_gaps:
@@ -6432,8 +6493,11 @@ def generate_from_prompt(
         print(f"Edited PKT file created: {output_path}")
         return
 
+    promoted_plan = _promote_layer3_core(raw_plan)
     try:
-        blueprint, prepared_plan = build_prompt_blueprint(raw_plan, resolved_donor_roots)
+        blueprint, prepared_plan = build_prompt_blueprint(
+            promoted_plan if promoted_plan is not None else raw_plan, resolved_donor_roots
+        )
     except PlanningError as exc:
         exc.plan.remote_search_results = remote_results
         if blueprint_out_path is not None and exc.plan.blueprint_plan:
