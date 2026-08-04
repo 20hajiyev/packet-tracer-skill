@@ -4252,7 +4252,13 @@ def _repair_invalid_link_ports(root: ET.Element) -> list[str]:
                 repairs.append(f"{name}: {port} unusable ({reason}) and no free interface was available")
                 seen.add((ref, port))
                 continue
-            used.discard((ref, port))
+            if not duplicated:
+                # A nonexistent port frees nothing, but it was never real, so
+                # drop it. A duplicated one must stay claimed: the first cable
+                # still holds it. Discarding it here made the port look free,
+                # and the next repair moved a third cable onto it -- the fix
+                # recreating the very fault it had just removed.
+                used.discard((ref, port))
             used.add((ref, replacement))
             seen.add((ref, replacement))
             port_node.text = replacement
