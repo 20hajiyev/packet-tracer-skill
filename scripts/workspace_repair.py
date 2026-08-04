@@ -459,11 +459,11 @@ def inspect_donor_coherence(donor_root: ET.Element, generated_root: ET.Element) 
         physical_uuid = _device_leaf_uuid(donor_device)
         for section_name, text in scenario_sections.items():
             for label, value in [("save-ref-id", save_ref), ("device-name", donor_name), ("original-uuid", original_uuid)]:
-                if value and value in text:
+                if _leftover_hit(label, value, text):
                     issues.append(f"Pruned device {donor_name} still appears in {section_name} via {label}")
         for section_name, text in physical_sections.items():
             for label, value in [("save-ref-id", save_ref), ("device-name", donor_name), ("original-uuid", original_uuid), ("physical-leaf", physical_uuid)]:
-                if value and value in text:
+                if _leftover_hit(label, value, text):
                     issues.append(f"Pruned device {donor_name} still appears in {section_name} via {label}")
 
     physical_index = _physical_leaf_index(generated_root)
@@ -515,6 +515,22 @@ def inspect_donor_coherence(donor_root: ET.Element, generated_root: ET.Element) 
         visual_runtime_status="ok" if not visual_issues else "invalid",
         blocking_issues=issues,
     )
+
+
+def _leftover_hit(label: str, value: str, text: str) -> bool:
+    """Whether `value` really names a leftover in a serialised section.
+
+    A device name has to match a whole element, not a substring. Measured on a
+    donor that carries both `Switch1` and `Multilayer Switch1`: pruning
+    `Switch1` was reported as a leftover because the string still occurs inside
+    the multilayer switch's name, and the donor was rejected for a device that
+    had gone. Ids are unique tokens, so they keep the plain search.
+    """
+    if not value:
+        return False
+    if label != "device-name":
+        return value in text
+    return f">{value}<" in text
 
 
 def validate_donor_coherence(donor_root: ET.Element, generated_root: ET.Element) -> DonorCoherenceResult:

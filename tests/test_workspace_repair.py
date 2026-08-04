@@ -287,3 +287,21 @@ def test_inspect_donor_coherence_flags_unexpected_runtime_emptying() -> None:
     assert result.scenario_status == "invalid"
     assert any("unexpectedly emptied donor runtime section SCENARIOSET" in issue for issue in result.blocking_issues)
     assert any("unexpectedly emptied donor runtime section COMMAND_LOGS" in issue for issue in result.blocking_issues)
+
+
+def test_a_pruned_name_is_matched_whole_not_as_a_substring() -> None:
+    """A donor carrying both `Switch1` and `Multilayer Switch1` was rejected.
+
+    Pruning `Switch1` left the string present inside the multilayer switch's
+    name, and the leftover check was a plain substring search, so the donor was
+    turned down for a device that had gone. Ids are unique tokens and keep the
+    plain search.
+    """
+    from workspace_repair import _leftover_hit
+
+    text = '<NAME translate="true">Multilayer Switch1</NAME><NAME translate="true">SW1</NAME>'
+
+    assert not _leftover_hit("device-name", "Switch1", text)
+    assert _leftover_hit("device-name", "SW1", text)
+    assert _leftover_hit("save-ref-id", "12345", "abc12345def")
+    assert not _leftover_hit("device-name", "", text)
