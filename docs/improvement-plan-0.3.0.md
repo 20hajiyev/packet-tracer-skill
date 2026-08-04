@@ -1898,5 +1898,24 @@ So the change is: when a multilayer group is held back, queue its anchor into
 the spare pool for its type. That is one place, and it is the place the two
 claims actually meet.
 
+The sixth round implemented that -- queue a held-back anchor as a spare -- and
+it still refuses, with the message unchanged:
+
+    Compatibility donor does not have a spare MultiLayerSwitch device
+    for standalone target MultiLayerSwitch1
+
+So the queued spare is not reaching the standalone lookup for the donor being
+evaluated, even though the key it is filed under is the same kind the lookup
+asks for. That is a smaller and sharper question than any asked so far, and it
+is the one to answer next: print the spare pool contents for that donor at the
+moment the standalone target is resolved.
+
+The same run surfaced a second thing worth having: a donor is also rejected
+with "Pruned device Switch1 still appears in PHYSICALWORKSPACE". The name-reuse
+fix already committed covers the case where the generated lab reuses the name;
+`Switch1` is not reused here, so this is either a genuine leftover from pruning
+or a substring match on a longer name -- `Switch1` inside `Switch10`. Cheap to
+tell apart and worth doing, since it rejects donors on its own.
+
 Until then the analog phone stays out of reach, and the reason is recorded
 rather than rediscovered.
