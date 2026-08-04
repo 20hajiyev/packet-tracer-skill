@@ -1717,3 +1717,22 @@ coverage work rather than the topology work.
 
 Crossover, by contrast, does work on these ports and is now used for every
 switch-to-switch run.
+
+Role-based switch models are feasible: donors carrying a Layer-3 switch exist
+locally, five found within the first 250 scanned. So a large lab could have a
+3560/3650 core over 2960 access switches, which is what "same switch
+everywhere" is really asking for.
+
+It is not a one-line change, because models come from the donor. Two things
+have to line up: donor selection has to prefer a donor containing a
+MultiLayerSwitch when the lab is large, and the core role has to be mapped onto
+that device rather than onto whichever switch the group walk reaches first.
+Requiring it outright would refuse prompts no donor can serve, so it should be
+a preference with a fallback: plan with the L3 core, and on PlanningError plan
+again without it.
+
+Measured constraint from the same area: `_router_port` and
+`_switch_uplink_port` still guess ports from a model-name prefix table, which
+is what put `FastEthernet0/1` on a router that has none. The finished-file port
+repair covers for it, but the tables should read the donor device instead --
+`donor_interface_names` already does exactly that.
