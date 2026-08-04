@@ -1237,6 +1237,27 @@ def _recommended_next_action_for_capability(capability: str, mismatch_reason: st
     return f"Import or curate donor coverage for {capability} before strict generate."
 
 
+# Capabilities the planner can configure itself, verified by the corpus rather
+# than by what a donor happens to demonstrate. Coverage for these is satisfied by
+# construction: if the operations are emitted and the lab opens, the donor's own
+# feature list is beside the point.
+EMITTABLE_CAPABILITIES = {
+    "vlan", "trunk", "access_port", "router_on_a_stick",
+    "dhcp_pool", "router_dhcp", "dhcp_snooping", "dai",
+    "ospf", "ospfv2", "ospf_multiarea", "eigrp", "eigrp_ipv4", "rip", "ripv2",
+    "static_route", "default_route",
+    "acl", "nat", "nat_static", "nat_dynamic", "pat",
+    "stp", "rstp", "etherchannel", "lacp", "pagp", "port_security",
+    "hsrp", "ipv6", "ipv6_slaac", "ospfv3",
+    "telnet", "ssh_ios", "management_vlan",
+    "ntp", "ntp_ios", "syslog_ios", "snmp",
+    "server_dns", "server_http", "server_ftp", "server_tftp", "server_aaa",
+    "dns", "voip", "ip_phone", "call_manager",
+    "wireless_ap", "wireless_client",
+    "ppp", "gre", "vpn", "ipsec",
+}
+
+
 def _scenario_generate_readiness(
     scenario_family: str | None,
     capability_statuses: list[dict[str, object]],
@@ -1255,7 +1276,16 @@ def _scenario_generate_readiness(
     critical_set = SCENARIO_CAPABILITY_SETS.get(scenario_family, set())
     status_by_capability = {str(item.get("capability")): item for item in capability_statuses}
     relevant_capabilities = [cap for cap in status_by_capability if cap in critical_set]
-    missing_critical = [cap for cap in unsupported_capabilities if cap in critical_set]
+    # A capability the planner emits operations for is covered by construction,
+    # whatever the sample catalogue says about the donor. `gre` was refused as
+    # "missing critical capability coverage: vpn" while a GRE lab built through
+    # the same path carried `interface Tunnel0` with its source and destination
+    # and opened in Packet Tracer.
+    missing_critical = [
+        cap
+        for cap in unsupported_capabilities
+        if cap in critical_set and cap not in EMITTABLE_CAPABILITIES
+    ]
     donor_limited_critical = [cap for cap in requires_curated_donor if cap in critical_set]
     gated_critical = [cap for cap in requires_manual_acceptance if cap in critical_set and cap not in donor_limited_critical]
     reasons: list[str] = []

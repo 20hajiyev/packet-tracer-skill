@@ -1597,3 +1597,31 @@ server gets its `ACS_SERVER` block.
 | iot | refused: donor has no `Thing` device |
 
 **Corpus: 28 cases, 27 generated, 27 opened, 0 unexpected. 557 tests.**
+
+
+## Closing the audit's remaining five
+
+**One was the audit's own fault.** `slaac` was recorded as producing nothing
+because the marker looked for `ipv6 address autoconfig` -- the client side. The
+router writes `ipv6 nd prefix`, four of them, and always had. A measurement is
+only as good as what it measures for.
+
+**Multi-area OSPF** was single-area whatever the prompt asked, because `multi
+area` was not a capability at all and the routing synthesiser had nothing to
+branch on. The backbone now takes the first network and each further one gets
+its own area.
+
+**DHCP snooping** was recognised by the parser and emitted by nobody. It comes
+with the uplink as the trusted port -- snooping with nothing trusted drops the
+real server's offers along with the rogue's.
+
+**GRE** was refused as "missing critical capability coverage: vpn" while a GRE
+lab built through the same path carried `interface Tunnel0` with its source and
+destination and opened in 10.2 s. Coverage now treats a capability the planner
+emits as covered by construction; the donor's own feature list is beside the
+point when the configuration is written rather than inherited.
+
+**IoT** remains open: the donor carries no `Thing` device, and a model the donor
+lacks cannot be cloned into existence.
+
+**Corpus: 31 cases, 30 generated, 30 opened, 0 unexpected. 561 tests.**

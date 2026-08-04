@@ -56,6 +56,8 @@ CAPABILITY_PATTERNS = {
     # Plain `ipv6` was only ever a network-style tag, never a capability, so
     # "ipv6 olsun" produced nothing for the planner to act on.
     "ipv6": [r"\bipv6\b", r"\bdual[- ]?stack\b"],
+    # Without this every OSPF lab was single-area, whatever the prompt asked.
+    "ospf_multiarea": [r"\bmulti[- ]?area\b", r"\barea\s+[1-9]\d*\b", r"\bcoxsaheli\b"],
     "ipv6_slaac": [r"\bslaac\b", r"\bipv6\s+slaac\b"],
     "dhcpv6_stateful": [r"\bdhcpv6\b", r"\bstateful dhcpv6\b", r"\bipv6 stateful\b"],
     "dhcpv6_stateless": [r"\bstateless dhcpv6\b", r"\bipv6 stateless\b"],

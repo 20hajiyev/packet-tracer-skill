@@ -2760,7 +2760,11 @@ def _synthesize_routing_ops(plan: IntentPlan, devices: list[dict[str, object]]) 
     for router in routers:
         name = router["name"]
         if protocol == "ospf":
-            for network in networks:
+            # A multi-area request puts the first network in the backbone and
+            # spreads the rest across areas 1..n, which is what "multi area
+            # ospf" means; a single-area lab keeps everything in area 0.
+            multiarea = "ospf_multiarea" in capabilities
+            for area_index, network in enumerate(networks):
                 _append_unique_op(
                     plan.router_ops,
                     {
@@ -2769,7 +2773,7 @@ def _synthesize_routing_ops(plan: IntentPlan, devices: list[dict[str, object]]) 
                         "process_id": 1,
                         "network": network,
                         "wildcard": "0.0.0.255",
-                        "area": 0,
+                        "area": area_index if multiarea else 0,
                     },
                 )
         elif protocol == "eigrp":
@@ -2906,6 +2910,18 @@ def _synthesize_security_ops(plan: IntentPlan, devices: list[dict[str, object]])
                     "version": "",
                 },
             )
+
+    # DHCP snooping protects the access layer from a rogue server; the uplink
+    # to the core is the trusted port, because that is where the real one lives.
+    if switches and capabilities & {"dhcp_snooping", "dai"}:
+        for switch in switches:
+            operation = {
+                "op": "set_dai" if "dai" in capabilities else "set_dhcp_snooping",
+                "device": switch["name"],
+                "vlan": plan.vlan_ids[0] if plan.vlan_ids else 1,
+                "trust_port": "GigabitEthernet0/1",
+            }
+            _append_unique_op(plan.switch_ops, operation)
 
     if switches and "port_security" in capabilities:
         for switch in switches:

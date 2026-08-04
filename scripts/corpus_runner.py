@@ -201,6 +201,24 @@ CORPUS: tuple[CorpusCase, ...] = (
         note="refused for a wiring preference nobody expressed; blocked four capabilities",
     ),
     CorpusCase(
+        "gre_tunnel",
+        "2 router 2 switch 4 komputer qur gre tunnel olsun",
+        requires_content=("interface tunnel",),
+        note="refused by a coverage table while the lab it would build opened fine",
+    ),
+    CorpusCase(
+        "multiarea_ospf",
+        "3 router 2 switch 6 komputer qur multi area ospf olsun vlanlarda 10,20,30",
+        requires_content=("area 1",),
+        note="every OSPF lab was single-area whatever the prompt asked",
+    ),
+    CorpusCase(
+        "dhcp_snooping",
+        "2 switch 1 router 4 komputer qur dhcp snooping olsun",
+        requires_content=("ip dhcp snooping",),
+        note="recognised by the parser, emitted by nobody",
+    ),
+    CorpusCase(
         "wireless_ssid",
         "1 wireless router 2 laptop qur ssid EvSebeke wpa2 sifre Gizli123",
         # The network name and secret are the proof. Without the wireless ops the

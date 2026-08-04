@@ -650,3 +650,51 @@ def test_cable_names_from_both_vocabularies_compare_equal() -> None:
     assert _same_media("eCrossOver", "crossover")
     assert _same_media("eSerial", "serial")
     assert not _same_media("eStraightThrough", "eCrossOver")
+
+
+def test_multi_area_ospf_spreads_across_areas() -> None:
+    """Every OSPF lab was single-area whatever the prompt asked for.
+
+    `multi area` was not a capability at all, so the routing synthesiser had
+    nothing to branch on and put every network in area 0.
+    """
+    from generate_pkt import _synthesize_routing_ops
+
+    plan = parse_intent("3 router qur multi area ospf olsun vlanlarda 10,20,30")
+    _synthesize_routing_ops(plan, [{"name": "R1", "type": "Router"}])
+
+    areas = sorted({int(op["area"]) for op in plan.router_ops if op["op"] == "set_ospfv2_network"})
+    assert areas == [0, 1, 2], "the backbone plus one area per further network"
+
+
+def test_single_area_stays_in_the_backbone() -> None:
+    from generate_pkt import _synthesize_routing_ops
+
+    plan = parse_intent("2 router qur ospf olsun vlanlarda 10,20")
+    _synthesize_routing_ops(plan, [{"name": "R1", "type": "Router"}])
+
+    assert {int(op["area"]) for op in plan.router_ops if op["op"] == "set_ospfv2_network"} == {0}
+
+
+def test_dhcp_snooping_trusts_the_uplink() -> None:
+    """Snooping with no trusted port drops the real server's offers too."""
+    from generate_pkt import _synthesize_security_ops
+
+    plan = parse_intent("2 switch 1 router 4 pc qur dhcp snooping olsun")
+    _synthesize_security_ops(plan, [{"name": "R1", "type": "Router"}, {"name": "SW1", "type": "Switch"}])
+
+    snooping = [op for op in plan.switch_ops if op["op"] == "set_dhcp_snooping"]
+    assert snooping
+    assert snooping[0]["trust_port"] == "GigabitEthernet0/1"
+
+
+def test_coverage_accepts_what_the_planner_can_emit() -> None:
+    """A capability the planner configures is covered by construction.
+
+    `gre` was refused as "missing critical capability coverage: vpn" while a GRE
+    lab built through the same path carried `interface Tunnel0` and opened.
+    """
+    from coverage_matrix import EMITTABLE_CAPABILITIES
+
+    for capability in ("gre", "vpn", "ipsec", "ospf", "nat", "hsrp", "voip"):
+        assert capability in EMITTABLE_CAPABILITIES
