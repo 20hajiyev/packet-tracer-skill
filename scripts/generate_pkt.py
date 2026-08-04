@@ -4652,10 +4652,25 @@ def _repair_invalid_link_ports(root: ET.Element) -> list[str]:
                 candidates = [f"FastEthernet0/{index}" for index in range(1, 25)]
                 candidates += [f"GigabitEthernet0/{index}" for index in range(1, 5)]
                 candidates += [f"GigabitEthernet0/0/{index}" for index in range(0, 4)]
+            # Try the original's own family first. A serial link whose port is
+            # missing used to land on the first free Ethernet interface, and the
+            # cable then had to be downgraded to copper to stay openable -- even
+            # on a router that has other serial ports. Same family keeps the
+            # link the kind the prompt asked for.
+            def _family_of(port_name: str) -> str:
+                for prefix in ("Serial", "GigabitEthernet", "FastEthernet"):
+                    if port_name.startswith(prefix):
+                        return prefix
+                return ""
+
+            wanted_family = _family_of(port)
+            ordered = sorted(
+                candidates, key=lambda item: _family_of(item) != wanted_family
+            )
             replacement = next(
                 (
                     candidate
-                    for candidate in candidates
+                    for candidate in ordered
                     if (ref, candidate) not in used and port_exists(device, candidate)
                 ),
                 None,
