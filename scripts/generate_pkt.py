@@ -3330,6 +3330,29 @@ def _donor_service_segment(donor_root) -> tuple[int, str, str] | None:
     return None
 
 
+def _host_and_switch_ends(
+    link: dict[str, object], host_names: set[str], devices: list[dict[str, object]]
+) -> tuple[dict[str, object], dict[str, object]] | None:
+    """Split a link into its host end and its switch end, whichever way round.
+
+    Link endpoints are not stored host-first. Code that read only the `a` side
+    silently skipped every reversed link, which is how two hosts on one switch
+    ended up in different VLANs.
+    """
+    for host_key, switch_key in (("a", "b"), ("b", "a")):
+        host_end = link[host_key]
+        switch_end = link[switch_key]
+        if str(host_end["dev"]) not in host_names:
+            continue
+        switch = next(
+            (device for device in devices if str(device["name"]) == str(switch_end["dev"])),
+            None,
+        )
+        if switch is not None and _device_kind(switch) == "Switch":
+            return host_end, switch_end
+    return None
+
+
 def _address_hosts_per_vlan(
     plan: IntentPlan, devices: list[dict[str, object]], links: list[dict[str, object]]
 ) -> None:
@@ -3350,11 +3373,13 @@ def _address_hosts_per_vlan(
     host_names = {
         str(device["name"]) for device in devices if _is_host_device(device)
     }
-    port_to_host = {
-        (str(link["b"]["dev"]), str(link["b"]["port"])): str(link["a"]["dev"])
-        for link in links
-        if str(link["a"]["dev"]) in host_names
-    }
+    port_to_host: dict[tuple[str, str], str] = {}
+    for link in links:
+        ends = _host_and_switch_ends(link, host_names, devices)
+        if ends is None:
+            continue
+        host_end, switch_end = ends
+        port_to_host[(str(switch_end["dev"]), str(switch_end["port"]))] = str(host_end["dev"])
 
     used: dict[int, int] = {}
     for operation in plan.switch_ops:
@@ -3422,22 +3447,33 @@ def _unify_host_segment(
         return
     vlan_id, prefix, svi_ip = segment
 
+    # With no routed VLAN interface to name one, the segment is the switch
+    # default. Skipping the VLAN pass entirely in that case left each host on
+    # whatever its donor port happened to carry: in a 22-switch lab three hosts
+    # sat on `access vlan 5` and the other thirty-seven on the untouched
+    # default, so hosts sharing a switch and a subnet still could not reach
+    # each other. Naming VLAN 1 moves the three, not the thirty-seven.
+    access_vlan = vlan_id if vlan_id is not None else 1
+
     host_names = {str(device["name"]) for device in hosts}
-    for link in links if vlan_id is not None else []:
-        if str(link["a"]["dev"]) not in host_names:
+    for link in links:
+        # A link does not always store the host first. Reading only the `a`
+        # side left the reversed ones untouched, so those access ports kept the
+        # switch default while their neighbours were moved to the donor's VLAN:
+        # in a 22-switch lab PC1 sat on `access vlan 5` and PC22, on the same
+        # switch and the same subnet, had no VLAN line at all. Same wire, same
+        # addresses, no connectivity.
+        ends = _host_and_switch_ends(link, host_names, devices)
+        if ends is None:
             continue
-        switch = next(
-            (device for device in devices if device["name"] == str(link["b"]["dev"])), None
-        )
-        if switch is None or _device_kind(switch) != "Switch":
-            continue
+        _, switch_end = ends
         _append_unique_op(
             plan.switch_ops,
             {
                 "op": "set_access_port",
-                "device": str(link["b"]["dev"]),
-                "port": str(link["b"]["port"]),
-                "vlan": vlan_id,
+                "device": str(switch_end["dev"]),
+                "port": str(switch_end["port"]),
+                "vlan": access_vlan,
             },
         )
 
