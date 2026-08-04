@@ -587,3 +587,18 @@ def test_every_alias_kind_survives_normalisation() -> None:
         if normalize_device_type(kind) != kind
     }
     assert not mismatched, f"alias kinds that normalise elsewhere: {mismatched}"
+
+
+def test_voice_devices_can_be_asked_for() -> None:
+    """Analog and home VoIP phones live only in donors with a Layer-3 switch.
+
+    Those donors reported no switch groups at all, so every device in them was
+    unreachable regardless of how a prompt was worded -- the alias existing was
+    never the missing part.
+    """
+    from intent_parser import parse_intent
+
+    plan = parse_intent("1 router 1 switch 1 analog telefon 1 home voip qur")
+
+    assert plan.device_requirements["AnalogPhone"] == 1
+    assert plan.device_requirements["HomeVoip"] == 1

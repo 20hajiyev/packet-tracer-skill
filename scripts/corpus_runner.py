@@ -54,6 +54,15 @@ CORPUS: tuple[CorpusCase, ...] = (
     CorpusCase("minimal", "1 router 1 switch ve 3 komputer qur"),
     CorpusCase("two_switch_chain", "2 switch 1 router ve 4 komputer qur"),
     CorpusCase(
+        "voice_devices",
+        "1 router 1 switch 1 analog telefon 1 home voip qur",
+        note=(
+            "analog and home VoIP phones. Both live only in donors whose sole "
+            "switch is Layer-3, which reported no switch groups at all, so every "
+            "device in those labs was unreachable however the prompt was worded"
+        ),
+    ),
+    CorpusCase(
         "hosts_across_switches",
         "3 switch 1 router ve 4 komputer qur",
         requires_content=("switchport mode trunk",),
