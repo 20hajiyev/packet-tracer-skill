@@ -735,6 +735,15 @@ def port_exists(device: ET.Element, port_name: str) -> bool:
     canonical = _canonical_port_name(port_name)
     device_type = _device_type(device)
 
+    # Logical interfaces are configuration, not sockets: nothing plugs into a
+    # Port-channel, a PRP-channel, a VLAN interface or a subinterface. They fell
+    # through the permissive branch below and were treated as real, so wiring a
+    # multilayer switch from an industrial donor put a cable on `PRP-channel 1`
+    # and Packet Tracer refused to open the lab at all.
+    lowered = canonical.lower()
+    if "channel" in lowered or lowered.startswith("vlan") or "." in canonical:
+        return False
+
     # Serial is modelled now, so it gets a real answer: a router with no serial
     # card cannot carry `Serial0/0/0`, and letting that through produced a WAN
     # lab whose PPP configuration sat on an interface that was never cabled.

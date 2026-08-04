@@ -2449,7 +2449,18 @@ def _synthesize_links(plan: IntentPlan, devices: list[dict[str, object]]) -> lis
 
     archetype = _choose_topology_archetype(plan)
     routers = [device for device in devices if _device_kind(device) == "Router"]
-    switches = [device for device in devices if _device_kind(device) == "Switch"]
+    # A multilayer switch is a switch. Counting only plain `Switch` left a
+    # requested Layer-3 switch sitting in the lab wired to nothing at all --
+    # `1 multilayer switch 3 switch 1 router ve 6 komputer qur` produced a
+    # MultiLayerSwitch with no cable on it. It also belongs at the top of the
+    # tree: that is what anyone asks a Layer-3 switch for, and it gives a large
+    # lab the core/access split it should have instead of one model everywhere.
+    switches = [
+        device
+        for device in devices
+        if _device_kind(device) in {"Switch", "MultiLayerSwitch"}
+    ]
+    switches.sort(key=lambda device: _device_kind(device) != "MultiLayerSwitch")
     hosts = [device for device in devices if _is_host_device(device)]
     if not switches:
         return []

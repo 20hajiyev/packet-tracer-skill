@@ -242,3 +242,40 @@ def test_real_link_endpoints_all_validate() -> None:
 
     assert checked > 100, "expected a meaningful number of endpoints"
     assert not missing, f"real interfaces reported as missing: {missing.most_common(3)}"
+
+
+def test_logical_interfaces_cannot_take_a_cable() -> None:
+    """Nothing plugs into a channel, a VLAN interface or a subinterface.
+
+    `port_exists` answers True for anything outside its Fast/Gigabit/Serial
+    rules, deliberately: reporting a real link as invalid is the damaging
+    direction. Logical interfaces fell through that branch and were treated as
+    sockets, so wiring a multilayer switch from an industrial donor put a cable
+    on `PRP-channel 1` -- and Packet Tracer refused to open the lab.
+    """
+    import xml.etree.ElementTree as ET
+
+    from pkt_transformer import port_exists
+
+    device = ET.Element("DEVICE")
+    engine = ET.SubElement(device, "ENGINE")
+    ET.SubElement(engine, "TYPE").text = "MultiLayerSwitch"
+
+    assert not port_exists(device, "PRP-channel 1")
+    assert not port_exists(device, "Port-channel1")
+    assert not port_exists(device, "Vlan10")
+    assert not port_exists(device, "GigabitEthernet0/0/1.20")
+
+
+def test_ports_outside_the_modelled_families_are_still_accepted() -> None:
+    """`Port 0` on an access point and `RS 232` on a laptop are real sockets."""
+    import xml.etree.ElementTree as ET
+
+    from pkt_transformer import port_exists
+
+    device = ET.Element("DEVICE")
+    engine = ET.SubElement(device, "ENGINE")
+    ET.SubElement(engine, "TYPE").text = "AccessPoint"
+
+    assert port_exists(device, "Port 0")
+    assert port_exists(device, "RS 232")
