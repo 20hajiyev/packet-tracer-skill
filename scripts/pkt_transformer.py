@@ -203,9 +203,13 @@ def apply_host_ip(device: ET.Element, config: dict[str, Any]) -> None:
             if node is not None:
                 node.text = str(config[source_key])
     if "gw" in config:
-        node = device.find("./ENGINE/GATEWAY")
-        if node is not None:
-            node.text = str(config["gw"])
+        # A host stores its gateway twice: once on the device and once on the
+        # port. Writing only the device copy left the port holding the donor's
+        # value -- a lab addressed 192.168.1.21 with the port still pointing at
+        # 2.1.1.1, which no file-level check notices.
+        engine = device.find("./ENGINE")
+        _ensure_text(device if engine is None else engine, "GATEWAY", str(config["gw"]))
+        _ensure_text(port, "PORT_GATEWAY", str(config["gw"]))
     if "dns" in config:
         node = device.find("./ENGINE/DNS_CLIENT/SERVER_IP")
         if node is not None:
@@ -681,6 +685,39 @@ def port_capacity(device: ET.Element) -> dict[str, int]:
 # Hosts carry a single unslotted interface. Switches and routers slot theirs.
 HOST_DEVICE_TYPES = {"PC", "Server", "Printer", "Laptop", "Tablet", "Smartphone", "WirelessEndDevice"}
 UNSLOTTED_MULTIPORT_TYPES = {"Hub", "Repeater", "CoaxialSplitter"}
+
+
+def donor_interface_names(device: ET.Element) -> list[str]:
+    """The interfaces a donor device really has, in the order it lists them.
+
+    A `PORT` element carries no name -- names are positional and depend on the
+    model -- so the device's own running config is the authoritative source.
+    Subinterfaces and `Vlan` interfaces are excluded: they are configuration,
+    not hardware, and cannot take a cable.
+
+    This exists because guessing from the model name cannot work. A PT8200
+    router matched no entry in the prefix table and was handed
+    `FastEthernet0/1`, while its real interfaces are `GigabitEthernet0/0/0`
+    through `0/0/2`. Packet Tracer refuses to open a lab naming an interface a
+    device does not have, so that one wrong name cost the whole file.
+    """
+    for tag in ("RUNNINGCONFIG", "STARTUPCONFIG"):
+        config = device.find(f"./ENGINE/{tag}")
+        if config is None:
+            continue
+        names: list[str] = []
+        for line in config.findall("LINE"):
+            text = (line.text or "").strip()
+            if not text.startswith("interface "):
+                continue
+            name = text.split(" ", 1)[1].strip()
+            if "." in name or name.lower().startswith("vlan"):
+                continue
+            if name not in names:
+                names.append(name)
+        if names:
+            return names
+    return []
 
 
 def port_exists(device: ET.Element, port_name: str) -> bool:

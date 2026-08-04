@@ -41,7 +41,7 @@ from packet_tracer_env import (
 from pkt_builder import build_packet_tracer_xml
 from pkt_codec import decode_pkt_file, decode_pkt_modern, encode_pkt_modern, serialize_pkt_xml
 from pkt_editor import apply_plan_operations, decode_pkt_to_root, edit_pkt_file, inventory_devices, inventory_links, inventory_root
-from pkt_transformer import port_exists, transform_from_blueprint
+from pkt_transformer import donor_interface_names, port_exists, transform_from_blueprint
 import pkt_verify
 import usage_ledger
 from remote_search import (
@@ -3298,6 +3298,29 @@ def _donor_service_segment(donor_root) -> tuple[int, str, str] | None:
                     if address:
                         ip = address.group(1)
                         return int(match.group(1)), ip.rsplit(".", 1)[0], ip
+
+    # No routed VLAN interface. An industrial donor has none, and returning
+    # nothing here left every host holding the address its prototype was cloned
+    # with -- three PCs all at 192.168.1.20, unable to reach anything. A router
+    # interface that carries an address is a gateway just the same; it simply
+    # names no VLAN, so no access-port change follows from it.
+    for device in donor_root.findall(".//DEVICES/DEVICE"):
+        for tag in ("RUNNINGCONFIG", "STARTUPCONFIG"):
+            config = device.find(f"./ENGINE/{tag}")
+            if config is None:
+                continue
+            lines = [(line.text or "") for line in config.findall("LINE")]
+            for index, line in enumerate(lines):
+                if not re.match(r"interface (Gigabit|Fast)Ethernet\S*\s*$", line.strip()):
+                    continue
+                cursor = index + 1
+                while cursor < len(lines) and lines[cursor].startswith(" "):
+                    item = lines[cursor].strip()
+                    address = re.match(r"ip address (\d+\.\d+\.\d+\.\d+) ", item)
+                    if address:
+                        ip = address.group(1)
+                        return None, ip.rsplit(".", 1)[0], ip
+                    cursor += 1
     return None
 
 
@@ -3394,7 +3417,7 @@ def _unify_host_segment(
     vlan_id, prefix, svi_ip = segment
 
     host_names = {str(device["name"]) for device in hosts}
-    for link in links:
+    for link in links if vlan_id is not None else []:
         if str(link["a"]["dev"]) not in host_names:
             continue
         switch = next(
@@ -4030,11 +4053,32 @@ def _resolve_port_conflicts(
                 claimed.setdefault((device_name, port_name), f"donor link {left} <-> {right}")
 
     def free_port(device_name: str, port_name: str, label: str) -> str:
-        if not port_name or (device_name, port_name) not in claimed:
-            if port_name:
-                claimed[(device_name, port_name)] = label
+        if not port_name:
             return port_name
         device = donor_device_by_target.get(device_name)
+
+        # Relocating only on a collision left the hole every refused file came
+        # through: a port nobody else had claimed was accepted without asking
+        # whether the device has it. A lab built from a bundled donor named
+        # R1:FastEthernet0/1 on a router whose interfaces are
+        # GigabitEthernet0/0/0..0/0/2, and Packet Tracer refused the file. An
+        # invalid interface name blocks opening; a double-booked one does not.
+        taken = (device_name, port_name) in claimed
+        missing = device is not None and not port_exists(device, port_name)
+        if not taken and not missing:
+            claimed[(device_name, port_name)] = label
+            return port_name
+
+        if device is not None:
+            # The old search only widened from gigabit to fast ethernet, so a
+            # wrong FastEthernet name on a gigabit-only router had nowhere to
+            # go. The device's own interface list needs no such direction.
+            for candidate in donor_interface_names(device):
+                if (device_name, candidate) in claimed:
+                    continue
+                claimed[(device_name, candidate)] = label
+                return candidate
+
         match = re.match(r"^(.*?)(\d+)$", port_name)
         if device is None or not match:
             return port_name
@@ -4062,6 +4106,85 @@ def _resolve_port_conflicts(
         label = f"set_link {left_name} <-> {right_name}"
         operation["a"]["port"] = free_port(left_name, str(operation["a"]["port"]), label)
         operation["b"]["port"] = free_port(right_name, str(operation["b"]["port"]), label)
+
+
+def _repair_invalid_link_ports(root: ET.Element) -> list[str]:
+    """Rename any cabled interface the finished lab does not actually have.
+
+    Every earlier guard validated a *guess* about the hardware: the planner
+    against a model-name table, reconciliation against whichever donor device
+    the rename map pointed at. Both can disagree with the device that ends up in
+    the file, and when they do Packet Tracer refuses to open it -- an invalid
+    interface name blocks opening, while a double-booked one does not.
+
+    The assembled lab is the only place the hardware is known for certain, so
+    the last word belongs here. Measured: a lab built from a bundled donor named
+    R1:FastEthernet0/1 on a router whose interfaces are GigabitEthernet0/0/0
+    through 0/0/2, and was refused; the blueprint had planned the correct
+    interface and reconciliation had replaced it.
+
+    Returns a description of every rename, for the generation report.
+    """
+    device_by_ref: dict[str, ET.Element] = {}
+    for device in root.findall(".//DEVICES/DEVICE"):
+        ref = (device.findtext("./ENGINE/SAVE_REF_ID") or "").strip()
+        if ref:
+            device_by_ref[ref] = device
+
+    used: set[tuple[str, str]] = set()
+    for link in root.findall(".//LINKS/LINK"):
+        cable = link.find("./CABLE")
+        if cable is None:
+            continue
+        for ref, port in zip(
+            (cable.findtext("FROM") or "", cable.findtext("TO") or ""),
+            [node.text or "" for node in cable.findall("PORT")],
+        ):
+            used.add((ref.strip(), port))
+
+    repairs: list[str] = []
+    seen: set[tuple[str, str]] = set()
+    for link in root.findall(".//LINKS/LINK"):
+        cable = link.find("./CABLE")
+        if cable is None:
+            continue
+        refs = [(cable.findtext("FROM") or "").strip(), (cable.findtext("TO") or "").strip()]
+        ports = cable.findall("PORT")
+        for ref, port_node in zip(refs, ports):
+            device = device_by_ref.get(ref)
+            port = port_node.text or ""
+            if device is None or not port:
+                continue
+            # One interface carries one cable. A double-booked port does not stop
+            # the file opening, which is why it survived every open test -- it
+            # just silently leaves a host unable to reach anything.
+            duplicated = (ref, port) in seen
+            if not duplicated and port_exists(device, port):
+                seen.add((ref, port))
+                continue
+            if duplicated and port_exists(device, port):
+                reason = "interface already carries a cable"
+            else:
+                reason = "interface does not exist"
+            name = device.findtext("./ENGINE/NAME") or ref
+            replacement = next(
+                (
+                    candidate
+                    for candidate in donor_interface_names(device)
+                    if (ref, candidate) not in used and port_exists(device, candidate)
+                ),
+                None,
+            )
+            if replacement is None:
+                repairs.append(f"{name}: {port} unusable ({reason}) and no free interface was available")
+                seen.add((ref, port))
+                continue
+            used.discard((ref, port))
+            used.add((ref, replacement))
+            seen.add((ref, replacement))
+            port_node.text = replacement
+            repairs.append(f"{name}: {port} -> {replacement} ({reason})")
+    return repairs
 
 
 def _stamp_target_version(root: ET.Element) -> None:
@@ -5887,6 +6010,7 @@ def generate_from_prompt(
         raise PlanningError("Prompt plan requires unsafe donor mutations; generation was skipped in open-first mode.", profiled_plan)
     root = apply_plan_operations(donor_root, safe_plan)
     _sanitize_runtime_sections(root)
+    port_repairs = _repair_invalid_link_ports(root)
     _stamp_target_version(root)
     unexpected_workspace_issues = _unexpected_workspace_issues(donor_root, root)
     if unexpected_workspace_issues:
