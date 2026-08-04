@@ -1701,3 +1701,19 @@ Measured after the fix:
 
 Still worth adding: a corpus case placing hosts on more than one switch. None
 does, which is why this survived so long.
+
+Fiber uplinks are not available on the switches these labs use. Measured
+directly, on one 3-switch lab with a single uplink changed to fiber:
+
+  PC1 behind SW2, copper uplink   -> gateway   0% loss
+  PC2 behind SW3, fiber uplink    -> gateway   100% loss
+
+The file opens and the link reports no fault, but nothing crosses it: a
+2960's FastEthernet and GigabitEthernet ports are copper, and a fiber cable on
+a copper port carries nothing. So "fiber between switches" cannot be done by
+choosing a different cable; it needs a device with fiber ports -- a Fiber Patch
+Panel, or a switch model with a fiber module -- which belongs with the device
+coverage work rather than the topology work.
+
+Crossover, by contrast, does work on these ports and is now used for every
+switch-to-switch run.

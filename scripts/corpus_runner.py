@@ -54,6 +54,17 @@ CORPUS: tuple[CorpusCase, ...] = (
     CorpusCase("minimal", "1 router 1 switch ve 3 komputer qur"),
     CorpusCase("two_switch_chain", "2 switch 1 router ve 4 komputer qur"),
     CorpusCase(
+        "hosts_across_switches",
+        "3 switch 1 router ve 4 komputer qur",
+        requires_content=("switchport mode trunk",),
+        note=(
+            "hosts on more than one access switch. No case did this, which is why "
+            "cloned switches sharing one bridge address went unnoticed: they "
+            "announced themselves as a single bridge and only one could reach the "
+            "core, so anything behind the others was cut off"
+        ),
+    ),
+    CorpusCase(
         "campus_star_vlan",
         "3 dene switch ve 6 komputer ve 1 router vlanlarda 10,20,30",
         requires_content=("vlan 10", "vlan 20", "vlan 30"),
