@@ -1790,3 +1790,30 @@ donor-prune should offer a device it holds even when that device sits outside a
 switch group. Until then the honest position is that a kind is supported when a
 donor carries it *and* the prompt's shape fits the donor's -- which is the
 donor-shape dependence that workstream 1 exists to remove.
+
+Analog phones and home VoIP need two changes, and only one of them is safe yet.
+
+`1 router 1 switch 2 komputer 1 analog telefon qur` is refused. Tracing it found
+two independent faults:
+
+1. `_collect_donor_groups` counts only plain `Switch`, so a donor whose only
+   switch is Layer-3 reports "0 switch group(s)". Two of sixty local donors are
+   exactly that shape, and both are the VoIP labs carrying the analog phone,
+   the home VoIP phone and two IP phones. Twelve more donors would gain extra
+   groups. Same mistake the topology builder made, one layer down.
+2. `validate_donor_coherence` rejects a donor when a pruned device's *name*
+   still appears in PHYSICALWORKSPACE -- but the check is a substring search,
+   and the name is usually reused: the donor's PC1 is pruned and the generated
+   lab has a PC1 of its own, because that is what was asked for.
+
+Fixing both makes the lab build. Fixing (1) alone regresses the corpus:
+`hosts_across_switches` and `campus_star_vlan` both start refusing, and both
+are cases the Layer-3 core promotion applies to -- counting multilayer switches
+as groups changes how donor groups align to targets, and the promoted plan can
+no longer be served. So (1) is reverted for now and (2) is kept, since it is a
+false positive in validation and independent of the rest.
+
+The way in: make the promotion's donor gate account for group *alignment* and
+not just device counts, or make group alignment tolerate a Layer-3 group. Until
+then the analog phone stays out of reach, and the reason is recorded rather
+than rediscovered.

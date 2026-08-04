@@ -440,10 +440,21 @@ def inspect_donor_coherence(donor_root: ET.Element, generated_root: ET.Element) 
         if donor_value != generated_value:
             issues.append(f"Generated file changed donor physical view state {tag} from {donor_value} to {generated_value}")
 
+    # A pruned device's *name* is often reused: the donor's PC1 goes and the
+    # generated lab has a PC1 of its own, because that is what was asked for.
+    # The checks below are substring searches, so the reused name matched and a
+    # perfectly good donor was rejected -- which is why a VoIP lab carrying the
+    # analog phone a prompt asked for could never be used.
+    generated_names = {
+        device.findtext("./ENGINE/NAME", default="").strip()
+        for device in generated_devices.values()
+    }
     pruned_ids = sorted(set(donor_devices) - set(generated_devices))
     for save_ref in pruned_ids:
         donor_device = donor_devices[save_ref]
         donor_name = donor_device.findtext("./ENGINE/NAME", default="").strip()
+        if donor_name in generated_names:
+            donor_name = ""
         original_uuid = donor_device.findtext(".//ORIGINAL_DEVICE_UUID", default="").strip()
         physical_uuid = _device_leaf_uuid(donor_device)
         for section_name, text in scenario_sections.items():

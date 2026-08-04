@@ -563,3 +563,27 @@ def test_a_pda_is_asked_for_as_a_tablet() -> None:
 
     assert plan.device_requirements.get("Tablet") == 2
     assert "Pda" not in plan.device_requirements
+
+
+def test_every_alias_kind_survives_normalisation() -> None:
+    """An alias key that normalises to something else can never match a donor.
+
+    The kind a prompt asks for and the kind a donor device reports go through
+    `normalize_device_type` before they meet. When the two disagree the failure
+    is silent: the count parses, the device is requested, nothing is found, and
+    the lab is refused for "no spare device".
+
+    Both new kinds got this wrong in opposite directions --
+    `WirelessLanController` folded into `LightWeightAccessPoint`, and `Pda` was
+    given a kind of its own when it folds into `Tablet`. This is the check that
+    would have caught either one.
+    """
+    from intent_parser import NATURAL_DEVICE_ALIASES
+    from sample_catalog import normalize_device_type
+
+    mismatched = {
+        kind: normalize_device_type(kind)
+        for kind in NATURAL_DEVICE_ALIASES
+        if normalize_device_type(kind) != kind
+    }
+    assert not mismatched, f"alias kinds that normalise elsewhere: {mismatched}"
