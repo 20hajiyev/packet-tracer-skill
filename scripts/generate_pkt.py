@@ -3123,7 +3123,7 @@ def _synthesize_voice_ops(plan: IntentPlan, devices: list[dict[str, object]]) ->
     so the three are emitted together or not at all.
     """
     routers = [device for device in devices if _device_kind(device) == "Router"]
-    phones = [device for device in devices if _device_kind(device) in {"IPPhone", "IpPhone"}]
+    phones = [device for device in devices if _device_kind(device) in {"IpPhone", "IPPhone"}]
     capabilities = set(plan.capabilities)
     if not routers or not (capabilities & {"voip", "ip_phone", "call_manager"}):
         return

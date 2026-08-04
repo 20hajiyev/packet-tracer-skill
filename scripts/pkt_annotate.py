@@ -30,6 +30,7 @@ root, not inside a device.
 
 from __future__ import annotations
 
+import uuid as _uuid
 import xml.etree.ElementTree as ET
 
 # Cluster ids group annotations with a logical-workspace cluster. `1-1` is the
@@ -65,6 +66,18 @@ def resolve_color(name: str | tuple[int, int, int] | None) -> tuple[int, int, in
     if isinstance(name, (tuple, list)) and len(name) == 3:
         return tuple(max(0, min(255, int(part))) for part in name)  # type: ignore[return-value]
     return COLORS.get(str(name or "").strip().lower(), COLORS["black"])
+
+
+def _tag_with_uuid(parent: ET.Element, tag: str) -> ET.Element:
+    """Create an annotation element carrying the identifier Packet Tracer uses.
+
+    Packet Tracer stamps every shape it saves with a braced version-4 `uuid`.
+    Ours opened without one, but matching what the application writes keeps a
+    generated file indistinguishable from a hand-drawn one after a round trip.
+    """
+    node = ET.SubElement(parent, tag)
+    node.set("uuid", "{" + str(_uuid.uuid4()) + "}")
+    return node
 
 
 def _container(root: ET.Element, tag: str) -> ET.Element:
@@ -110,7 +123,7 @@ def add_rectangle(
 ) -> ET.Element:
     """A frame. `filled` paints the interior; `outline` borders it separately."""
     rectangles = _container(root, "RECTANGLES")
-    rectangle = ET.SubElement(rectangles, "RECTANGLE")
+    rectangle = _tag_with_uuid(rectangles, "RECTANGLE")
     ET.SubElement(rectangle, "TopLeftX").text = str(top_left[0])
     ET.SubElement(rectangle, "TopLeftY").text = str(top_left[1])
     ET.SubElement(rectangle, "BottomRightX").text = str(bottom_right[0])
@@ -131,7 +144,7 @@ def add_ellipse(
     outline: str | tuple[int, int, int] | None = None,
 ) -> ET.Element:
     ellipses = _container(root, "ELLIPSES")
-    ellipse = ET.SubElement(ellipses, "ELLIPSE")
+    ellipse = _tag_with_uuid(ellipses, "ELLIPSE")
     ET.SubElement(ellipse, "TopLeftX").text = str(top_left[0])
     ET.SubElement(ellipse, "TopLeftY").text = str(top_left[1])
     ET.SubElement(ellipse, "BottomRightX").text = str(bottom_right[0])
@@ -157,7 +170,7 @@ def add_line(
     The real shape came from a lab where the drawing palette had been used.
     """
     lines = _container(root, "LINES")
-    line = ET.SubElement(lines, "LINE")
+    line = _tag_with_uuid(lines, "LINE")
     ET.SubElement(line, "StartX").text = str(start[0])
     ET.SubElement(line, "StartY").text = str(start[1])
     ET.SubElement(line, "EndX").text = str(end[0])
@@ -181,7 +194,7 @@ def add_note(root: ET.Element, position: tuple[float, float], text: str, *, z: i
     notes = workspace.find("NOTES")
     if notes is None:
         notes = ET.SubElement(workspace, "NOTES")
-    note = ET.SubElement(notes, "NOTE")
+    note = _tag_with_uuid(notes, "NOTE")
     ET.SubElement(note, "X").text = str(position[0])
     ET.SubElement(note, "Y").text = str(position[1])
     ET.SubElement(note, "Z").text = str(z)

@@ -184,10 +184,17 @@ NATURAL_DEVICE_ALIASES = {
     "ASA": ["asa", "security appliance", "security-appliance", "firewall"],
     # Voice and IoT devices could not be asked for at all: "4 ip phone qur"
     # parsed the count and then dropped it, because no alias matched.
-    "IPPhone": ["ip phone", "ipphone", "ip-phone", "telefon", "voip telefon"],
-    "HomeGateway": ["home gateway", "homegateway", "ev gateway"],
-    "IoE": ["iot device", "iot cihaz", "smart device", "ağıllı cihaz", "agilli cihaz"],
-    "Thing": ["sensor", "sensör", "smart light", "smart door", "motion sensor", "temperature sensor"],
+    "IpPhone": ["ip phone", "ipphone", "ip-phone", "telefon", "voip telefon"],
+    # Alias keys must be the *normalised* kind the planner works in, not the
+    # raw XML type. A device library stores IoT things as `MCUComponent`, which
+    # `normalize_device_type` folds to `IoT`; asking for `MCUComponent` looked
+    # for a kind the planner never produces, so a donor holding 112 of them
+    # still reported "no spare device".
+    "IoT": [
+        "iot device", "iot cihaz", "smart device", "agilli cihaz", "sensor",
+        "smart light", "smart door", "motion sensor", "temperature sensor",
+        "smoke detector", "fan", "lamp", "termostat", "thermostat",
+    ],
     "CCTVCamera": ["camera", "kamera", "cctv", "webcam"],
     "Hub": ["hub", "konsentrator"],
     "Repeater": ["repeater", "təkrarlayıcı", "tekrarlayici"],

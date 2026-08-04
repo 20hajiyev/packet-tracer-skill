@@ -532,9 +532,13 @@ def test_an_hsrp_op_without_an_address_is_skipped_not_raised() -> None:
 
 def test_voice_devices_can_be_asked_for() -> None:
     """"4 ip phone qur" parsed the count and dropped it: no alias matched."""
-    assert parse_intent("1 router 2 switch 4 ip phone qur").device_counts["IPPhone"] == 4
+    # Alias keys are the planner's normalised kinds, not the raw XML types:
+    # `MCUComponent` folds to `IoT`, and the planner spells a phone `IpPhone`.
+    # Using the raw names looked for kinds the planner never produces, so a
+    # donor holding 112 IoT devices still reported "no spare device".
+    assert parse_intent("1 router 2 switch 4 ip phone qur").device_counts["IpPhone"] == 4
     assert parse_intent("1 switch 3 kamera qur").device_counts["CCTVCamera"] == 3
-    assert parse_intent("1 switch 5 sensor qur").device_counts["Thing"] == 5
+    assert parse_intent("1 switch 5 sensor qur").device_counts["IoT"] == 5
 
 
 def test_telephony_comes_with_directory_numbers() -> None:

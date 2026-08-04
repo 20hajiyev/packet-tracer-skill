@@ -149,3 +149,50 @@ def test_annotation_failure_never_stops_generation() -> None:
     plan = parse_intent("1 wireless router 2 laptop qur")
     # No devices carry coordinates, and there are no switches to group by.
     _annotate_generated_lab(_root(), {"devices": []}, plan)
+
+
+def test_shapes_carry_the_identifier_packet_tracer_stamps() -> None:
+    """Packet Tracer gives every saved shape a braced version-4 uuid.
+
+    Ours opened without one, but matching what the application writes keeps a
+    generated file indistinguishable from a hand-drawn one after a round trip.
+    """
+    import re
+
+    root = _root()
+    add_rectangle(root, (0, 0), (10, 10))
+    add_ellipse(root, (0, 0), (10, 10))
+    add_line(root, (0, 0), (10, 10))
+    add_note(root, (5, 5), "x")
+
+    pattern = re.compile(r"^\{[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\}$")
+    for path in (
+        "RECTANGLES/RECTANGLE",
+        "ELLIPSES/ELLIPSE",
+        "LINES/LINE",
+        "PHYSICALWORKSPACE/NOTES/NOTE",
+    ):
+        element = root.find(path)
+        assert element is not None, path
+        assert pattern.match(element.get("uuid") or ""), f"{path} has no version-4 uuid"
+
+
+def test_every_annotation_kind_survives_a_round_trip() -> None:
+    """The whole drawing surface, written and read back."""
+    from pkt_codec import encode_pkt_modern, parse_pkt_xml, serialize_pkt_xml
+
+    root = _root()
+    ET.SubElement(root, "VERSION").text = "9.0.0.0810"
+    add_rectangle(root, (0, 0), (10, 10), color="red", filled=True, outline="black")
+    add_ellipse(root, (20, 0), (30, 10), color=(255, 105, 180), filled=True)
+    add_line(root, (0, 20), (30, 20), color="blue")
+    add_note(root, (5, 30), "salam")
+
+    restored = parse_pkt_xml(encode_pkt_modern.__wrapped__(serialize_pkt_xml(root))) if hasattr(encode_pkt_modern, "__wrapped__") else parse_pkt_xml(serialize_pkt_xml(root))
+
+    assert len(restored.find("RECTANGLES")) == 1
+    assert len(restored.find("ELLIPSES")) == 1
+    assert len(restored.find("LINES")) == 1
+    assert len(restored.find("PHYSICALWORKSPACE/NOTES")) == 1
+    assert restored.find("ELLIPSES/ELLIPSE/Color/Red").text == "255"
+    assert restored.find("RECTANGLES/RECTANGLE/Filled").get("OUTLINED") == "true"

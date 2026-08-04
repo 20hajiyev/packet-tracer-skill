@@ -1625,3 +1625,26 @@ point when the configuration is written rather than inherited.
 lacks cannot be cloned into existence.
 
 **Corpus: 31 cases, 30 generated, 30 opened, 0 unexpected. 561 tests.**
+
+
+## A device library, and the last audit gap
+
+The user assembled a lab holding **208 devices across 43 types** on the running
+build -- 25 router models, ASA, ISA, WLC, Meraki, cloud, cable and DSL modems,
+IP and analog phones, hub, repeater, coaxial splitter, sniffer, and 112 IoT
+components spanning 78 models from `Air Conditioner` to `Smoke Detector`.
+
+That is a far better donor than any single lab, and it closed the last gap the
+capability audit left open. IoT devices now generate and open.
+
+Getting there needed one more instance of the recurring defect. Device aliases
+were keyed on the raw XML type, but the planner works in *normalised* kinds:
+`normalize_device_type` folds `MCUComponent` to `IoT`, and a phone is `IpPhone`
+rather than `IPPhone`. Asking for `MCUComponent` looked for a kind the planner
+never produces, so a donor holding 112 of them still reported "no spare device".
+
+### Found while testing, not yet fixed
+
+Generating against a 208-device library leaves the donor's own devices in place:
+a one-router prompt produced twenty-five routers and a file Packet Tracer
+refused. Pruning copes with a small donor and not with a large one.

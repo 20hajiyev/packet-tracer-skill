@@ -121,6 +121,8 @@ TYPE_EQUIVALENTS: dict[str, tuple[str, ...]] = {
     "Server": ("Server", "ServerPT"),
     "Switch": ("Switch", "MultiLayerSwitch"),
     "Smartphone": ("Smartphone", "WirelessEndDevice"),
+    "MCUComponent": ("MCUComponent", "Thing", "IoE", "SBC", "MCU"),
+    "Thing": ("Thing", "MCUComponent", "IoE"),
 }
 
 
