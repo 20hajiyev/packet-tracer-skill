@@ -40,7 +40,7 @@ from packet_tracer_env import (
 )
 from pkt_builder import build_packet_tracer_xml
 from pkt_codec import decode_pkt_file, decode_pkt_modern, encode_pkt_modern, serialize_pkt_xml
-from pkt_editor import apply_plan_operations, decode_pkt_to_root, edit_pkt_file, inventory_devices, inventory_links, inventory_root
+from pkt_editor import _set_config_block, apply_plan_operations, decode_pkt_to_root, edit_pkt_file, inventory_devices, inventory_links, inventory_root
 from pkt_transformer import donor_interface_names, port_exists, transform_from_blueprint
 import pkt_verify
 import usage_ledger
@@ -2195,6 +2195,7 @@ def _write_pkt_root(root: ET.Element, pkt_path: Path, xml_path: Path | None = No
     # route, and the fix never ran for it.
     _repair_invalid_link_ports(root)
     _assign_unique_macs(root)
+    _align_router_gateway(root)
     prune_unused_images(root)
     xml_bytes = serialize_pkt_xml(root)
     pkt_path.parent.mkdir(parents=True, exist_ok=True)
@@ -3274,7 +3275,9 @@ def _synthesize_wan_ops(plan: IntentPlan, devices: list[dict[str, object]]) -> N
             )
 
 
-def _donor_service_segment(donor_root) -> tuple[int, str, str] | None:
+def _donor_service_segment(
+    donor_root, preferred_router_ports: set[str] | None = None
+) -> tuple[int, str, str] | None:
     """The VLAN a donor actually routes, taken from its live switch SVI.
 
     Returns (vlan id, /24 prefix, svi address), or None if no switch carries a
@@ -3310,6 +3313,13 @@ def _donor_service_segment(donor_root) -> tuple[int, str, str] | None:
     # with -- three PCs all at 192.168.1.20, unable to reach anything. A router
     # interface that carries an address is a gateway just the same; it simply
     # names no VLAN, so no access-port change follows from it.
+    #
+    # Which interface matters. Taking the first addressed one put hosts in
+    # 192.168.1.0/24 behind GigabitEthernet0/0/0 while the cable to their switch
+    # ran from GigabitEthernet0/0/2, which carries 192.168.3.1. The gateway was
+    # a real address on a real router and simply not reachable. When the caller
+    # knows which router ports are cabled to a switch, only those count.
+    candidates: list[tuple[bool, str]] = []
     for device in donor_root.findall(".//DEVICES/DEVICE"):
         for tag in ("RUNNINGCONFIG", "STARTUPCONFIG"):
             config = device.find(f"./ENGINE/{tag}")
@@ -3317,17 +3327,30 @@ def _donor_service_segment(donor_root) -> tuple[int, str, str] | None:
                 continue
             lines = [(line.text or "") for line in config.findall("LINE")]
             for index, line in enumerate(lines):
-                if not re.match(r"interface (Gigabit|Fast)Ethernet\S*\s*$", line.strip()):
+                match = re.match(r"interface ((?:Gigabit|Fast)Ethernet\S*)\s*$", line.strip())
+                if not match:
                     continue
                 cursor = index + 1
                 while cursor < len(lines) and lines[cursor].startswith(" "):
                     item = lines[cursor].strip()
                     address = re.match(r"ip address (\d+\.\d+\.\d+\.\d+) ", item)
                     if address:
-                        ip = address.group(1)
-                        return None, ip.rsplit(".", 1)[0], ip
+                        connected = bool(
+                            preferred_router_ports and match.group(1) in preferred_router_ports
+                        )
+                        candidates.append((connected, address.group(1)))
+                        break
                     cursor += 1
-    return None
+            if candidates:
+                break
+    if not candidates:
+        return None
+    # A cabled interface wins; otherwise fall back to whatever carries an
+    # address, which is still better than leaving hosts on the donor's own.
+    if preferred_router_ports and not any(connected for connected, _ in candidates):
+        return None
+    ip = next(ip for connected, ip in candidates if connected or not preferred_router_ports)
+    return None, ip.rsplit(".", 1)[0], ip
 
 
 def _host_and_switch_ends(
@@ -3442,7 +3465,18 @@ def _unify_host_segment(
     ):
         return
 
-    segment = _donor_service_segment(donor_root)
+    # Which router interface the hosts sit behind is decided by the cabling, so
+    # tell the segment lookup which ones are actually wired to a switch.
+    kind_by_name = {str(device["name"]): _device_kind(device) for device in devices}
+    cabled_router_ports = {
+        str(link[router_key]["port"])
+        for link in links
+        for router_key, switch_key in (("a", "b"), ("b", "a"))
+        if kind_by_name.get(str(link[router_key]["dev"])) == "Router"
+        and kind_by_name.get(str(link[switch_key]["dev"])) == "Switch"
+    }
+
+    segment = _donor_service_segment(donor_root, cabled_router_ports or None)
     if segment is None:
         return
     vlan_id, prefix, svi_ip = segment
@@ -4148,6 +4182,89 @@ def _resolve_port_conflicts(
         label = f"set_link {left_name} <-> {right_name}"
         operation["a"]["port"] = free_port(left_name, str(operation["a"]["port"]), label)
         operation["b"]["port"] = free_port(right_name, str(operation["b"]["port"]), label)
+
+
+def _align_router_gateway(root: ET.Element) -> list[str]:
+    """Put the hosts' gateway address on the router interface they reach it by.
+
+    Host addressing is decided while planning, from the router interface the
+    plan plugs into the switch. Port reconciliation then moves that cable: the
+    plan had GigabitEthernet0/0/0, carrying 192.168.1.1, and the finished lab
+    ran the cable from GigabitEthernet0/0/2, carrying 192.168.3.1. Hosts were
+    addressed 192.168.1.x with a gateway that existed, on an interface attached
+    to nothing.
+
+    Adjusting the hosts to follow the cable was the first attempt and it did
+    nothing, because at planning time the two still agreed. The cabling is what
+    changes last, so the address has to follow it: whichever interface ends up
+    facing the switch is given the gateway the hosts were told to use.
+    """
+    devices = {
+        (device.findtext("./ENGINE/SAVE_REF_ID") or ""): device
+        for device in root.findall(".//DEVICES/DEVICE")
+    }
+    kinds = {
+        ref: (device.findtext("./ENGINE/TYPE") or "") for ref, device in devices.items()
+    }
+
+    gateways = [
+        (port.findtext("PORT_GATEWAY") or "").strip()
+        for device in devices.values()
+        if (device.findtext("./ENGINE/TYPE") or "") in {"Pc", "PC"}
+        for port in device.findall("./ENGINE/MODULE/SLOT/MODULE/PORT")
+    ]
+    gateway = next((value for value in gateways if value and value != "0.0.0.0"), "")
+    if not gateway:
+        return []
+
+    for link in root.findall(".//LINKS/LINK"):
+        cable = link.find("./CABLE")
+        if cable is None:
+            continue
+        refs = [(cable.findtext("FROM") or "").strip(), (cable.findtext("TO") or "").strip()]
+        ports = [node.text or "" for node in cable.findall("PORT")]
+        for router_index, switch_index in ((0, 1), (1, 0)):
+            if kinds.get(refs[router_index]) != "Router":
+                continue
+            if kinds.get(refs[switch_index]) not in {"Switch", "MultiLayerSwitch"}:
+                continue
+            router = devices[refs[router_index]]
+            config = router.find("./ENGINE/RUNNINGCONFIG")
+            if config is None:
+                continue
+            # Another interface may already hold an address in this subnet --
+            # the one the plan originally chose. Two interfaces on one router
+            # cannot share a subnet, so the stale one gives up its address.
+            prefix = gateway.rsplit(".", 1)[0]
+            lines = [(line.text or "") for line in config.findall("LINE")]
+            cleared: list[str] = []
+            for index, line in enumerate(lines):
+                match = re.match(r"interface ((?:Gigabit|Fast)Ethernet\S*)\s*$", line.strip())
+                if not match or match.group(1) == ports[router_index]:
+                    continue
+                cursor = index + 1
+                while cursor < len(lines) and lines[cursor].startswith(" "):
+                    address = re.match(
+                        r"ip address (\d+\.\d+\.\d+\.\d+) ", lines[cursor].strip()
+                    )
+                    if address and address.group(1).rsplit(".", 1)[0] == prefix:
+                        cleared.append(match.group(1))
+                        break
+                    cursor += 1
+            for interface in cleared:
+                _set_config_block(config, f"interface {interface}", [" no ip address"])
+
+            _set_config_block(
+                config,
+                f"interface {ports[router_index]}",
+                [f" ip address {gateway} 255.255.255.0", " no shutdown"],
+            )
+            name = router.findtext("./ENGINE/NAME") or ""
+            note = f"{name}: {ports[router_index]} set to {gateway} (gateway the hosts use)"
+            if cleared:
+                note += f"; cleared overlapping address on {', '.join(cleared)}"
+            return [note]
+    return []
 
 
 def _assign_unique_macs(root: ET.Element) -> list[str]:
@@ -6168,6 +6285,7 @@ def generate_from_prompt(
     _sanitize_runtime_sections(root)
     port_repairs = _repair_invalid_link_ports(root)
     mac_repairs = _assign_unique_macs(root)
+    gateway_repairs = _align_router_gateway(root)
     _stamp_target_version(root)
     unexpected_workspace_issues = _unexpected_workspace_issues(donor_root, root)
     if unexpected_workspace_issues:
