@@ -626,6 +626,81 @@ def _append_unique_config_lines(parent: ET.Element | None, lines: list[str]) -> 
     _replace_lines(parent, merged)
 
 
+# Settings whose value is a word rather than a number, so stripping numeric
+# tails cannot find where the name ends. `switchport mode access` and
+# `switchport mode trunk` are the same setting and must replace each other.
+_WORD_VALUED_SETTINGS = (
+    "switchport port-security violation",
+    "switchport mode",
+    "duplex",
+    "speed",
+)
+
+
+def _setting_name(line: str) -> str:
+    """The part of a config line that identifies *which* setting it is.
+
+    Two lines share a name when one should overwrite the other. Most IOS
+    settings end in their value, so dropping the trailing tokens that carry
+    digits separates `switchport trunk allowed vlan 10,99` from
+    `switchport trunk native vlan 99` -- which a first attempt, keying on the
+    first two words alone, silently merged into one.
+    """
+    text = line.strip()
+    if text.startswith("no "):
+        text = text[3:]
+    for prefix in sorted(_WORD_VALUED_SETTINGS, key=len, reverse=True):
+        if text == prefix or text.startswith(prefix + " "):
+            return prefix
+    tokens = text.split()
+    while tokens and any(character.isdigit() for character in tokens[-1]):
+        tokens.pop()
+    return " ".join(tokens) or text
+
+
+def _set_config_block(parent: ET.Element | None, header: str, body: list[str]) -> None:
+    """Write settings into an interface's existing block instead of beside it.
+
+    `_append_config_block` skips only when the whole block already matches, so
+    re-stating one setting with a different value leaves both copies:
+
+        interface FastEthernet0/1
+         switchport access vlan 11     <- donor's
+        ...
+        interface FastEthernet0/1
+         switchport access vlan 20     <- ours
+
+    A lab generated that way opened fine and looked configured, but hosts could
+    not reach each other. Each body line replaces the line in the block that
+    shares its first two words, so a re-stated setting overwrites rather than
+    accumulates.
+    """
+    if parent is None:
+        return
+    lines = [line.text or "" for line in parent.findall("./LINE")]
+    try:
+        start = lines.index(header)
+    except ValueError:
+        _append_config_block(parent, header, body)
+        return
+
+    end = start + 1
+    while end < len(lines) and lines[end].startswith(" "):
+        end += 1
+    block = lines[start + 1 : end]
+
+    for line in body:
+        name = _setting_name(line)
+        for index, existing in enumerate(block):
+            if _setting_name(existing) == name:
+                block[index] = line
+                break
+        else:
+            block.append(line)
+
+    _replace_lines(parent, [*lines[:start], header, *block, *lines[end:]])
+
+
 def _append_config_block(parent: ET.Element | None, header: str, body: list[str]) -> None:
     if parent is None:
         return
@@ -1280,7 +1355,7 @@ def _apply_switch_op(device: ET.Element, operation: dict[str, object]) -> None:
         return
     elif operation["op"] == "set_access_port":
         for target in _config_targets(device):
-            _append_config_block(
+            _set_config_block(
                 target,
                 f"interface {operation['port']}",
                 [" switchport mode access", f" switchport access vlan {operation['vlan']}"],
@@ -1292,7 +1367,7 @@ def _apply_switch_op(device: ET.Element, operation: dict[str, object]) -> None:
         if operation.get("native"):
             body.append(f" switchport trunk native vlan {operation['native']}")
         for target in _config_targets(device):
-            _append_config_block(target, f"interface {operation['port']}", body)
+            _set_config_block(target, f"interface {operation['port']}", body)
         return
     elif operation["op"] == "set_dhcp_snooping":
         for target in _config_targets(device):

@@ -3245,6 +3245,126 @@ def _synthesize_wan_ops(plan: IntentPlan, devices: list[dict[str, object]]) -> N
             )
 
 
+def _donor_service_segment(donor_root) -> tuple[int, str, str] | None:
+    """The VLAN a donor actually routes, taken from its live switch SVI.
+
+    Returns (vlan id, /24 prefix, svi address), or None if no switch carries a
+    routed VLAN interface.
+    """
+    import re
+
+    for device in donor_root.findall(".//DEVICES/DEVICE"):
+        for tag in ("RUNNINGCONFIG", "STARTUPCONFIG"):
+            config = device.find(f"./ENGINE/{tag}")
+            if config is None:
+                continue
+            lines = [(line.text or "") for line in config.findall("LINE")]
+            for index, line in enumerate(lines):
+                match = re.match(r"interface Vlan(\d+)\s*$", line.strip())
+                if not match:
+                    continue
+                body: list[str] = []
+                cursor = index + 1
+                while cursor < len(lines) and lines[cursor].startswith(" "):
+                    body.append(lines[cursor].strip())
+                    cursor += 1
+                if any(item == "shutdown" for item in body):
+                    continue
+                for item in body:
+                    address = re.match(r"ip address (\d+\.\d+\.\d+\.\d+) ", item)
+                    if address:
+                        ip = address.group(1)
+                        return int(match.group(1)), ip.rsplit(".", 1)[0], ip
+    return None
+
+
+def _unify_host_segment(
+    plan: IntentPlan,
+    devices: list[dict[str, object]],
+    links: list[dict[str, object]],
+    donor_root=None,
+) -> None:
+    """Put every host in one working segment: same VLAN, same subnet.
+
+    Measured against a live Packet Tracer, a generated lab reported "healthy" --
+    no down links, no duplicate IPs -- while no host could reach any other. Two
+    separate defects, each invisible in the file:
+
+    * hosts were left as DHCP clients at 0.0.0.0 with no server to answer them;
+    * the switch inherited the donor's six VLANs, so the three PCs landed in
+      VLAN 11, 11 and 20 and were silently partitioned.
+
+    Two earlier attempts failed because addressing and VLAN were derived
+    independently and disagreed -- addresses in 192.168.1.0/24 behind an SVI
+    that only routes 192.168.20.0/24. Both now come from the same place: the one
+    VLAN interface the donor has up. Confirmed live, PC1 -> 192.168.20.100.
+
+    Skipped when the prompt asked for its own VLANs, whose layout is the point.
+    """
+    if plan.host_vlan_assignment or plan.department_groups or plan.vlan_ids:
+        return
+    hosts = [device for device in devices if _is_host_device(device)]
+    if not hosts or donor_root is None:
+        return
+    if bool(plan.topology_requirements.get("needs_dhcp_pool")) or any(
+        op.get("op") in {"set_router_dhcp_pool", "set_server_dhcp_pool"}
+        for op in list(plan.router_ops) + list(plan.server_ops)
+    ):
+        return
+
+    segment = _donor_service_segment(donor_root)
+    if segment is None:
+        return
+    vlan_id, prefix, svi_ip = segment
+
+    host_names = {str(device["name"]) for device in hosts}
+    for link in links:
+        if str(link["a"]["dev"]) not in host_names:
+            continue
+        switch = next(
+            (device for device in devices if device["name"] == str(link["b"]["dev"])), None
+        )
+        if switch is None or _device_kind(switch) != "Switch":
+            continue
+        _append_unique_op(
+            plan.switch_ops,
+            {
+                "op": "set_access_port",
+                "device": str(link["b"]["dev"]),
+                "port": str(link["b"]["port"]),
+                "vlan": vlan_id,
+            },
+        )
+
+    taken = {svi_ip}
+    for device in donor_root.findall(".//DEVICES/DEVICE"):
+        port = device.find("./ENGINE/MODULE/SLOT/MODULE/PORT")
+        if port is None:
+            continue
+        address = (port.findtext("IP") or "").strip()
+        if address and address != "0.0.0.0":
+            taken.add(address)
+
+    next_host = 20
+    for host in hosts:
+        while f"{prefix}.{next_host}" in taken and next_host < 250:
+            next_host += 1
+        address = f"{prefix}.{next_host}"
+        taken.add(address)
+        next_host += 1
+        _append_unique_op(
+            plan.end_device_ops,
+            {
+                "op": "set_host_ip",
+                "device": str(host["name"]),
+                "ip": address,
+                "mask": "255.255.255.0",
+                "gw": f"{prefix}.1",
+                "ip_mode": "static",
+            },
+        )
+
+
 def _management_vlan_id(plan: IntentPlan) -> int | None:
     """The VLAN reserved for switch management, if the prompt asked for one."""
     if "management_vlan" not in set(plan.capabilities):
@@ -4855,6 +4975,10 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
                 }
             )
 
+    _unify_host_segment(
+        adapted_plan, blueprint.get("devices", []), blueprint.get("links", []), donor_root
+    )
+
     _resolve_port_conflicts(
         adapted_plan,
         donor_links=donor_links,
@@ -5527,6 +5651,8 @@ def build_prompt_blueprint(plan: IntentPlan, donor_roots: list[Path] | None = No
     _synthesize_resilience_ops(prepared, devices)
     _synthesize_voice_ops(prepared, devices)
     _synthesize_wan_ops(prepared, devices)
+
+
     _note_model_substitutions(prepared, devices)
     prepared.capabilities = sorted(dict.fromkeys(prepared.capabilities))
     topology_plan = _build_topology_plan(prepared, devices, links)

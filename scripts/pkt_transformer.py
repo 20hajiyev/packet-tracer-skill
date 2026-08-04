@@ -174,10 +174,29 @@ def _find_switch_config(device: ET.Element) -> ET.Element | None:
     return None
 
 
+def _ensure_text(parent: ET.Element, tag: str, value: str) -> None:
+    """Set a child element's text, creating the element if it is absent."""
+    node = parent.find(tag)
+    if node is None:
+        node = ET.SubElement(parent, tag)
+    node.text = value
+
+
 def apply_host_ip(device: ET.Element, config: dict[str, Any]) -> None:
+    """Set a host's addressing.
+
+    A static address on a port still marked `PORT_DHCP_ENABLE=true` is ignored:
+    Packet Tracer keeps asking for a lease and the interface reports 0.0.0.0.
+    Measured against a live Packet Tracer -- the file carried 192.168.1.20 and
+    the device reported nothing, which opening the file could never reveal.
+    """
     port = device.find("./ENGINE/MODULE/SLOT/MODULE/PORT")
     if port is None:
         return
+    if config.get("ip"):
+        for node in device.findall(".//PORT"):
+            if node.find("PORT_DHCP_ENABLE") is not None:
+                _ensure_text(node, "PORT_DHCP_ENABLE", "false")
     for source_key, xml_key in [("ip", "IP"), ("mask", "SUBNET")]:
         if source_key in config:
             node = port.find(xml_key)
