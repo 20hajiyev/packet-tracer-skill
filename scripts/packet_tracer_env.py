@@ -87,21 +87,25 @@ COMPATIBILITY_TIERS = ("exact", "same_minor", "same_major", "upgradeable", "inco
 # version was relabelled to a nonexistent build is refused, so the bridge does
 # report refusals rather than silently succeeding.
 #
-# The consequence would be large -- Packet Tracer ships hundreds of labs under
-# its own `saves/`, all at or below the installed release, so a fresh install
-# would need no downloaded donor at all. It is not switched on yet, because two
-# questions remain open:
+# Packet Tracer ships hundreds of labs under its own `saves/`, all at or below
+# the installed release, so a fresh install needs no downloaded donor at all.
 #
-#   * every measurement above opened an *untouched* or merely relabelled lab.
-#     Whether a lab *generated* from an older donor opens is untested, and an
-#     earlier session recorded that one was refused;
-#   * loosening the default here changes which donor gets picked, and at scale
-#     that produced switches carrying two cables on one interface.
+# This default stayed at "exact" while two questions were open, and both are now
+# answered by measurement rather than argument:
 #
-# So the tier model is corrected to match what was measured, while the default
-# stays where evidence supports it. Set PACKET_TRACER_DONOR_POLICY=upgradeable
-# to opt in.
-DEFAULT_DONOR_POLICY = "exact"
+#   * a lab *generated* from an older bundled donor was indeed refused -- but
+#     for naming an interface the router does not have, not for its version.
+#     With the finished lab checked against its own hardware, such a lab opens
+#     and its hosts ping each other with 0% loss;
+#   * loosening the default changed which donor gets picked and exposed real
+#     defects at scale -- cloned devices sharing one MAC, interfaces carrying
+#     two cables. Those are fixed, and 40 hosts across 22 switches now come out
+#     with zero of either.
+#
+# Gate for changing this back or further: the corpus must run clean under the
+# policy (30/31 generated, 0 unexpected) and a lab built from a bundled sample
+# must open *and* carry traffic. Both hold.
+DEFAULT_DONOR_POLICY = "upgradeable"
 
 # Packet Tracer reliably upgrades saves from this major version onward on open.
 MINIMUM_UPGRADEABLE_MAJOR = 6

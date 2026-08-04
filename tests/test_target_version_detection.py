@@ -1,9 +1,10 @@
 """Where the target Packet Tracer build comes from, and why it matters.
 
-Packet Tracer refuses to open a lab whose `<VERSION>` build differs from its
-own, so the build -- not just the release -- has to be known before a donor can
-be judged. These tests pin the resolution order and the failure it was written
-to remove.
+The build was long believed to be a gate: a lab whose `<VERSION>` differed from
+the running one was thought unopenable. Measured one file at a time, it is not
+-- the gate is an ordering on major.minor.patch and the build field is ignored.
+The build still matters for what gets *written* into a generated lab, and the
+resolution order is what these tests pin.
 """
 
 from __future__ import annotations
@@ -19,19 +20,21 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import packet_tracer_env as env  # noqa: E402
 
 
-def test_release_only_target_cannot_satisfy_the_exact_policy() -> None:
-    """The failure the executable probe exists to prevent.
+def test_a_release_only_target_still_serves_a_fresh_install() -> None:
+    """A three-field target is what the install directory name yields.
 
-    A three-field target is what the install directory name yields. Under the
-    `exact` policy it matches nothing at all -- not even a lab written by that
-    very install -- so a user who had never saved anything could not generate.
+    Under the old `exact` default it matched nothing at all -- not even a lab
+    written by that very install -- so a user who had never saved a lab could
+    not generate. The executable probe was added to recover the build; the
+    default no longer depends on having it.
     """
-    assert env.DEFAULT_DONOR_POLICY == "exact"
+    assert env.DEFAULT_DONOR_POLICY == "upgradeable"
 
     tier = env.donor_compatibility("9.0.0", "9.0.0.0810")
 
     assert tier == "same_minor"
-    assert not env.donor_tier_is_accepted(tier)
+    assert env.donor_tier_is_accepted(tier)
+    assert env.donor_tier_is_accepted(env.donor_compatibility("9.0.0.0810", "9.0.0"))
 
 
 def test_a_full_build_target_accepts_a_matching_lab() -> None:
@@ -39,9 +42,19 @@ def test_a_full_build_target_accepts_a_matching_lab() -> None:
     assert env.donor_tier_is_accepted("exact")
 
 
-def test_bundled_samples_stay_rejected_even_with_a_build_target() -> None:
-    """Measured: building from a `9.0.0.0000` sample produces a file PT refuses."""
-    assert not env.donor_tier_is_accepted(env.donor_compatibility("9.0.0.0810", "9.0.0.0000"))
+def test_bundled_samples_are_usable_donors() -> None:
+    """This assertion used to say the opposite, on a misread measurement.
+
+    A lab generated from a `9.0.0.0000` sample was indeed refused by Packet
+    Tracer, and that was recorded as a version problem. It was not: the lab
+    named an interface its router does not have. With the finished lab checked
+    against its own hardware, a lab built from a bundled sample opens and its
+    hosts ping each other -- which is what makes a donor-free install work.
+    """
+    assert env.donor_tier_is_accepted(env.donor_compatibility("9.0.0.0000", "9.0.0.0810"))
+    assert env.donor_tier_is_accepted(env.donor_compatibility("8.0.0.0000", "9.0.0.0810"))
+    # A donor above the installed release is still refused, measured directly.
+    assert not env.donor_tier_is_accepted(env.donor_compatibility("9.1.0.0000", "9.0.0.0810"))
 
 
 def test_executable_probe_returns_a_four_field_build_or_nothing() -> None:
