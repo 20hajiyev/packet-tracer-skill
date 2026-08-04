@@ -516,3 +516,22 @@ def test_parse_natural_acl_create_and_apply_with_spaced_device_name() -> None:
         and op["interface"] == "FastEthernet0/0"
         for op in plan.router_ops
     )
+
+
+def test_every_named_vlan_is_captured_even_when_the_keyword_repeats() -> None:
+    """`vlan 10 ve vlan 20` yielded one VLAN, not two.
+
+    The separator was a character class containing `v`, so it consumed the
+    start of the second `vlan` keyword and the prompt's second VLAN vanished
+    before any topology was planned.
+    """
+    from intent_parser import _extract_vlan_ids
+
+    assert _extract_vlan_ids("vlan 10 ve vlan 20, her birinde 2 komputer") == [10, 20]
+    assert _extract_vlan_ids("vlan 10 ve vlan 20 ve vlan 30") == [10, 20, 30]
+    assert _extract_vlan_ids("vlan 10 and vlan 99") == [10, 99]
+    assert _extract_vlan_ids("vlan 10, 20, 30 qur") == [10, 20, 30]
+    assert _extract_vlan_ids("vlanlarda 100/200 olsun") == [100, 200]
+    # A bare space separates a list too, which the stricter pattern first lost.
+    assert _extract_vlan_ids("vlanlarda 10 20") == [10, 20]
+    assert _extract_vlan_ids("3 vlan qur") == []

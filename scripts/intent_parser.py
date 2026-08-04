@@ -573,8 +573,16 @@ def _without_longer_aliases(text: str, aliases: list[str]) -> str:
 
 
 def _extract_vlan_ids(normalized_prompt: str) -> list[int]:
+    """Every VLAN a prompt names, whether listed once or repeated.
+
+    The separators used to be a character class, `[0-9,\\s/veand]`, which
+    contains `v`. On `vlan 10 ve vlan 20` it swallowed the start of the second
+    keyword and the lab came out with one VLAN instead of two. A separator is
+    now only accepted between two numbers.
+    """
     vlan_ids: list[int] = []
-    for match in re.findall(r"\bvlan(?:larda|lar|da|de|a|e)?\s+([0-9,\s/veand]+)", normalized_prompt):
+    pattern = r"\bvlan(?:larda|lar|da|de|a|e)?\s+((?:\d+(?:\s*(?:,|/|ve|and|-)\s*|\s+)?)+)"
+    for match in re.findall(pattern, normalized_prompt):
         vlan_ids.extend(int(value) for value in re.findall(r"\d+", match))
     return sorted(dict.fromkeys(vlan_ids))
 
