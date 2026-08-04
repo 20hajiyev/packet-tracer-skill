@@ -1872,5 +1872,31 @@ the corpus. The next one should change nothing and print the alignment for one
 failing prompt both ways; that is a smaller question than any of the fixes
 tried.
 
+The fifth round changed nothing and printed the alignment instead, which
+answered it in one run:
+
+    promoted plan   Switch: 2, MultiLayerSwitch: 1, PC: 6, Router: 1
+    target groups   SW1, SW2          (the multilayer switch is not a group)
+    top donor       Senan_K231.pkt -- 3 plain switches, no multilayer at all
+    next donor      a PRP lab -- 4 plain switches and 5 multilayer
+
+Two things fall out of that.
+
+The promotion gate asks `discover_local_donors` whether *some* donor carries a
+multilayer switch, while generation picks from `_rank_generation_donors` -- a
+different pool, whose top entry here has none. The gate can pass on the strength
+of a donor that never gets used.
+
+And the real one: holding a group back does not free its device. The spare pool
+is built only from devices *inside* groups, so dropping a multilayer group
+removes the anchor from the lab rather than making it available as a spare.
+With every multilayer switch consumed as a group anchor there is nothing left
+to be `MultiLayerSwitch1`, which is why four rounds of adjusting counts and
+ordering never helped.
+
+So the change is: when a multilayer group is held back, queue its anchor into
+the spare pool for its type. That is one place, and it is the place the two
+claims actually meet.
+
 Until then the analog phone stays out of reach, and the reason is recorded
 rather than rediscovered.
