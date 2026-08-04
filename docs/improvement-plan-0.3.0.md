@@ -1917,5 +1917,29 @@ fix already committed covers the case where the generated lab reuses the name;
 or a substring match on a longer name -- `Switch1` inside `Switch10`. Cheap to
 tell apart and worth doing, since it rejects donors on its own.
 
+The seventh round printed the spare pool at the moment the standalone target is
+resolved, which finally explains the whole thing:
+
+    target=MultiLayerSwitch1  kind=MultiLayerSwitch
+    pool_keys=['PC']          pool_for_kind=0
+    kept=['Multilayer Switch0', 'Multilayer Switch1', ...]
+
+Both multilayer switches are already in `kept_devices` as group anchors, so
+neither is a spare. And `park_device` files everything it touches under
+`kept_devices` too -- including devices it prunes -- so a switch that is neither
+an anchor nor wanted is *also* invisible to the standalone lookup. That is why
+queueing held-back anchors as spares changed nothing: the anchor had already
+been claimed before the queueing ran.
+
+Reserving the multilayer switches before the walk -- never anchoring, never
+parking them -- was then tried and refuses *every* prompt, so it is wrong in
+some further way and was reverted.
+
+Seven rounds, seven reverts. The mechanism is now fully described above, which
+is the part worth keeping: `kept_devices` means "already decided", not "kept",
+and three separate paths write to it. Any fix has to work with that, and the
+honest next step is to give the reserved devices their own state rather than
+trying to keep them out of `kept_devices`.
+
 Until then the analog phone stays out of reach, and the reason is recorded
 rather than rediscovered.
