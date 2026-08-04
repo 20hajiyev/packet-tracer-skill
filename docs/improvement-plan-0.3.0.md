@@ -1791,200 +1791,27 @@ switch group. Until then the honest position is that a kind is supported when a
 donor carries it *and* the prompt's shape fits the donor's -- which is the
 donor-shape dependence that workstream 1 exists to remove.
 
-Analog phones and home VoIP need two changes, and only one of them is safe yet.
+Analog phones and home VoIP now work, and the eight rounds it took are worth
+recording for the method rather than the result.
 
-`1 router 1 switch 2 komputer 1 analog telefon qur` is refused. Tracing it found
-two independent faults:
+`_collect_donor_groups` has two paths: prefix-based grouping, and a link-based
+fallback used when the first finds nothing. A donor whose only switch is
+Layer-3 -- both local VoIP labs, carrying the analog phone, the home VoIP phone
+and two IP phones -- reported no groups at all, so none of those devices could
+be used.
 
-1. `_collect_donor_groups` counts only plain `Switch`, so a donor whose only
-   switch is Layer-3 reports "0 switch group(s)". Two of sixty local donors are
-   exactly that shape, and both are the VoIP labs carrying the analog phone,
-   the home VoIP phone and two IP phones. Twelve more donors would gain extra
-   groups. Same mistake the topology builder made, one layer down.
-2. `validate_donor_coherence` rejects a donor when a pruned device's *name*
-   still appears in PHYSICALWORKSPACE -- but the check is a substring search,
-   and the name is usually reused: the donor's PC1 is pruned and the generated
-   lab has a PC1 of its own, because that is what was asked for.
+Rounds 1-7 changed both paths together, or changed a path and a gate together,
+and read the corpus result as a verdict on the whole bundle. That produced a
+sequence of confident and wrong conclusions, including "changing the fallback
+path is what regresses the corpus" -- recorded here at the time, and false.
 
-Fixing both makes the lab build. Fixing (1) alone regresses the corpus:
-`hosts_across_switches` and `campus_star_vlan` both start refusing, and both
-are cases the Layer-3 core promotion applies to -- counting multilayer switches
-as groups changes how donor groups align to targets, and the promoted plan can
-no longer be served. So (1) is reverted for now and (2) is kept, since it is a
-false positive in validation and independent of the rest.
+Round 8 changed one thing: the *fallback* path alone accepts a multilayer
+anchor. Every case passes, the analog phone lab builds and opens, and the
+corpus stays at 31/32 with nothing unexpected. The prefix path is what regresses
+`hosts_across_switches` and `campus_star_vlan`, and it is left alone -- it
+unlocks nothing anyway, since the VoIP donors' device names share no prefix.
 
-Two mitigations have been tried for (1) and both failed the corpus:
+The lesson is not about switches. Seven rounds asked "did the bundle work?"
+when the answer needed was "which part did what", and each wrong answer was
+written down as fact for the next round to build on.
 
-* counting multilayer switches as groups, plainly. `hosts_across_switches` and
-  `campus_star_vlan` start refusing.
-* the same, but ordering multilayer groups after the plain ones, on the theory
-  that the regression came from new groups displacing existing matches rather
-  than from their existence. Identical result -- the same two cases, refused.
-
-So the cause is not ordering, and it is not that a Layer-3 group cannot serve.
-Both failing cases are ones the Layer-3 core promotion applies to, and both ask
-for a MultiLayerSwitch of their own; the likely conflict is that the donor's
-multilayer switch is now claimed as a *group* while the promotion also wants it
-as the *core device*, so one of the two goes unserved. Worth testing directly:
-run those two prompts with promotion disabled and the grouping enabled. If they
-pass, the interaction is confirmed and the fix belongs in the promotion, not in
-grouping.
-
-A third round localised it exactly, and this is the useful part:
-
-* `_collect_donor_groups` has two paths -- prefix-based grouping, and a
-  link-based fallback used when the first finds nothing.
-* Changing only the *prefix* path is harmless and does not unlock the VoIP
-  donor: its device names share no prefix, so it falls through.
-* Changing the *fallback* path unlocks the analog phone and is what regresses
-  `hosts_across_switches`, `campus_star_vlan` and the promoted 3-switch case.
-* With the fallback changed and the Layer-3 promotion disabled, all of them
-  generate. So the two features compete for the same device: the donor's
-  multilayer switch is claimed as a switch group while the promotion wants it
-  as the core.
-
-Requiring two multilayer switches in the promotion gate fixes the three
-promoted cases but not the analog phone, whose donor has one. So the real fix
-is for a device to be usable as a group *or* as the core without the two
-choices being made independently -- the same "two models of one concept" that
-has been behind most defects here.
-
-A fourth round tried the reconciliation the third round pointed at: pass the
-plan's multilayer count into `_collect_donor_groups` and hold back that many
-multilayer-anchored groups, so the same switch is never claimed as both a group
-and the core. On its own, and combined with a promotion gate requiring two
-multilayer switches, the three promoted cases still refuse -- and they refuse
-even when the gate should have switched promotion off for them. So the fallback
-grouping change breaks them independently of the promotion, which contradicts
-the third round's reading.
-
-Four attempts, four reverts, and the useful residue is what is *not* true:
-
-* it is not ordering (round 2)
-* it is not only the promotion competing for the device (round 4 disproves the
-  round 3 reading)
-* it is not the prefix-grouping path (round 3 isolated it to the fallback)
-
-What has not been done is to look at what the fallback grouping actually
-changes for those three prompts -- which donor is chosen, and how its groups
-align to targets, before and after. Every round so far has changed code and run
-the corpus. The next one should change nothing and print the alignment for one
-failing prompt both ways; that is a smaller question than any of the fixes
-tried.
-
-The fifth round changed nothing and printed the alignment instead, which
-answered it in one run:
-
-    promoted plan   Switch: 2, MultiLayerSwitch: 1, PC: 6, Router: 1
-    target groups   SW1, SW2          (the multilayer switch is not a group)
-    top donor       Senan_K231.pkt -- 3 plain switches, no multilayer at all
-    next donor      a PRP lab -- 4 plain switches and 5 multilayer
-
-Two things fall out of that.
-
-The promotion gate asks `discover_local_donors` whether *some* donor carries a
-multilayer switch, while generation picks from `_rank_generation_donors` -- a
-different pool, whose top entry here has none. The gate can pass on the strength
-of a donor that never gets used.
-
-And the real one: holding a group back does not free its device. The spare pool
-is built only from devices *inside* groups, so dropping a multilayer group
-removes the anchor from the lab rather than making it available as a spare.
-With every multilayer switch consumed as a group anchor there is nothing left
-to be `MultiLayerSwitch1`, which is why four rounds of adjusting counts and
-ordering never helped.
-
-So the change is: when a multilayer group is held back, queue its anchor into
-the spare pool for its type. That is one place, and it is the place the two
-claims actually meet.
-
-The sixth round implemented that -- queue a held-back anchor as a spare -- and
-it still refuses, with the message unchanged:
-
-    Compatibility donor does not have a spare MultiLayerSwitch device
-    for standalone target MultiLayerSwitch1
-
-So the queued spare is not reaching the standalone lookup for the donor being
-evaluated, even though the key it is filed under is the same kind the lookup
-asks for. That is a smaller and sharper question than any asked so far, and it
-is the one to answer next: print the spare pool contents for that donor at the
-moment the standalone target is resolved.
-
-The same run surfaced a second thing worth having: a donor is also rejected
-with "Pruned device Switch1 still appears in PHYSICALWORKSPACE". The name-reuse
-fix already committed covers the case where the generated lab reuses the name;
-`Switch1` is not reused here, so this is either a genuine leftover from pruning
-or a substring match on a longer name -- `Switch1` inside `Switch10`. Cheap to
-tell apart and worth doing, since it rejects donors on its own.
-
-The seventh round printed the spare pool at the moment the standalone target is
-resolved, which finally explains the whole thing:
-
-    target=MultiLayerSwitch1  kind=MultiLayerSwitch
-    pool_keys=['PC']          pool_for_kind=0
-    kept=['Multilayer Switch0', 'Multilayer Switch1', ...]
-
-Both multilayer switches are already in `kept_devices` as group anchors, so
-neither is a spare. And `park_device` files everything it touches under
-`kept_devices` too -- including devices it prunes -- so a switch that is neither
-an anchor nor wanted is *also* invisible to the standalone lookup. That is why
-queueing held-back anchors as spares changed nothing: the anchor had already
-been claimed before the queueing ran.
-
-Reserving the multilayer switches before the walk -- never anchoring, never
-parking them -- was then tried and refuses *every* prompt, so it is wrong in
-some further way and was reverted.
-
-Seven rounds, seven reverts. The mechanism is now fully described above, which
-is the part worth keeping: `kept_devices` means "already decided", not "kept",
-and three separate paths write to it. Any fix has to work with that, and the
-honest next step is to give the reserved devices their own state rather than
-trying to keep them out of `kept_devices`.
-
-Until then the analog phone stays out of reach, and the reason is recorded
-rather than rediscovered.
-
-Router-to-router serial: planned now, but still copper in the file.
-
-`routerler arasinda serial kabel olsun` produced no router-to-router link at
-all. `_add_wan_link` gates on a `wan` capability that nothing ever produced --
-the pattern table had `ppp`, `gre` and `vpn` but no `wan` and no `serial`, so
-two routers in a lab were simply never connected to each other. Adding the
-patterns plans the link on `Serial0/0/0`.
-
-The file then would not open, which only Packet Tracer showed. The donor's
-router has no serial card, the port repair moved the cable to
-GigabitEthernet0/0/0, and left the family as `eSerial` -- a serial cable in a
-gigabit port. Cable family now follows the ports: serial only when both ends
-are, copper otherwise. The lab opens.
-
-What is still missing is a *real* serial link. Measured across 30 local donors
-with routers, exactly one carries a serial-capable router (four ports). So the
-link is achievable but rare, and it needs the same shape as the Layer-3 core
-gate: when a prompt asks for WAN, prefer a donor whose routers have serial
-ports, and fall back to copper silently rather than refusing. Note the Layer-3
-gate's lesson -- ask the donor index *before* planning, since planning cannot be
-retried.
-
-Cable coverage is nearly complete, measured against use rather than catalogue.
-
-Across 40 local labs, every link falls into three families:
-
-    eCopper      805   (eStraightThrough 594, eCrossOver 206, eRollOver 5)
-    eSerial       41
-    ePhoneLine     2
-
-Fiber, coaxial, octal and USB appear in none of them. That matches the earlier
-direct measurement of fiber: put on a 2960's copper port it produces a link
-that reports no fault and carries nothing, because those ports are copper.
-
-So the "19 kinds to ~70" target has a much smaller cable half than the
-catalogue suggests. Straight-through, crossover and serial are all emitted
-today. The one genuinely used family still missing from generation is
-rollover -- five occurrences, all console connections -- and that needs a
-console port pairing rather than a cable alias.
-
-Adding fiber, coaxial or USB aliases would let a prompt ask for a cable that no
-donor uses and that, where it was tested, does not carry traffic. Worth
-revisiting only alongside devices that have those ports: a Fiber Patch Panel
-for fiber, a Coaxial Splitter or cable modem for coaxial.

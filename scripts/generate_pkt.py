@@ -3832,11 +3832,21 @@ def _fallback_group_member_type(device_type: str) -> bool:
     return device_type in {"PC", "Server", "Printer", "Laptop", "Tablet", "LightWeightAccessPoint", "Smartphone"}
 
 
-def _collect_donor_groups(root: ET.Element) -> list[dict[str, object]]:
+def _collect_donor_groups(
+    root: ET.Element, skip_anchor_names: frozenset[str] = frozenset()
+) -> list[dict[str, object]]:
+    """Donor switch groups. Names in `skip_anchor_names` never anchor one.
+
+    A multilayer switch can anchor a group, and the plan may also want one as a
+    *device*. There is only one of it, so the caller reserves what it needs and
+    passes the names here.
+    """
     devices = inventory_devices(root)
     groups: list[dict[str, object]] = []
     for device in devices:
         if device["type"] != "Switch":
+            continue
+        if str(device["name"]) in skip_anchor_names:
             continue
         prefix = _donor_group_prefix(device["name"], device["type"])
         if not prefix:
@@ -3866,7 +3876,15 @@ def _collect_donor_groups(root: ET.Element) -> list[dict[str, object]]:
 
     links = inventory_links(root)
     by_name = {str(device["name"]): device for device in devices}
-    switches = [device for device in devices if device["type"] == "Switch"]
+    # The fallback runs only when prefix grouping found nothing, and a donor
+    # whose sole switch is Layer-3 lands here with no groups at all -- which is
+    # how a VoIP lab carrying an analog phone could serve none of them.
+    switches = [
+        device
+        for device in devices
+        if device["type"] in {"Switch", "MultiLayerSwitch"}
+        and str(device["name"]) not in skip_anchor_names
+    ]
     switch_map = {
         str(device["name"]): {"group_name": str(device["name"]), "switch": device, "members": [], "members_by_type": {}}
         for device in switches
@@ -3884,9 +3902,10 @@ def _collect_donor_groups(root: ET.Element) -> list[dict[str, object]]:
             continue
         left_type = _device_kind(left)
         right_type = _device_kind(right)
-        if left_type == "Switch" and _fallback_group_member_type(right_type):
+        switch_kinds = {"Switch", "MultiLayerSwitch"}
+        if left_name in switch_map and left_type in switch_kinds and _fallback_group_member_type(right_type):
             switch_map[left_name]["members"].append(right)
-        elif right_type == "Switch" and _fallback_group_member_type(left_type):
+        elif right_name in switch_map and right_type in switch_kinds and _fallback_group_member_type(left_type):
             switch_map[right_name]["members"].append(left)
     groups = []
     for group in switch_map.values():
