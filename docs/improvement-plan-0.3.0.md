@@ -1813,7 +1813,22 @@ as groups changes how donor groups align to targets, and the promoted plan can
 no longer be served. So (1) is reverted for now and (2) is kept, since it is a
 false positive in validation and independent of the rest.
 
-The way in: make the promotion's donor gate account for group *alignment* and
-not just device counts, or make group alignment tolerate a Layer-3 group. Until
-then the analog phone stays out of reach, and the reason is recorded rather
-than rediscovered.
+Two mitigations have been tried for (1) and both failed the corpus:
+
+* counting multilayer switches as groups, plainly. `hosts_across_switches` and
+  `campus_star_vlan` start refusing.
+* the same, but ordering multilayer groups after the plain ones, on the theory
+  that the regression came from new groups displacing existing matches rather
+  than from their existence. Identical result -- the same two cases, refused.
+
+So the cause is not ordering, and it is not that a Layer-3 group cannot serve.
+Both failing cases are ones the Layer-3 core promotion applies to, and both ask
+for a MultiLayerSwitch of their own; the likely conflict is that the donor's
+multilayer switch is now claimed as a *group* while the promotion also wants it
+as the *core device*, so one of the two goes unserved. Worth testing directly:
+run those two prompts with promotion disabled and the grouping enabled. If they
+pass, the interaction is confirmed and the fix belongs in the promotion, not in
+grouping.
+
+Until then the analog phone stays out of reach, and the reason is recorded
+rather than rediscovered.
