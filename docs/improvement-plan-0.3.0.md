@@ -1849,5 +1849,28 @@ is for a device to be usable as a group *or* as the core without the two
 choices being made independently -- the same "two models of one concept" that
 has been behind most defects here.
 
+A fourth round tried the reconciliation the third round pointed at: pass the
+plan's multilayer count into `_collect_donor_groups` and hold back that many
+multilayer-anchored groups, so the same switch is never claimed as both a group
+and the core. On its own, and combined with a promotion gate requiring two
+multilayer switches, the three promoted cases still refuse -- and they refuse
+even when the gate should have switched promotion off for them. So the fallback
+grouping change breaks them independently of the promotion, which contradicts
+the third round's reading.
+
+Four attempts, four reverts, and the useful residue is what is *not* true:
+
+* it is not ordering (round 2)
+* it is not only the promotion competing for the device (round 4 disproves the
+  round 3 reading)
+* it is not the prefix-grouping path (round 3 isolated it to the fallback)
+
+What has not been done is to look at what the fallback grouping actually
+changes for those three prompts -- which donor is chosen, and how its groups
+align to targets, before and after. Every round so far has changed code and run
+the corpus. The next one should change nothing and print the alignment for one
+failing prompt both ways; that is a smaller question than any of the fixes
+tried.
+
 Until then the analog phone stays out of reach, and the reason is recorded
 rather than rediscovered.
