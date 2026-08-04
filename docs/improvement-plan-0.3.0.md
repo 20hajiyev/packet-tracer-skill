@@ -1674,37 +1674,35 @@ Instrumenting the assignment (wrap the candidate functions and print what is
 chosen for `PC2`) is the cheap way in; the same technique found the write path
 for the duplicated-port bug in one run.
 
-Hosts on different access switches cannot reach each other *above a certain
-size*. The first note here said this was general; measurement since narrowed it:
+Hosts on different access switches still cannot reach each other, but the
+diagnosis has been corrected twice and it is worth recording why.
 
-  3 switches, 4 hosts   PC1(SW2) -> PC2(SW3)   0% loss
-  8 switches, 12 hosts  PC1(SW2) -> PC2(SW3)   100% loss
-  22 switches, 40 hosts PC1(SW2) -> PC3(SW4)   100% loss
-  22 switches           PC1 -> PC22, same switch, 0% loss
+First reading: cross-switch traffic is broken. Wrong -- a 3-switch lab works.
 
-So the L2 path works when the lab is small and fails when it is not, on every
-attempt and long after STP would have converged.
+Second reading: it breaks above some size, since 8- and 22-switch labs fail.
+Also wrong. The two sizes drew *different donors*, and only the larger one's
+donor had VLAN 5 ports to inherit. The gateway was unreachable because the
+switch port facing the router still carried `access vlan 5` while every host
+sat in VLAN 1 -- different broadcast domains, nothing to do with size. Aligning
+that port with the hosts' VLAN fixed it: PC1 -> 192.168.5.1 went from 100% loss
+to 0%.
 
-Ruled out by measurement, so the next attempt should not revisit these:
+What remains, measured on the 8-switch lab after that fix:
 
-* the cable. Crossover and straight-through fail identically, and a control run
-  on the pre-crossover build failed the same way;
-* missing links. All 62 planned links are in the file and every one is up;
-* the access VLAN. All 40 hosts sit in one segment now;
-* the uplinks being access ports. All 42 switch-to-switch port ends carry
-  `switchport mode trunk` and `switchport trunk allowed vlan all`, written from
-  the finished file so the port names are the real ones;
-* duplicate MACs and duplicate addresses -- none of either.
+  PC1 (SW2) -> gateway        0% loss
+  PC2 (SW3) -> gateway        100% loss
+  PC1 -> PC2                  100% loss
 
-Also ruled out at the failing size: the configuration itself. Every uplink on
-the 8-switch lab reads `switchport mode trunk` + `switchport trunk allowed vlan
-all` on both ends, the topology is a clean star with no second path, and PC1
-and PC2 are both in VLAN 1 on the same /24.
+So one access switch reaches the core and another does not, with both uplinks
+reading `switchport mode trunk` + `switchport trunk allowed vlan all` on both
+ends. The one visible asymmetry: SW3 carries trunk config on two ports, Fa0/4
+and Fa0/5, where SW2 has one. Whether the second is a stale block left on a
+port that no longer holds a cable, or a real second link forming a loop, is the
+next thing to establish -- and it is cheap, since SW2 and SW3 differ in exactly
+that.
 
 The simulation event list stays empty on these labs even after a ping, so the
-packet trace that found the duplicate-MAC bug is not available here. Reading the
-switch MAC address table live is the next thing to try, and comparing the 3- and
-8-switch labs directly is the cheapest way in, since one works and one does not.
+packet trace that found the duplicate-MAC bug is not available here.
 
 The 3-switch lab is worth adding to the corpus either way: no case currently
 places hosts on more than one switch, which is why this went unnoticed.

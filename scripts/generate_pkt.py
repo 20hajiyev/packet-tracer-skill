@@ -2196,6 +2196,7 @@ def _write_pkt_root(root: ET.Element, pkt_path: Path, xml_path: Path | None = No
     _repair_invalid_link_ports(root)
     _assign_unique_macs(root)
     _trunk_uplinks_in_file(root)
+    _align_router_access_vlan(root)
     _align_router_gateway(root)
     prune_unused_images(root)
     xml_bytes = serialize_pkt_xml(root)
@@ -4273,6 +4274,85 @@ def _trunk_uplinks_in_file(root: ET.Element) -> list[str]:
             )
             trunked.append(f"{devices[ref].findtext('./ENGINE/NAME') or ref}:{port}")
     return trunked
+
+
+def _align_router_access_vlan(root: ET.Element) -> list[str]:
+    """Put the router's switch port in the VLAN the hosts are in.
+
+    The gateway can be up, addressed and cabled and still be unreachable if the
+    switch port facing it sits in another VLAN. Measured: hosts on
+    `switchport access vlan 1`, the router's port on SW1 still carrying the
+    donor's `access vlan 5`. Different broadcast domains, so nothing could reach
+    the gateway however correct the addressing was.
+
+    This looked like a size threshold at first -- a 3-switch lab worked and an
+    8-switch one did not -- because the two drew different donors, and only the
+    larger one's donor had VLAN 5 ports to inherit.
+    """
+    devices = {
+        (device.findtext("./ENGINE/SAVE_REF_ID") or ""): device
+        for device in root.findall(".//DEVICES/DEVICE")
+    }
+    host_types = {"Pc", "PC", "Server", "Printer", "Laptop"}
+    switch_types = {"Switch", "MultiLayerSwitch"}
+
+    def kind(ref: str) -> str:
+        device = devices.get(ref)
+        return (device.findtext("./ENGINE/TYPE") or "") if device is not None else ""
+
+    def access_vlan(device: ET.Element, port: str) -> str:
+        config = device.find("./ENGINE/RUNNINGCONFIG")
+        if config is None:
+            return "1"
+        lines = [(line.text or "") for line in config.findall("LINE")]
+        for index, line in enumerate(lines):
+            if line.strip() != f"interface {port}":
+                continue
+            cursor = index + 1
+            while cursor < len(lines) and lines[cursor].startswith(" "):
+                if lines[cursor].strip().startswith("switchport access vlan "):
+                    return lines[cursor].strip().split()[-1]
+                cursor += 1
+        return "1"
+
+    host_vlans: Counter[str] = Counter()
+    router_ends: list[tuple[ET.Element, str]] = []
+    for link in root.findall(".//LINKS/LINK"):
+        cable = link.find("./CABLE")
+        if cable is None:
+            continue
+        refs = [(cable.findtext("FROM") or "").strip(), (cable.findtext("TO") or "").strip()]
+        ports = [node.text or "" for node in cable.findall("PORT")]
+        if len(ports) < 2:
+            continue
+        for near, far in ((0, 1), (1, 0)):
+            if kind(refs[far]) not in switch_types:
+                continue
+            if kind(refs[near]) in host_types:
+                host_vlans[access_vlan(devices[refs[far]], ports[far])] += 1
+            elif kind(refs[near]) == "Router":
+                router_ends.append((devices[refs[far]], ports[far]))
+
+    if not host_vlans or not router_ends:
+        return []
+    wanted = host_vlans.most_common(1)[0][0]
+
+    notes: list[str] = []
+    for switch, port in router_ends:
+        if access_vlan(switch, port) == wanted:
+            continue
+        config = switch.find("./ENGINE/RUNNINGCONFIG")
+        if config is None:
+            continue
+        _set_config_block(
+            config,
+            f"interface {port}",
+            [" switchport mode access", f" switchport access vlan {wanted}"],
+        )
+        notes.append(
+            f"{switch.findtext('./ENGINE/NAME') or ''}:{port} moved to VLAN {wanted} (the hosts' VLAN)"
+        )
+    return notes
 
 
 def _align_router_gateway(root: ET.Element) -> list[str]:
@@ -6377,6 +6457,7 @@ def generate_from_prompt(
     port_repairs = _repair_invalid_link_ports(root)
     mac_repairs = _assign_unique_macs(root)
     trunk_notes = _trunk_uplinks_in_file(root)
+    vlan_notes = _align_router_access_vlan(root)
     gateway_repairs = _align_router_gateway(root)
     _stamp_target_version(root)
     unexpected_workspace_issues = _unexpected_workspace_issues(donor_root, root)
