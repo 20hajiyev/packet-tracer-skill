@@ -172,3 +172,70 @@ def test_a_generation_request_produces_no_edit_operations() -> None:
     for prompt in ("1 router 1 switch 3 pc qur", "3 dene switch ve 6 komputer qur"):
         plan = parse_intent(prompt)
         assert not plan.edit_operations
+
+
+def _config_device(lines: list[str]):
+    import xml.etree.ElementTree as ET
+
+    device = ET.Element("DEVICE")
+    engine = ET.SubElement(device, "ENGINE")
+    config = ET.SubElement(engine, "RUNNINGCONFIG")
+    for line in lines:
+        ET.SubElement(config, "LINE").text = line
+    return device, config
+
+
+def test_arbitrary_cli_is_merged_where_ios_reads_it() -> None:
+    """The skill could emit 65 kinds of operation and no command of its own.
+
+    `apply_router_config` replaces a device's whole configuration, which is what
+    the blueprint path wants and exactly wrong for "also run these commands".
+    """
+    from pkt_editor import apply_cli_lines
+
+    device, config = _config_device(
+        ["hostname R1", "!", "interface GigabitEthernet0/0/0",
+         " ip address 10.0.0.1 255.255.255.0", "!", "line vty 0 4", " login", "end"]
+    )
+
+    apply_cli_lines(device, [
+        "ip dhcp pool OFFICE",
+        "  network 192.168.9.0 255.255.255.0",
+        "interface GigabitEthernet0/0/0",
+        "  description uplink to core",
+    ])
+
+    lines = [node.text for node in config.findall("LINE")]
+    assert lines[-1] == "end"
+    # Global configuration goes ahead of the interfaces, where Cisco keeps it.
+    assert lines.index("ip dhcp pool OFFICE") < lines.index("interface GigabitEthernet0/0/0")
+    # Its body stays indented under it; a pool whose body is flat is not a pool.
+    assert lines[lines.index("ip dhcp pool OFFICE") + 1] == " network 192.168.9.0 255.255.255.0"
+    # The interface keeps the address it already had.
+    assert " ip address 10.0.0.1 255.255.255.0" in lines
+    assert " description uplink to core" in lines
+    assert lines.count("interface GigabitEthernet0/0/0") == 1
+
+
+def test_cli_never_lands_after_end() -> None:
+    """Everything after `end` is ignored, which is where appending would put it."""
+    from pkt_editor import apply_cli_lines
+
+    device, config = _config_device(["hostname SW1", "end"])
+
+    apply_cli_lines(device, ["vlan 30", " name Guest"])
+
+    lines = [node.text for node in config.findall("LINE")]
+    assert lines == ["hostname SW1", "vlan 30", " name Guest", "end"]
+
+
+def test_repeating_the_same_command_does_not_duplicate_it() -> None:
+    from pkt_editor import apply_cli_lines
+
+    device, config = _config_device(["hostname R1", "end"])
+
+    apply_cli_lines(device, ["ip routing"])
+    apply_cli_lines(device, ["ip routing"])
+
+    lines = [node.text for node in config.findall("LINE")]
+    assert lines.count("ip routing") == 1

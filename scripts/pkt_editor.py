@@ -745,6 +745,45 @@ def _append_config_block(parent: ET.Element | None, header: str, body: list[str]
     _replace_lines(parent, _splice_into_config(existing, block))
 
 
+def apply_cli_lines(device: ET.Element, lines: list[str]) -> None:
+    """Merge verbatim IOS configuration into a device that already has some.
+
+    `apply_router_config` replaces a device's whole configuration, which is what
+    the blueprint path wants and exactly wrong for "also run these commands".
+    This merges instead, and puts each piece where the parser will read it:
+    interface bodies go into the block for that interface, and everything else
+    is spliced ahead of the first interface, where Cisco's own labs keep global
+    configuration. Appending to the end would put it after `end`, where it is
+    ignored.
+
+    Indentation is normalised, since a user typing commands rarely reproduces
+    the single leading space a saved config uses.
+    """
+    # Any unindented line can open a block, not just `interface`. Treating only
+    # interfaces as headers flattened `ip dhcp pool OFFICE` and its two indented
+    # lines into three globals, and a pool whose body is not indented under it
+    # is not a pool.
+    units: list[tuple[str, list[str]]] = []
+    for raw in lines:
+        text = str(raw).rstrip()
+        if not text.strip():
+            continue
+        stripped = text.strip()
+        if text.startswith((" ", "	")) and units:
+            units[-1][1].append(f" {stripped}")
+            continue
+        units.append((stripped, []))
+
+    for target in _config_targets(device):
+        for header, body in units:
+            if header.startswith("interface "):
+                # Merge into the block the device already has, so a description
+                # added here does not displace the address already on it.
+                _set_config_block(target, header, body)
+            else:
+                _append_unique_config_lines(target, [header, *body])
+
+
 def _device_index_map(root: ET.Element) -> dict[str, int]:
     return {device.findtext("./ENGINE/NAME", default=""): index for index, device in enumerate(root.findall(".//DEVICES/DEVICE"))}
 
@@ -2152,6 +2191,11 @@ def apply_plan_operations(root: ET.Element, plan: IntentPlan) -> ET.Element:
             continue
         if operation["op"] == "remove_link":
             _remove_link(updated, str(operation["a"]["dev"]), str(operation["b"]["dev"]))
+            continue
+        if operation["op"] == "apply_cli":
+            device = _find_device(updated, str(operation["device"]))
+            if device is not None:
+                apply_cli_lines(device, [str(line) for line in operation.get("lines", [])])
             continue
         if operation["op"] == "set_link":
             _ensure_link(
