@@ -1673,3 +1673,26 @@ creates PC2* rather than assuming. Ruled out already:
 Instrumenting the assignment (wrap the candidate functions and print what is
 chosen for `PC2`) is the cheap way in; the same technique found the write path
 for the duplicated-port bug in one run.
+
+Hosts on different access switches cannot reach each other. Within one switch
+they can: in the 22-switch lab PC1 -> PC22 (both on SW2) is 0% loss, while
+PC1 -> PC3 (SW2 to SW4, across the core) is 100%, on every attempt and long
+after STP would have converged.
+
+Ruled out by measurement, so the next attempt should not revisit these:
+
+* the cable. Crossover and straight-through fail identically, and a control run
+  on the pre-crossover build failed the same way;
+* missing links. All 62 planned links are in the file and every one is up;
+* the access VLAN. All 40 hosts sit in one segment now;
+* the uplinks being access ports. All 42 switch-to-switch port ends carry
+  `switchport mode trunk` and `switchport trunk allowed vlan all`, written from
+  the finished file so the port names are the real ones;
+* duplicate MACs and duplicate addresses -- none of either.
+
+Worth trying next: read the switch MAC address table live, or step the
+simulation on a *small* multi-switch lab where the event list is not swamped,
+since the 64-device one reports zero frames. A two-switch lab with hosts on
+both switches is the smallest case that should reproduce it, and none of the
+corpus cases currently place hosts on more than one switch -- which is why this
+went unnoticed. Adding that case to the corpus is probably the first move.

@@ -2195,6 +2195,7 @@ def _write_pkt_root(root: ET.Element, pkt_path: Path, xml_path: Path | None = No
     # route, and the fix never ran for it.
     _repair_invalid_link_ports(root)
     _assign_unique_macs(root)
+    _trunk_uplinks_in_file(root)
     _align_router_gateway(root)
     prune_unused_images(root)
     xml_bytes = serialize_pkt_xml(root)
@@ -2525,7 +2526,14 @@ def _synthesize_links(plan: IntentPlan, devices: list[dict[str, object]]) -> lis
                 {
                     "a": {"dev": core_switch["name"], "port": _switch_uplink_port(core_switch, index)},
                     "b": {"dev": switch["name"], "port": _switch_uplink_port(switch, 1)},
-                    "media": uplink_media,
+                    # Switch to switch is a crossover run; host and router links
+                    # stay straight-through. Every cable in a generated lab used
+                    # to be straight-through, which is not how any of these labs
+                    # would be built and gave a 22-switch topology 62 identical
+                    # cables. Verified in Packet Tracer: the crossover link comes
+                    # up, and a control run confirmed the connectivity failure
+                    # that showed up alongside it was never the cable's doing.
+                    "media": "crossover",
                 }
             )
 
@@ -3353,6 +3361,40 @@ def _donor_service_segment(
     return None, ip.rsplit(".", 1)[0], ip
 
 
+def _trunk_switch_uplinks(
+    plan: IntentPlan, devices: list[dict[str, object]], links: list[dict[str, object]]
+) -> None:
+    """Make every switch-to-switch link a trunk.
+
+    Uplinks were left as access ports, carrying whatever VLAN the donor's port
+    happened to be in. In a 22-switch lab that meant `SW2:Fa0/1 <-> SW1:Fa0/1`
+    both sat on `access vlan 5` while `SW1:Fa0/24 <-> SW4:Gi0/1` sat on the
+    default, so a VLAN 1 host on SW2 had no way off its own switch. Hosts on one
+    switch could reach each other and nothing beyond it.
+
+    A trunk carries every VLAN and removes the whole class of problem, which is
+    also what anyone building this by hand would do.
+    """
+    kinds = {str(device["name"]): _device_kind(device) for device in devices}
+    switch_kinds = {"Switch", "MultiLayerSwitch"}
+    for link in links:
+        left, right = link["a"], link["b"]
+        if kinds.get(str(left["dev"])) not in switch_kinds:
+            continue
+        if kinds.get(str(right["dev"])) not in switch_kinds:
+            continue
+        for end in (left, right):
+            _append_unique_op(
+                plan.switch_ops,
+                {
+                    "op": "set_trunk_port",
+                    "device": str(end["dev"]),
+                    "port": str(end["port"]),
+                    "allowed": ["all"],
+                },
+            )
+
+
 def _host_and_switch_ends(
     link: dict[str, object], host_names: set[str], devices: list[dict[str, object]]
 ) -> tuple[dict[str, object], dict[str, object]] | None:
@@ -3453,6 +3495,10 @@ def _unify_host_segment(
     A prompt that asked for its own VLANs keeps that layout; its hosts are
     addressed per VLAN instead, which is the same principle applied per segment.
     """
+    # Trunks are needed whichever way the hosts are addressed, so this runs
+    # before the segmented path takes its own route out.
+    _trunk_switch_uplinks(plan, devices, links)
+
     if plan.host_vlan_assignment or plan.department_groups or plan.vlan_ids:
         _address_hosts_per_vlan(plan, devices, links)
         return
@@ -4182,6 +4228,51 @@ def _resolve_port_conflicts(
         label = f"set_link {left_name} <-> {right_name}"
         operation["a"]["port"] = free_port(left_name, str(operation["a"]["port"]), label)
         operation["b"]["port"] = free_port(right_name, str(operation["b"]["port"]), label)
+
+
+def _trunk_uplinks_in_file(root: ET.Element) -> list[str]:
+    """Trunk every switch-to-switch link, using the ports the file really has.
+
+    The planner emits these too, but it names ports before reconciliation moves
+    the cables, so its trunk lines can land on interfaces that end up carrying
+    nothing. In a 22-switch lab that left two donor-inherited uplinks as access
+    ports on VLAN 5 while the rest were trunks -- and a VLAN 1 host behind one
+    of them could not leave its own switch.
+
+    The assembled lab is where the cabling is final, so the trunks are written
+    from it. Same reasoning as the port repair beside it.
+    """
+    devices = {
+        (device.findtext("./ENGINE/SAVE_REF_ID") or ""): device
+        for device in root.findall(".//DEVICES/DEVICE")
+    }
+    switch_kinds = {"Switch", "MultiLayerSwitch"}
+    trunked: list[str] = []
+    for link in root.findall(".//LINKS/LINK"):
+        cable = link.find("./CABLE")
+        if cable is None:
+            continue
+        refs = [(cable.findtext("FROM") or "").strip(), (cable.findtext("TO") or "").strip()]
+        ports = [node.text or "" for node in cable.findall("PORT")]
+        if len(ports) < 2:
+            continue
+        if any(
+            (devices.get(ref) is None)
+            or ((devices[ref].findtext("./ENGINE/TYPE") or "") not in switch_kinds)
+            for ref in refs
+        ):
+            continue
+        for ref, port in zip(refs, ports):
+            config = devices[ref].find("./ENGINE/RUNNINGCONFIG")
+            if config is None or not port:
+                continue
+            _set_config_block(
+                config,
+                f"interface {port}",
+                [" switchport mode trunk", " switchport trunk allowed vlan all"],
+            )
+            trunked.append(f"{devices[ref].findtext('./ENGINE/NAME') or ref}:{port}")
+    return trunked
 
 
 def _align_router_gateway(root: ET.Element) -> list[str]:
@@ -6285,6 +6376,7 @@ def generate_from_prompt(
     _sanitize_runtime_sections(root)
     port_repairs = _repair_invalid_link_ports(root)
     mac_repairs = _assign_unique_macs(root)
+    trunk_notes = _trunk_uplinks_in_file(root)
     gateway_repairs = _align_router_gateway(root)
     _stamp_target_version(root)
     unexpected_workspace_issues = _unexpected_workspace_issues(donor_root, root)
