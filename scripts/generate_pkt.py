@@ -1659,6 +1659,12 @@ def _switch_uplink_port(device: dict[str, object], index: int) -> str:
     return f"FastEthernet0/{max(1, 24 - (index - available - 1))}"
 
 
+# The widest access switch the generator uses has 24 copper ports. Past that
+# there is nothing to skip to, so allocation stops searching and leaves the
+# collision for the reconciliation pass to report rather than looping.
+MAX_SWITCH_ACCESS_PORT = 24
+
+
 def _switch_access_port(index: int) -> str:
     return f"FastEthernet0/{index}"
 
@@ -2516,16 +2522,33 @@ def _synthesize_links(plan: IntentPlan, devices: list[dict[str, object]]) -> lis
                 }
             )
 
+    # Uplinks are wired above and can land on a low access port when the switch
+    # model has no gigabit interfaces. Host allocation used to start at
+    # FastEthernet0/1 regardless, so the first host collided with the uplink;
+    # reconciliation then moved that host onto the *next* port, which the second
+    # host already held. A 22-switch lab came out with nineteen interfaces
+    # carrying two cables each. Skipping what is already wired avoids creating
+    # the collision in the first place.
+    occupied: dict[str, set[str]] = {}
+    for link in links:
+        for end in ("a", "b"):
+            occupied.setdefault(str(link[end]["dev"]), set()).add(str(link[end]["port"]))
+
     host_port_index: dict[str, int] = {str(device["name"]): 1 for device in access_switches}
     for index, host in enumerate(hosts):
         target_switch = access_switches[index % len(access_switches)]
         switch_name = str(target_switch["name"])
-        access_index = host_port_index[switch_name]
+        taken = occupied.setdefault(switch_name, set())
+        port = _switch_access_port(host_port_index[switch_name])
+        while port in taken and host_port_index[switch_name] <= MAX_SWITCH_ACCESS_PORT:
+            host_port_index[switch_name] += 1
+            port = _switch_access_port(host_port_index[switch_name])
         host_port_index[switch_name] += 1
+        taken.add(port)
         links.append(
             {
                 "a": {"dev": host["name"], "port": _host_port(host)},
-                "b": {"dev": switch_name, "port": _switch_access_port(access_index)},
+                "b": {"dev": switch_name, "port": port},
                 "media": "straight-through",
             }
         )
@@ -4696,6 +4719,25 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
         rename_map.get(str(device.findtext("./ENGINE/NAME") or ""), str(device.findtext("./ENGINE/NAME") or "")): device
         for device in donor_root.findall(".//DEVICES/DEVICE")
     }
+
+    # A lab larger than its donor is filled by cloning, and a clone has no donor
+    # device of its own name. Port reconciliation looked itself up in this map,
+    # found nothing, and returned the colliding port unchanged -- so every cloned
+    # switch kept two cables on one interface. A 22-switch lab came out with
+    # nineteen such interfaces. A clone carries its prototype's hardware, so any
+    # donor device of the same type answers "does this port exist" correctly.
+    donor_by_type: dict[str, ET.Element] = {}
+    for device in donor_root.findall(".//DEVICES/DEVICE"):
+        kind = (device.findtext("./ENGINE/TYPE") or "").strip()
+        if kind:
+            donor_by_type.setdefault(kind, device)
+    for planned in blueprint.get("devices", []):
+        name = str(planned.get("name") or "")
+        if not name or name in donor_device_by_target:
+            continue
+        prototype = donor_by_type.get(str(planned.get("type") or ""))
+        if prototype is not None:
+            donor_device_by_target[name] = prototype
 
     def claim_port(device_name: str, port_name: str) -> str:
         """Return `port_name` if free, otherwise the next free port that exists.
