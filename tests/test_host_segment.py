@@ -209,3 +209,83 @@ def test_an_absent_interface_block_is_still_written() -> None:
         "interface FastEthernet0/9",
         " switchport access vlan 20",
     ]
+
+
+def test_a_segmented_lab_addresses_each_vlan_in_its_own_subnet() -> None:
+    """VLAN labs emitted VLANs and access ports but no addressing at all.
+
+    Their hosts kept the donor's addresses, so two of four PCs shared
+    192.168.20.10 on ports the generator had just moved to VLAN 10.
+    """
+    from generate_pkt import _address_hosts_per_vlan
+
+    plan = parse_intent("1 router 1 switch 4 komputer vlan 10 ve vlan 20 qur")
+    devices = [
+        {"name": "SW1", "type": "Switch"},
+        *({"name": f"PC{index}", "type": "PC"} for index in range(1, 5)),
+    ]
+    links = [
+        {
+            "a": {"dev": f"PC{index}", "port": "FastEthernet0"},
+            "b": {"dev": "SW1", "port": f"FastEthernet0/{index}"},
+        }
+        for index in range(1, 5)
+    ]
+    for index in range(1, 5):
+        plan.switch_ops.append(
+            {
+                "op": "set_access_port",
+                "device": "SW1",
+                "port": f"FastEthernet0/{index}",
+                "vlan": 10 if index <= 2 else 20,
+            }
+        )
+
+    _address_hosts_per_vlan(plan, devices, links)
+
+    addressed = {
+        op["device"]: (op["ip"], op["gw"])
+        for op in plan.end_device_ops
+        if op["op"] == "set_host_ip"
+    }
+    assert addressed["PC1"] == ("192.168.10.10", "192.168.10.1")
+    assert addressed["PC2"] == ("192.168.10.11", "192.168.10.1")
+    assert addressed["PC3"] == ("192.168.20.10", "192.168.20.1")
+    assert len({ip for ip, _ in addressed.values()}) == 4
+
+
+def test_a_prompt_asking_for_dhcp_is_left_to_its_pool() -> None:
+    """A static address would race the lease the prompt asked for."""
+    from generate_pkt import _address_hosts_per_vlan
+
+    plan = parse_intent("1 router 1 switch 4 komputer vlan 10 ve vlan 20 qur")
+    plan.router_ops.append({"op": "set_router_dhcp_pool", "device": "R1"})
+    plan.switch_ops.append(
+        {"op": "set_access_port", "device": "SW1", "port": "FastEthernet0/1", "vlan": 10}
+    )
+
+    _address_hosts_per_vlan(
+        plan,
+        [{"name": "PC1", "type": "PC"}, {"name": "SW1", "type": "Switch"}],
+        [{"a": {"dev": "PC1", "port": "FastEthernet0"}, "b": {"dev": "SW1", "port": "FastEthernet0/1"}}],
+    )
+
+    assert not [op for op in plan.end_device_ops if op["op"] == "set_host_ip"]
+
+
+def test_hosts_are_split_evenly_when_the_prompt_only_lists_vlans() -> None:
+    """`4 komputer vlan 10 ve vlan 20` is a list, not "4 hosts in VLAN 10".
+
+    Read literally it gave {10: 4}, which suppressed the even split and left
+    VLAN 20 with no hosts at all.
+    """
+    plan = parse_intent("1 router 1 switch 4 komputer vlan 10 ve vlan 20 qur")
+
+    assert plan.host_vlan_assignment == {10: 2, 20: 2}
+
+
+def test_a_genuine_per_vlan_count_still_parses() -> None:
+    from intent_parser import _extract_host_vlan_assignment
+
+    assert _extract_host_vlan_assignment("2 komputer vlan 10 ve 3 komputer vlan 20") == {10: 2, 20: 3}
+    assert _extract_host_vlan_assignment("4 komputer vlan 10 qur") == {10: 4}

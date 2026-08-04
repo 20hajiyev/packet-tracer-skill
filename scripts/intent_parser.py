@@ -588,10 +588,24 @@ def _extract_vlan_ids(normalized_prompt: str) -> list[int]:
 
 
 def _extract_host_vlan_assignment(normalized_prompt: str) -> dict[int, int]:
+    """Per-VLAN host counts, but only where the prompt really states one.
+
+    `4 komputer vlan 10 ve vlan 20 qur` reads as a host count next to a VLAN
+    *list*, not as "4 hosts in VLAN 10". Taken literally it produced
+    {10: 4}, which then suppressed the even split and left VLAN 20 empty.
+
+    A trailing `ve vlan 20` therefore disqualifies the match, while
+    `2 komputer vlan 10 ve 3 komputer vlan 20` -- a genuine pair of
+    assignments -- still parses, because there the separator is followed by a
+    count rather than by another VLAN.
+    """
+    vlan_list_follows = r"(?!\s*(?:,|/|ve|and)\s*vlan\s*\d)"
     assignments: dict[int, int] = {}
     patterns = [
         re.compile(r"\bvlan\s+(\d+)\s*(?:da|de|a|e)?\s+(\d+)\s+(?:pc|komputer|computer)\b"),
-        re.compile(r"\b(\d+)\s+(?:pc|komputer|computer)\s+vlan(?:da|de|a|e)?\s+(\d+)\b"),
+        re.compile(
+            r"\b(\d+)\s+(?:pc|komputer|computer)\s+vlan(?:da|de|a|e)?\s+(\d+)\b" + vlan_list_follows
+        ),
     ]
     for pattern_index, pattern in enumerate(patterns):
         for first, second in pattern.findall(normalized_prompt):

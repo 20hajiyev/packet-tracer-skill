@@ -3278,6 +3278,57 @@ def _donor_service_segment(donor_root) -> tuple[int, str, str] | None:
     return None
 
 
+def _address_hosts_per_vlan(
+    plan: IntentPlan, devices: list[dict[str, object]], links: list[dict[str, object]]
+) -> None:
+    """Give each VLAN's hosts an address inside that VLAN's subnet.
+
+    A segmented lab emitted VLANs and access ports but no addressing at all, so
+    its hosts kept whatever the donor's hosts had: two of four PCs held the same
+    192.168.20.10, on ports the generator had just moved to VLAN 10. The subnet
+    follows the same 192.168.<vlan>.0/24 convention the DHCP pools already use,
+    so a host and its gateway agree by construction.
+    """
+    if bool(plan.topology_requirements.get("needs_dhcp_pool")) or any(
+        op.get("op") in {"set_router_dhcp_pool", "set_server_dhcp_pool"}
+        for op in list(plan.router_ops) + list(plan.server_ops)
+    ):
+        return
+
+    host_names = {
+        str(device["name"]) for device in devices if _is_host_device(device)
+    }
+    port_to_host = {
+        (str(link["b"]["dev"]), str(link["b"]["port"])): str(link["a"]["dev"])
+        for link in links
+        if str(link["a"]["dev"]) in host_names
+    }
+
+    used: dict[int, int] = {}
+    for operation in plan.switch_ops:
+        if operation.get("op") != "set_access_port":
+            continue
+        host = port_to_host.get((str(operation["device"]), str(operation["port"])))
+        if host is None:
+            continue
+        vlan_id = int(operation["vlan"])
+        if not 1 <= vlan_id <= 254:
+            continue
+        offset = used.get(vlan_id, 10)
+        used[vlan_id] = offset + 1
+        _append_unique_op(
+            plan.end_device_ops,
+            {
+                "op": "set_host_ip",
+                "device": host,
+                "ip": f"192.168.{vlan_id}.{offset}",
+                "mask": "255.255.255.0",
+                "gw": f"192.168.{vlan_id}.1",
+                "ip_mode": "static",
+            },
+        )
+
+
 def _unify_host_segment(
     plan: IntentPlan,
     devices: list[dict[str, object]],
@@ -3299,9 +3350,11 @@ def _unify_host_segment(
     that only routes 192.168.20.0/24. Both now come from the same place: the one
     VLAN interface the donor has up. Confirmed live, PC1 -> 192.168.20.100.
 
-    Skipped when the prompt asked for its own VLANs, whose layout is the point.
+    A prompt that asked for its own VLANs keeps that layout; its hosts are
+    addressed per VLAN instead, which is the same principle applied per segment.
     """
     if plan.host_vlan_assignment or plan.department_groups or plan.vlan_ids:
+        _address_hosts_per_vlan(plan, devices, links)
         return
     hosts = [device for device in devices if _is_host_device(device)]
     if not hosts or donor_root is None:
