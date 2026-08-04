@@ -4492,6 +4492,40 @@ def _assign_unique_macs(root: ET.Element) -> list[str]:
             if bia is not None:
                 bia.text = candidate
             renamed.append(f"{name}: {address} -> {candidate}")
+
+    # A switch also carries a device-level address, `BUILD_IN_ADDR`, and every
+    # clone inherited the prototype's. Spanning tree builds its bridge ID from
+    # it, so SW2, SW3 and SW4 all announced themselves as bridge
+    # 0001.63C6.7232: to the core they were one switch, and only one of them
+    # could reach it. The port addresses being unique was not enough, which is
+    # why this looked like a trunking problem and then like a size threshold.
+    for device in root.findall(".//DEVICES/DEVICE"):
+        name = device.findtext("./ENGINE/NAME") or ""
+        for node in device.iter("BUILD_IN_ADDR"):
+            address = (node.text or "").strip()
+            if not address:
+                continue
+            if address not in seen:
+                seen.add(address)
+                continue
+            groups = address.split(".")
+            if len(groups) != 3:
+                continue
+            head = groups[0]
+            try:
+                low = int(groups[1] + groups[2], 16)
+            except ValueError:
+                continue
+            for step in range(1, 1 << 20):
+                value = (low + step) & 0xFFFFFFFF
+                candidate = f"{head}.{value >> 16:04X}.{value & 0xFFFF:04X}"
+                if candidate not in seen:
+                    break
+            else:  # pragma: no cover - a million collisions is not reachable
+                continue
+            seen.add(candidate)
+            node.text = candidate
+            renamed.append(f"{name}: bridge address {address} -> {candidate}")
     return renamed
 
 

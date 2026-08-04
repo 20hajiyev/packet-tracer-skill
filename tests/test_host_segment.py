@@ -440,3 +440,48 @@ def test_global_configuration_lands_ahead_of_the_interfaces() -> None:
     spliced = _splice_into_config(existing, ["ip dhcp pool LAN"])
 
     assert spliced.index("ip dhcp pool LAN") < spliced.index("interface GigabitEthernet0/0/0")
+
+
+def test_cloned_switches_get_their_own_bridge_address() -> None:
+    """A clone inherits `BUILD_IN_ADDR`, and spanning tree is built on it.
+
+    Port MACs were already made unique, which was not enough: every cloned
+    switch still announced itself as bridge 0001.63C6.7232, so to the core they
+    were one switch and only one of them could reach it. Measured on an
+    8-switch lab, PC1 behind SW2 reached the gateway and PC2 behind SW3 did not,
+    with identical trunk configuration on both uplinks.
+
+    That symptom was read first as broken cross-switch traffic, then as a size
+    threshold -- 3 switches worked, 8 and 22 did not -- because the sizes drew
+    different donors. Neither reading was right.
+    """
+    from generate_pkt import _assign_unique_macs
+
+    root = ET.Element("PACKETTRACER5")
+    devices = ET.SubElement(root, "DEVICES")
+    for name in ("SW2", "SW3", "SW4"):
+        device = ET.SubElement(devices, "DEVICE")
+        engine = ET.SubElement(device, "ENGINE")
+        ET.SubElement(engine, "NAME").text = name
+        ET.SubElement(engine, "BUILD_IN_ADDR").text = "0001.63C6.7232"
+
+    _assign_unique_macs(root)
+
+    addresses = [node.text for node in root.iter("BUILD_IN_ADDR")]
+    assert len(set(addresses)) == 3, addresses
+    assert addresses[0] == "0001.63C6.7232"  # the first keeps what it had
+    assert all(address.startswith("0001.") for address in addresses)
+
+
+def test_a_bridge_address_that_is_already_unique_is_left_alone() -> None:
+    from generate_pkt import _assign_unique_macs
+
+    root = ET.Element("PACKETTRACER5")
+    devices = ET.SubElement(root, "DEVICES")
+    for name, mac in (("SW1", "0060.4720.6840"), ("SW2", "0001.63C6.7232")):
+        device = ET.SubElement(devices, "DEVICE")
+        engine = ET.SubElement(device, "ENGINE")
+        ET.SubElement(engine, "NAME").text = name
+        ET.SubElement(engine, "BUILD_IN_ADDR").text = mac
+
+    assert _assign_unique_macs(root) == []
