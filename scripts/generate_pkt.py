@@ -2189,6 +2189,12 @@ def prune_unused_images(root: ET.Element) -> int:
 
 
 def _write_pkt_root(root: ET.Element, pkt_path: Path, xml_path: Path | None = None) -> None:
+    # Both repairs guard the file, so they belong at the point every path
+    # writes one. Putting them on the donor-prune path alone left `router_dhcp`
+    # shipping SW1 FastEthernet0/2 on two cables -- that prompt takes the other
+    # route, and the fix never ran for it.
+    _repair_invalid_link_ports(root)
+    _assign_unique_macs(root)
     prune_unused_images(root)
     xml_bytes = serialize_pkt_xml(root)
     pkt_path.parent.mkdir(parents=True, exist_ok=True)
@@ -4224,10 +4230,20 @@ def _repair_invalid_link_ports(root: ET.Element) -> list[str]:
             else:
                 reason = "interface does not exist"
             name = device.findtext("./ENGINE/NAME") or ref
+            candidates = donor_interface_names(device)
+            if not candidates:
+                # Some devices carry no running config to read interfaces from,
+                # and a repair with nothing to offer leaves the fault in place:
+                # `router_dhcp` still shipped SW1 FastEthernet0/2 on two cables.
+                # Probing the usual names costs nothing and port_exists is the
+                # authority on which of them the device really has.
+                candidates = [f"FastEthernet0/{index}" for index in range(1, 25)]
+                candidates += [f"GigabitEthernet0/{index}" for index in range(1, 5)]
+                candidates += [f"GigabitEthernet0/0/{index}" for index in range(0, 4)]
             replacement = next(
                 (
                     candidate
-                    for candidate in donor_interface_names(device)
+                    for candidate in candidates
                     if (ref, candidate) not in used and port_exists(device, candidate)
                 ),
                 None,
