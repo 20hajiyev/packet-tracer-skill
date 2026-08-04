@@ -1648,3 +1648,28 @@ never produces, so a donor holding 112 of them still reported "no spare device".
 Generating against a 208-device library leaves the donor's own devices in place:
 a one-router prompt produced twenty-five routers and a file Packet Tracer
 refused. Pruning copes with a small donor and not with a large one.
+
+Cloned hosts can come out wireless. Generating `1 router 1 switch 3 komputer`
+against `01 Networking/Meraki/meraki_SA_firewall.pkt` gives PC1 an
+`eCopperFastEthernet` interface while PC2 and PC3 get `eHostWirelessN` and no
+Ethernet at all — yet all three are cabled to the switch on `FastEthernet0`.
+One root cause behind several symptoms: an interface name the device does not
+have, a port repair with nothing to offer, and APIPA addresses (169.254.x.x) on
+hosts meant to be wired.
+
+Four attempts to fix it had no effect on the output and were reverted rather
+than kept, so the next attempt should start by *measuring which code path
+creates PC2* rather than assuming. Ruled out already:
+
+* `build_device_library` in `pkt_transformer.py` — sorting its buckets
+  wired-first changed nothing; the donor-prune path does not use it.
+* `spare_candidates_by_type` / `_spare_pool_for_type` — filtering to wired
+  spares changed nothing.
+* the standalone-target clone fallback in `_build_donor_prune_plan_for_donor`.
+* the switch-group member handout (`donor_members_by_type`).
+* `GENERIC_COPPER_HOST_TYPES` — used only by template synthesis and link-type
+  mapping, not by donor selection.
+
+Instrumenting the assignment (wrap the candidate functions and print what is
+chosen for `PC2`) is the cheap way in; the same technique found the write path
+for the duplicated-port bug in one run.
