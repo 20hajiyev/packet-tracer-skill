@@ -1830,5 +1830,24 @@ run those two prompts with promotion disabled and the grouping enabled. If they
 pass, the interaction is confirmed and the fix belongs in the promotion, not in
 grouping.
 
+A third round localised it exactly, and this is the useful part:
+
+* `_collect_donor_groups` has two paths -- prefix-based grouping, and a
+  link-based fallback used when the first finds nothing.
+* Changing only the *prefix* path is harmless and does not unlock the VoIP
+  donor: its device names share no prefix, so it falls through.
+* Changing the *fallback* path unlocks the analog phone and is what regresses
+  `hosts_across_switches`, `campus_star_vlan` and the promoted 3-switch case.
+* With the fallback changed and the Layer-3 promotion disabled, all of them
+  generate. So the two features compete for the same device: the donor's
+  multilayer switch is claimed as a switch group while the promotion wants it
+  as the core.
+
+Requiring two multilayer switches in the promotion gate fixes the three
+promoted cases but not the analog phone, whose donor has one. So the real fix
+is for a device to be usable as a group *or* as the core without the two
+choices being made independently -- the same "two models of one concept" that
+has been behind most defects here.
+
 Until then the analog phone stays out of reach, and the reason is recorded
 rather than rediscovered.
