@@ -238,7 +238,12 @@ TYPE_NORMALIZATION = {
     "wirelessrouter": "WirelessRouter",
     "wirelessrouternewgeneration": "WirelessRouter",
     "homegateway": "WirelessRouter",
-    "wirelesslancontroller": "LightWeightAccessPoint",
+    # A controller is not an access point: it manages them, carries gigabit
+    # uplinks rather than a radio, and a prompt asking for one wants that
+    # device. Folding it here meant the planner's `WirelessLanController` kind
+    # matched nothing in any donor, and `1 wlc 2 access point qur` was refused
+    # by the very lab that carries a WLC.
+    "wirelesslancontroller": "WirelessLanController",
     "lightweightaccesspoint": "LightWeightAccessPoint",
     "accesspoint": "LightWeightAccessPoint",
     "pda": "Tablet",

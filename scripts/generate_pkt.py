@@ -5182,6 +5182,30 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
         device_type = _device_kind(target)
         available_pool = _spare_pool_for_type(spare_candidates_by_type, device_type)
         if not available_pool:
+            # A device outside every switch group is still a device. The spare
+            # pool is built from switch-group members, so a donor whose WLC or
+            # access point hangs off no switch offered nothing at all -- and
+            # `1 wlc 2 access point qur` was refused by the very donor chosen
+            # for carrying a WLC. Adopt an unused one directly.
+            adopted = next(
+                (
+                    str(device["name"])
+                    for device in donor_devices
+                    if _device_kind(device) == device_type
+                    and str(device["name"]) not in kept_devices
+                    and str(device["name"]) not in parked_devices
+                ),
+                "",
+            )
+            if adopted:
+                keep_name(
+                    adopted,
+                    str(target["name"]),
+                    int(target.get("x", 0)),
+                    int(target.get("y", 0)),
+                )
+                continue
+
             # Same shortfall as inside a switch group, on the path for devices
             # that hang off no switch. Clone one the donor already has rather
             # than refusing: "1 wireless router 2 laptop" failed here because the

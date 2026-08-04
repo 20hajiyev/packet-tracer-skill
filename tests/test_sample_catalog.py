@@ -69,9 +69,21 @@ def test_selector_keeps_external_reference_out_of_prototype_choice() -> None:
 def test_normalize_device_type_covers_home_gateway_and_iot_runtime_types() -> None:
     assert sample_catalog_module.normalize_device_type("WirelessRouterNewGeneration") == "WirelessRouter"
     assert sample_catalog_module.normalize_device_type("HomeGateway") == "WirelessRouter"
-    assert sample_catalog_module.normalize_device_type("WirelessLanController") == "LightWeightAccessPoint"
     assert sample_catalog_module.normalize_device_type("MCUComponent") == "IoT"
     assert sample_catalog_module.normalize_device_type("MultiLayerSwitch") == "MultiLayerSwitch"
+
+
+def test_a_wireless_controller_is_not_an_access_point() -> None:
+    """This assertion used to say the opposite, and it cost a whole device kind.
+
+    A controller manages access points; it carries gigabit uplinks rather than a
+    radio, and a prompt asking for one wants that device. Folding it meant the
+    planner's `WirelessLanController` kind matched nothing in any donor, so
+    `1 wlc 2 access point qur` was refused by the very lab that carries a WLC.
+    """
+    assert sample_catalog_module.normalize_device_type("WirelessLanController") == "WirelessLanController"
+    assert sample_catalog_module.normalize_device_type("LightWeightAccessPoint") == "LightWeightAccessPoint"
+    assert sample_catalog_module.normalize_device_type("AccessPoint") == "LightWeightAccessPoint"
 
 
 def test_infer_device_families_covers_home_gateway_wlc_and_iot_components() -> None:

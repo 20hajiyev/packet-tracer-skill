@@ -535,3 +535,31 @@ def test_every_named_vlan_is_captured_even_when_the_keyword_repeats() -> None:
     # A bare space separates a list too, which the stricter pattern first lost.
     assert _extract_vlan_ids("vlanlarda 10 20") == [10, 20]
     assert _extract_vlan_ids("3 vlan qur") == []
+
+
+def test_a_wireless_controller_can_be_asked_for() -> None:
+    """`wlc` had no alias, and the kind it needed folded into access point.
+
+    Both halves had to change: the alias table gained the words, and
+    `normalize_device_type` stopped calling a controller an access point.
+    """
+    from intent_parser import parse_intent
+
+    plan = parse_intent("1 wlc 2 access point qur")
+
+    assert plan.device_requirements["WirelessLanController"] == 1
+    assert plan.device_requirements["LightWeightAccessPoint"] == 2
+
+
+def test_a_pda_is_asked_for_as_a_tablet() -> None:
+    """`Pda` normalises to `Tablet`, so a kind of its own would match nothing.
+
+    The first attempt gave it one, and no donor device would ever have reported
+    it -- the same mistake the controller alias made, in the other direction.
+    """
+    from intent_parser import parse_intent
+
+    plan = parse_intent("2 pda qur")
+
+    assert plan.device_requirements.get("Tablet") == 2
+    assert "Pda" not in plan.device_requirements

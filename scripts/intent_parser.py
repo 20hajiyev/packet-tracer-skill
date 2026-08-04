@@ -173,7 +173,7 @@ NATURAL_DEVICE_ALIASES = {
     "PC": ["pc", "pcs", "computer", "computers", "komputer", "komputerler", "kompyuter", "kompyuterler"],
     "Server": ["server", "serverler"],
     "WirelessRouter": ["wireless router", "wireless-router", "wirelessrouter", "home router", "home-router", "wrt"],
-    "Tablet": ["tablet", "tabletler"],
+    "Tablet": ["tablet", "tabletler", "pda", "handheld"],
     "Laptop": ["laptop", "laptoplar"],
     "Printer": ["printer", "printerler"],
     "LightWeightAccessPoint": ["ap", "aps", "accesspoint", "access-point", "access point", "apler"],
@@ -209,7 +209,6 @@ NATURAL_DEVICE_ALIASES = {
     ],
     "AnalogPhone": ["analog phone", "analog telefon", "analoq telefon"],
     "HomeVoip": ["home voip", "home phone", "ev telefonu", "voip phone"],
-    "Pda": ["pda", "handheld", "cib kompyuteri"],
 }
 
 NETWORK_STYLE_PATTERNS = {
