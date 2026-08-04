@@ -2172,6 +2172,26 @@ def apply_plan_operations(root: ET.Element, plan: IntentPlan) -> ET.Element:
         elif operation["op"] == "reflow_layout":
             _set_device_position(device, int(operation["x"]), int(operation["y"]))
 
+    # Duplication has to run last, from devices carrying their final names, so
+    # a link to a duplicated device is attempted before that device exists.
+    # `_ensure_link` returns in silence when an endpoint is missing, and a
+    # 22-switch lab lost every one of its nineteen core uplinks that way: 62
+    # planned links arrived as 43, with no error anywhere. Re-running the link
+    # pass once every device exists costs nothing, because `_ensure_link`
+    # updates the link it already made for a pair rather than adding a second.
+    for operation in plan.edit_operations:
+        if operation.get("op") != "set_link":
+            continue
+        _ensure_link(
+            updated,
+            str(operation["a"]["dev"]),
+            str(operation["a"]["port"]),
+            str(operation["b"]["dev"]),
+            str(operation["b"]["port"]),
+            str(operation.get("media", "copper")),
+            port_mem_map=port_mem_map,
+        )
+
     for bucket, handler in [
         (plan.switch_ops, _apply_switch_op),
         (plan.router_ops, _apply_router_op),
