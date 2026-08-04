@@ -289,3 +289,58 @@ def test_a_genuine_per_vlan_count_still_parses() -> None:
 
     assert _extract_host_vlan_assignment("2 komputer vlan 10 ve 3 komputer vlan 20") == {10: 2, 20: 3}
     assert _extract_host_vlan_assignment("4 komputer vlan 10 qur") == {10: 4}
+
+
+def test_cloned_devices_get_their_own_mac_address() -> None:
+    """A clone is a deep copy, and that included the prototype's MAC.
+
+    Three PCs cloned from one donor PC all carried 0060.5C02.3E05, and two
+    hosts with the same MAC cannot talk through a switch. Packet Tracer's own
+    packet trace showed the mechanism: PC2 answers PC1's ARP request, the switch
+    reports "The old entry in the MAC table is on a different port than the
+    receiving port", moves the entry, then drops the reply "because outgoing
+    port and incoming port are the same".
+
+    Nothing static could catch it. The file opened, pt_health_check reported
+    healthy, no IP was duplicated, and every host reached its gateway -- the
+    gateway has a MAC of its own. Only host-to-host traffic died.
+    """
+    from generate_pkt import _assign_unique_macs
+
+    root = ET.Element("PACKETTRACER5")
+    devices = ET.SubElement(root, "DEVICES")
+    for name in ("PC1", "PC2", "PC3"):
+        device = ET.SubElement(devices, "DEVICE")
+        engine = ET.SubElement(device, "ENGINE")
+        ET.SubElement(engine, "NAME").text = name
+        port = ET.SubElement(engine, "PORT")
+        ET.SubElement(port, "MACADDRESS").text = "0060.5C02.3E05"
+        ET.SubElement(port, "BIA").text = "0060.5C02.3E05"
+
+    renamed = _assign_unique_macs(root)
+
+    addresses = [node.text for node in root.iter("MACADDRESS")]
+    assert len(set(addresses)) == 3, addresses
+    assert addresses[0] == "0060.5C02.3E05"  # the first keeps what it had
+    assert all(address.startswith("0060.") for address in addresses)
+    assert len(renamed) == 2
+    # The burned-in address has to follow, or the two disagree on the device.
+    for device in root.findall(".//DEVICES/DEVICE"):
+        port = device.find("./ENGINE/PORT")
+        assert port.findtext("MACADDRESS") == port.findtext("BIA")
+
+
+def test_addresses_that_are_already_unique_are_left_alone() -> None:
+    from generate_pkt import _assign_unique_macs
+
+    root = ET.Element("PACKETTRACER5")
+    devices = ET.SubElement(root, "DEVICES")
+    for name, mac in (("PC1", "0060.5C02.3E05"), ("PC2", "0090.0C87.7BE8")):
+        device = ET.SubElement(devices, "DEVICE")
+        engine = ET.SubElement(device, "ENGINE")
+        ET.SubElement(engine, "NAME").text = name
+        port = ET.SubElement(engine, "PORT")
+        ET.SubElement(port, "MACADDRESS").text = mac
+
+    assert _assign_unique_macs(root) == []
+    assert [node.text for node in root.iter("MACADDRESS")] == ["0060.5C02.3E05", "0090.0C87.7BE8"]

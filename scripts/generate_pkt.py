@@ -4108,6 +4108,63 @@ def _resolve_port_conflicts(
         operation["b"]["port"] = free_port(right_name, str(operation["b"]["port"]), label)
 
 
+def _assign_unique_macs(root: ET.Element) -> list[str]:
+    """Give every interface in the lab its own MAC address.
+
+    A lab larger than its donor is filled by cloning, and a clone is a deep copy
+    -- including the prototype's MAC. Three PCs cloned from one donor PC all
+    carried 0060.5C02.3E05.
+
+    Two hosts with the same MAC cannot talk through a switch. Packet Tracer's
+    own packet trace shows why: PC2 answers PC1's ARP request, the switch
+    receives the reply and reports "The old entry in the MAC table is on a
+    different port than the receiving port", moves the entry, then drops the
+    frame "because outgoing port and incoming port are the same". The address
+    ping-pongs between ports and nothing is ever delivered.
+
+    Nothing static could see this. The file opens, `pt_health_check` reports
+    healthy, no address is duplicated, and every host reaches its gateway --
+    because the gateway's MAC is its own. Only host-to-host traffic dies.
+
+    The vendor prefix is kept so the address still looks like the hardware it
+    belongs to; only the low three octets are reassigned.
+    """
+    seen: set[str] = set()
+    renamed: list[str] = []
+    for device in root.findall(".//DEVICES/DEVICE"):
+        name = device.findtext("./ENGINE/NAME") or ""
+        for port in device.iter("PORT"):
+            node = port.find("MACADDRESS")
+            if node is None or not (node.text or "").strip():
+                continue
+            address = node.text.strip()
+            if address not in seen:
+                seen.add(address)
+                continue
+            groups = address.split(".")
+            if len(groups) != 3:
+                continue
+            head = groups[0]
+            try:
+                low = int(groups[1] + groups[2], 16)
+            except ValueError:
+                continue
+            for step in range(1, 1 << 20):
+                value = (low + step) & 0xFFFFFFFF
+                candidate = f"{head}.{value >> 16:04X}.{value & 0xFFFF:04X}"
+                if candidate not in seen:
+                    break
+            else:  # pragma: no cover - a million collisions is not reachable
+                continue
+            seen.add(candidate)
+            node.text = candidate
+            bia = port.find("BIA")
+            if bia is not None:
+                bia.text = candidate
+            renamed.append(f"{name}: {address} -> {candidate}")
+    return renamed
+
+
 def _repair_invalid_link_ports(root: ET.Element) -> list[str]:
     """Rename any cabled interface the finished lab does not actually have.
 
@@ -6011,6 +6068,7 @@ def generate_from_prompt(
     root = apply_plan_operations(donor_root, safe_plan)
     _sanitize_runtime_sections(root)
     port_repairs = _repair_invalid_link_ports(root)
+    mac_repairs = _assign_unique_macs(root)
     _stamp_target_version(root)
     unexpected_workspace_issues = _unexpected_workspace_issues(donor_root, root)
     if unexpected_workspace_issues:
