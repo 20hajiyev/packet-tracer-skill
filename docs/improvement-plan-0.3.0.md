@@ -1736,3 +1736,33 @@ Measured constraint from the same area: `_router_port` and
 is what put `FastEthernet0/1` on a router that has none. The finished-file port
 repair covers for it, but the tables should read the donor device instead --
 `donor_interface_names` already does exactly that.
+
+Automatic Layer-3 core promotion: works small, reverted for now.
+
+Trading one plain switch for a multilayer one gives a 3-switch lab a real core
+-- measured, IE-9320 over two 2960s, 0 invalid ports, 0 unconnected devices,
+and PC1 -> PC3 across it at 0% loss. That is the "same switch everywhere"
+complaint answered.
+
+It cannot simply be made the default. Adding `MultiLayerSwitch: 1` narrows
+donor selection to donors that have one, and none of those carry 21 switch
+groups, so a large prompt is refused outright. The obvious answer -- try the
+promoted plan, fall back to the plan as written on PlanningError -- does not
+work, and this is the part worth remembering:
+
+  attempt 1: `_copy_plan` shares `device_requirements`, so the promoted attempt
+             rewrote the caller's plan. Fixed, still failed.
+  attempt 2: `copy.deepcopy` of the whole plan. Still failed.
+
+So planning mutates state outside the plan object -- caches, module-level
+data, or both. A refused attempt leaves the process unable to plan the same
+prompt again, which makes "try and fall back" unsafe as a pattern anywhere,
+not just here. Both attempts were reverted; generation recovers immediately
+(22- and 64-device labs build again).
+
+The way in is to decide *before* planning rather than after: ask the donor
+index whether a donor exists that has both a MultiLayerSwitch and enough switch
+groups for this prompt, and only promote when one does. `discover_local_donors`
+already filters on `required_types` and is cached, so the question is cheap.
+Making planning side-effect-free would be the deeper fix and is worth doing on
+its own merits.
