@@ -310,6 +310,12 @@ def open_check(
         return report
 
     _dismiss_refusal_dialogs()
+    # A window already showing this file is not evidence that this check opened
+    # it. Re-checking a lab Packet Tracer still had on screen reported `opened`
+    # in 0.0 seconds without loading anything -- the same shape of false
+    # positive that let unopenable labs pass for months. Anything present before
+    # the launch is excluded from counting as a result.
+    titles_before = set(_top_level_window_titles())
     started = time.monotonic()
     try:
         process = subprocess.Popen([str(executable), str(path)])
@@ -322,7 +328,9 @@ def open_check(
     try:
         while time.monotonic() - started < timeout_seconds:
             if is_windows:
-                titles = _top_level_window_titles()
+                titles = [
+                    entry for entry in _top_level_window_titles() if entry not in titles_before
+                ]
                 title = next((entry for entry in titles if path.stem.lower() in entry.lower()), "")
                 if title:
                     report.status = "opened"
