@@ -188,8 +188,13 @@ NATURAL_DEVICE_ALIASES = {
     "LightWeightAccessPoint": ["ap", "aps", "accesspoint", "access-point", "access point", "apler"],
     "MultiLayerSwitch": ["multilayer switch", "multilayer-switch", "multilayerswitch", "layer 3 switch", "layer3 switch", "3560"],
     "Cloud": ["cloud", "wan cloud"],
-    "Cable Modem": ["cable modem", "cable-modem", "cablemodem"],
-    "Dsl Modem": ["dsl modem", "dsl-modem", "dslmodem"],
+    # Keyed as `normalize_device_type` spells them, not as English does. Written
+    # `Cable Modem` and `Dsl Modem`, these were keys the planner never produces,
+    # so both aliases resolved to nothing -- the same defect the `IoT` note below
+    # describes, repeated twice. Donors carry three cable modems and two DSL
+    # modems, none of which could be asked for.
+    "CableModem": ["cable modem", "cable-modem", "cablemodem", "kabel modem"],
+    "DslModem": ["dsl modem", "dsl-modem", "dslmodem"],
     "ASA": ["asa", "security appliance", "security-appliance", "firewall"],
     # Voice and IoT devices could not be asked for at all: "4 ip phone qur"
     # parsed the count and then dropped it, because no alias matched.
@@ -230,6 +235,24 @@ NATURAL_DEVICE_ALIASES = {
     "TV": ["tv", "televizor", "smart tv"],
     "CoAxialSplitter": ["coaxial splitter", "koaksial splitter", "splitter"],
     "CellTower": ["cell tower", "mobil qulle", "base station", "bts"],
+    # Kinds the local donor pool actually holds and no prompt could name. Counted
+    # across 140 labs: CentralOfficeServer in 11, MerakiServer in 7, PLC in 6,
+    # NetworkController in 5, CyberObserver in 3, Power Distribution Device in 2,
+    # DataHistorian in 1. Each is listed here only because a donor carries it --
+    # an alias for a kind nobody has cannot do anything but turn a prompt into a
+    # refusal, which is what the note above this block was about.
+    #
+    # `meraki` alone stays with SecurityAppliance: the Meraki MX is the security
+    # appliance, and the server is the separate cloud-controller item.
+    "CentralOfficeServer": ["central office server", "central office", "co server"],
+    "MerakiServer": ["meraki server", "meraki cloud", "meraki dashboard"],
+    "NetworkController": ["network controller", "netcon", "sebeke kontrolleri"],
+    "PLC": ["plc", "programmable logic controller", "kontroller plc"],
+    "CyberObserver": ["cyber observer", "cyberobserver"],
+    "DataHistorian": ["data historian", "historian"],
+    "Power Distribution Device": [
+        "power distribution device", "power distribution", "guc paylayici",
+    ],
 }
 
 NETWORK_STYLE_PATTERNS = {
@@ -564,14 +587,22 @@ def _extract_natural_device_counts(normalized_prompt: str) -> dict[str, int]:
         trailing = re.compile(
             rf"\b(?:{alias_pattern})\s+(\d+)\b(?!\s*(?:dene|eded|tane)?\s*(?:{any_alias})\b)"
         )
+        # Counted matches need the longer-alias guard too. The note on
+        # `_without_longer_aliases` claimed the digit anchors them, which holds
+        # only while the shorter alias sits at the *end* of the longer phrase:
+        # `1 wireless router` keeps `wireless ` between the digit and `router`,
+        # so nothing matches. `1 meraki server` does not -- `meraki` follows the
+        # digit directly -- and the prompt credited a security appliance and a
+        # Meraki server both.
+        counted_text = _without_longer_aliases(normalized_prompt, aliases)
         leading_values = [
-            int(value) for value in leading.findall(normalized_prompt) if _is_device_count(int(value))
+            int(value) for value in leading.findall(counted_text) if _is_device_count(int(value))
         ]
         if leading_values:
             counts[device_type] = max(leading_values)
             continue
         trailing_values = [
-            int(value) for value in trailing.findall(normalized_prompt) if _is_device_count(int(value))
+            int(value) for value in trailing.findall(counted_text) if _is_device_count(int(value))
         ]
         if trailing_values:
             counts[device_type] = max(trailing_values)

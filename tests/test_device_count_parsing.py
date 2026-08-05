@@ -16,7 +16,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from intent_parser import parse_intent  # noqa: E402
+from intent_parser import NATURAL_DEVICE_ALIASES, parse_intent  # noqa: E402
 
 
 @pytest.mark.parametrize(
@@ -320,3 +320,54 @@ def test_a_bare_plural_still_names_a_device() -> None:
         "WirelessRouter": 1,
         "Laptop": 2,
     }
+
+
+def test_a_donor_device_type_normalises_to_a_kind_a_prompt_can_name() -> None:
+    """The contract that `Cable Modem` broke: whatever a donor's XML calls a
+    device, the kind it normalises to has to be one a prompt can ask for.
+
+    Asserting instead that every alias key normalises to itself would prove
+    nothing -- `normalize_device_type` passes unknown names straight through, so
+    the broken `Cable Modem` key satisfied that too. The donor's own spelling is
+    what has to line up.
+    """
+    from sample_catalog import normalize_device_type
+
+    donor_spellings = {
+        "CableModem": "CableModem",
+        "DslModem": "DslModem",
+        "CentralOfficeServer": "CentralOfficeServer",
+        "NetworkController": "NetworkController",
+        "PLC": "PLC",
+        "Pc": "PC",
+        "MCUComponent": "IoT",
+        "Pda": "Tablet",
+        "AccessPoint": "LightWeightAccessPoint",
+    }
+    for donor_type, expected_kind in donor_spellings.items():
+        kind = normalize_device_type(donor_type)
+        assert kind == expected_kind, f"{donor_type!r} normalised to {kind!r}"
+        assert kind in NATURAL_DEVICE_ALIASES, (
+            f"a donor carries {donor_type!r}, which normalises to {kind!r}, and no prompt can name it"
+        )
+
+
+def test_the_donor_kinds_that_had_no_alias_can_now_be_asked_for() -> None:
+    """Each of these is present in the local donor pool and had no alias, so a
+    prompt naming one produced a plan without it."""
+    for prompt, kind in (
+        ("1 cable modem qur", "CableModem"),
+        ("1 dsl modem qur", "DslModem"),
+        ("1 central office server qur", "CentralOfficeServer"),
+        ("1 network controller qur", "NetworkController"),
+        ("2 plc qur", "PLC"),
+        ("1 cyber observer qur", "CyberObserver"),
+        ("1 data historian qur", "DataHistorian"),
+    ):
+        assert kind in parse_intent(prompt).device_requirements, prompt
+
+    # `meraki` alone is the security appliance; only `meraki server` is the
+    # server. The counted scan credited both until it masked longer aliases the
+    # way the no-number scan already did.
+    assert parse_intent("1 meraki server qur").device_requirements == {"MerakiServer": 1}
+    assert parse_intent("1 meraki qur").device_requirements == {"SecurityAppliance": 1}
