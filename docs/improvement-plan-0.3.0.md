@@ -1977,3 +1977,51 @@ measurement result and not an improvement in capability: the number was zero
 this morning, and nothing in the repo could tell. Four static verification
 layers and six hundred tests all agreed the labs were fine. What changed is that
 Packet Tracer was finally asked.
+
+## What a screenshot of one CLI window was worth
+
+The question was simple: do the commands the skill writes actually show up in
+each device's CLI? Answering it properly turned up four defects, none of which
+any test or check had objected to.
+
+**Devices booted blank.** A screenshot of a generated switch's console showed
+the boot sequence ending at "Press RETURN to get started!" -- no hostname, no
+configuration -- while the interfaces the lab had wired came up fine. A device
+applies its *startup* config when it boots, and generated labs left that empty:
+82 devices across the corpus had a running config and nothing saved. The note on
+`_config_targets` had already explained why writing only the new lines into an
+empty startup config was worse than leaving it alone, and named the right answer
+without taking it: copy the whole running config, the way `write memory` does.
+Packet Tracer now reports 132 lines of startup-config where it used to report
+none and suggest running `write memory`.
+
+**The prompt did not say which device it was.** 84 of the 90 configured devices
+answered to a hostname that was not their name, and in a two-switch lab both
+prompts read `Switch`. The rename matched on the old *device* name, which never
+fired -- a donor switch called `Multilayer Switch0` carries `hostname Switch`,
+so the two never agreed. Clones needed the same treatment separately: a deep
+copy arrives announcing itself as its prototype, which is why `R2` called itself
+`R1` after the first fix.
+
+**Two hostnames at once.** `cli R1: hostname CORE-R1` left the donor's
+`hostname Router` in place beside it. IOS applies the last, so it worked and the
+configuration contradicted itself. Only settings a device genuinely cannot have
+twice are replaced; `ip route` and `access-list` repeat legitimately and must
+not be collapsed.
+
+**Two devices on one address.** Reading those configs turned up something the
+question had not asked about: 7 of 32 labs had duplicate addresses.
+`multiarea_ospf` had R1, R2 and R3 all on 192.168.1.1, .2.1 and .3.1;
+`router_dhcp` had three PCs on 1.1.1.3. Same cause as the MACs and the switch
+management addresses -- a clone is a deep copy -- and the same fix, with one
+extra care: an address lives in the PORT node *and* the `ip address` line, so
+moving one alone leaves the device disagreeing with itself.
+
+A second screenshot, of devices drawn on top of each other, was worth a fifth:
+22 of 32 labs had at least one overlapping pair, several exactly coincident.
+Power distribution devices share a hardcoded point, clones inherit their
+source's coordinates, and routers can be handed the same target position. Now 0.
+
+Every one of these was invisible to the structural check, to donor coherence,
+and to six hundred tests. What made them visible was looking at the thing a user
+looks at.

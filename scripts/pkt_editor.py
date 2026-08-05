@@ -974,6 +974,37 @@ def _remove_runtime_references(root: ET.Element, device: ET.Element) -> None:
 DUPLICABLE_DEVICE_TYPES = {"Router", "Switch", "MultiLayerSwitch"}
 
 
+def _align_hostname_with_name(device: ET.Element, name: str) -> None:
+    """Make the device's CLI prompt say what the topology calls it.
+
+    The rename used to match on the old *device* name, which never fired: a
+    donor switch called `Multilayer Switch0` carries `hostname Switch`, so the
+    two never agreed and the line was left behind. Measured across the corpus,
+    84 of 90 configured devices answered to a hostname that was not their name,
+    and in a two-switch lab both prompts read `Switch`.
+
+    A clone needs this as much as a rename does -- it is a deep copy, so it
+    arrives announcing itself as its prototype. `R2` called itself `R1` and
+    `SW3` called itself `SW1` until this ran for them too.
+
+    A hostname the user asked for still wins, because `apply_cli_lines` runs
+    after both and replaces the line it finds. Names with whitespace --
+    `Patch Panel1`, `Power Distribution Device0` -- are not valid IOS hostnames,
+    and those devices carry no configuration anyway.
+    """
+    if not name or any(character.isspace() for character in name):
+        return
+    for path in (
+        "./ENGINE/RUNNINGCONFIG/LINE",
+        "./ENGINE/STARTUPCONFIG/LINE",
+        ".//FILE_CONTENT/CONFIG/LINE",
+    ):
+        for line in device.findall(path):
+            if (line.text or "").startswith("hostname "):
+                line.text = f"hostname {name}"
+                break
+
+
 def _duplicate_device(root: ET.Element, source_name: str, new_name: str, x: int, y: int) -> None:
     """Copy an infrastructure device, giving the copy a fresh identity.
 
@@ -1016,6 +1047,7 @@ def _duplicate_device(root: ET.Element, source_name: str, new_name: str, x: int,
     name_node = duplicate.find("./ENGINE/NAME")
     if name_node is not None:
         name_node.text = new_name
+    _align_hostname_with_name(duplicate, new_name)
 
     ref_node = duplicate.find("./ENGINE/SAVE_REF_ID")
     if ref_node is not None:
@@ -1200,6 +1232,7 @@ def _duplicate_host_for_group(root: ET.Element, source_name: str, new_name: str,
 
     duplicate = copy.deepcopy(source)
     duplicate.find("./ENGINE/NAME").text = new_name
+    _align_hostname_with_name(duplicate, new_name)
     ref_node = duplicate.find("./ENGINE/SAVE_REF_ID")
     if ref_node is not None:
         candidate = f"save-ref-id:{_stable_ref_seed(new_name)}"
@@ -1433,28 +1466,7 @@ def _set_device_name(root: ET.Element, device: ET.Element, new_name: str) -> Non
     if sys_name is not None and (sys_name.text or "").strip() == old_name:
         sys_name.text = new_name
 
-    # The hostname follows the device, whatever it used to say. Matching on the
-    # old *device* name never fired in practice: a donor switch called
-    # `Multilayer Switch0` carries `hostname Switch`, so the two never agreed
-    # and the line was left behind. Measured across the corpus: 84 of 90
-    # configured devices ended up with a hostname that was not their name, and
-    # in a two-switch lab both CLI prompts read `Switch`, which makes them
-    # indistinguishable from the console.
-    #
-    # A hostname the user asked for still wins, because `apply_cli_lines` runs
-    # after the renames and replaces the line it finds. Names with whitespace --
-    # `Patch Panel1`, `Power Distribution Device0` -- are not valid IOS
-    # hostnames, and those devices carry no configuration anyway.
-    if new_name and not any(character.isspace() for character in new_name):
-        for path in (
-            "./ENGINE/RUNNINGCONFIG/LINE",
-            "./ENGINE/STARTUPCONFIG/LINE",
-            ".//FILE_CONTENT/CONFIG/LINE",
-        ):
-            for line in device.findall(path):
-                if (line.text or "").startswith("hostname "):
-                    line.text = f"hostname {new_name}"
-                    break
+    _align_hostname_with_name(device, new_name)
 
     physical = device.findtext("./WORKSPACE/PHYSICAL", default="")
     leaf_uuid = physical.split(",")[-1].strip() if physical else ""
