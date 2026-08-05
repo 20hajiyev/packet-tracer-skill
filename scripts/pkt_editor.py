@@ -1221,16 +1221,49 @@ def _stable_ref_seed(text: str) -> int:
     return int.from_bytes(digest[:8], "big") >> 1
 
 
+def _renumber_index_links_after_removal(root: ET.Element, removed_index: int) -> None:
+    """Shift positional link endpoints down past a device that just went.
+
+    Not every donor gives its devices a `SAVE_REF_ID`. Where they do not, links
+    address their endpoints by position in the DEVICES list, and removing a
+    device silently re-points every cable that referred to a later one.
+
+    Measured on `1 router 1 switch 2 komputer 2 ip phone 1 home voip`: the
+    generated lab carried a cable from the switch to the Power Distribution
+    Device, which has no ports at all. The link had meant PC1. Packet Tracer
+    refused the file, and the structural check saw nothing wrong -- every index
+    was still inside the list, just pointing one device to the left.
+    """
+    for link in root.findall(".//LINKS/LINK"):
+        cable = link.find("./CABLE")
+        if cable is None:
+            continue
+        for tag in ("FROM", "TO"):
+            node = cable.find(tag)
+            if node is None or not (node.text or "").strip().isdigit():
+                continue
+            index = int(node.text.strip())
+            if index > removed_index:
+                node.text = str(index - 1)
+
+
 def _prune_device(root: ET.Element, device_name: str) -> None:
     device = _find_device(root, device_name)
     if device is None:
         return
+    devices = root.findall(".//DEVICES/DEVICE")
+    try:
+        removed_index = devices.index(device)
+    except ValueError:  # pragma: no cover - the device came from this list
+        removed_index = -1
     _remove_links_for_device(root, device_name)
     _remove_physical_leaf(root, device)
     _remove_runtime_references(root, device)
     parent = _find_parent_of_node(root, device)
     if parent is not None:
         parent.remove(device)
+    if removed_index >= 0:
+        _renumber_index_links_after_removal(root, removed_index)
 
 
 def _remove_link(root: ET.Element, left_name: str, right_name: str) -> None:
