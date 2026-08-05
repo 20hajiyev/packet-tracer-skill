@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from collections import Counter
 from functools import lru_cache
 import re
 import xml.etree.ElementTree as ET
@@ -780,9 +781,19 @@ def port_exists(device: ET.Element, port_name: str) -> bool:
         # written down, since a PORT node carries no name at all. Compare the
         # slot depth rather than requiring an exact match: a config lists the
         # interfaces someone touched, not every socket on the device.
+        # Membership in the configuration is not enough. A stacked switch whose
+        # sockets are all `GigabitEthernet1/0/N` still carried a stale
+        # `interface GigabitEthernet0/1` line, so accepting any name the config
+        # mentions let a cable land on `GigabitEthernet0/1` -- the one link, out
+        # of twelve, that made `four_switch` the last corpus lab Packet Tracer
+        # refused. Removing only that link opens the file.
+        #
+        # The shape the device really uses is the one most of its interfaces of
+        # that kind share, so compare against that rather than against the set.
         named = [name for name in donor_interface_names(device) if name.startswith(kind)]
-        if named and canonical not in named:
-            if canonical.count("/") not in {name.count("/") for name in named}:
+        if named:
+            depths = Counter(name.count("/") for name in named)
+            if canonical.count("/") != depths.most_common(1)[0][0]:
                 return False
         if device_type in HOST_DEVICE_TYPES:
             # `FastEthernet0` and, for tolerance, a bare `FastEthernet`.

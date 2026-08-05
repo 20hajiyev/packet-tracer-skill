@@ -100,3 +100,36 @@ def test_a_device_with_no_configuration_still_answers_on_count() -> None:
 
     assert port_exists(host, "FastEthernet0") is True
     assert port_exists(host, "FastEthernet0/1") is False
+
+
+def test_a_stale_configuration_line_does_not_make_a_port_real() -> None:
+    """The last corpus lab Packet Tracer refused turned on one link out of
+    twelve: a cable on `GigabitEthernet0/1` of a stacked switch whose sockets
+    are all `GigabitEthernet1/0/N`. The name was accepted because the device's
+    configuration still carried a stale `interface GigabitEthernet0/1` line, and
+    the rule at the time took membership in that list as proof.
+
+    The shape a device really uses is the one most of its interfaces share.
+    """
+    stacked = _device(
+        "MultiLayerSwitch",
+        ["eCopperGigabitEthernet"] * 28,
+        [
+            "GigabitEthernet0/1",  # left over from an earlier configuration
+            "GigabitEthernet1/0/1",
+            "GigabitEthernet1/0/2",
+            "GigabitEthernet1/0/3",
+        ],
+    )
+
+    assert port_exists(stacked, "GigabitEthernet1/0/2") is True
+    assert port_exists(stacked, "GigabitEthernet0/1") is False
+
+    # A plain 2960 really does have `GigabitEthernet0/1`, and must keep it.
+    access = _device(
+        "Switch",
+        ["eCopperFastEthernet"] * 24 + ["eCopperGigabitEthernet"] * 2,
+        ["FastEthernet0/1", "FastEthernet0/2", "GigabitEthernet0/1"],
+    )
+    assert port_exists(access, "GigabitEthernet0/1") is True
+    assert port_exists(access, "FastEthernet0/5") is True

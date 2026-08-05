@@ -1951,3 +1951,29 @@ Packet Tracer still had on screen reported `opened` in 0.0 seconds without
 loading anything, while every other stage of the same chain reported `refused`
 in nine. A pre-existing window is now excluded. The tool built to catch false
 confidence had its own.
+
+### And then all of them
+
+The last refusal came down to one link out of twelve. `SW3` is a duplicated
+stacked switch whose sockets are all `GigabitEthernet1/0/N`, and a cable had
+been placed on `GigabitEthernet0/1`. Removing only that link opened the file;
+removing either of the other two did not.
+
+The name passed because the shape rule accepted any interface the device's own
+configuration mentioned, and this one still carried a stale `interface
+GigabitEthernet0/1` line from an earlier configuration. Membership is not
+evidence -- the shape a device really uses is the one most of its interfaces of
+that kind share. A plain 2960 keeps `GigabitEthernet0/1`, because on a 2960 that
+is what most of its gigabit interfaces look like.
+
+    618 passed, 1 skipped
+    32/33 generated, 32 opened in Packet Tracer, 0 unexpected
+
+Every lab the skill can generate now opens. The thirty-third is `no_devices`,
+which is meant to refuse.
+
+The distance travelled in one session is worth stating plainly, because it is a
+measurement result and not an improvement in capability: the number was zero
+this morning, and nothing in the repo could tell. Four static verification
+layers and six hundred tests all agreed the labs were fine. What changed is that
+Packet Tracer was finally asked.
