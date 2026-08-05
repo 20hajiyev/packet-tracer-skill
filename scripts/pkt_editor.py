@@ -1433,18 +1433,28 @@ def _set_device_name(root: ET.Element, device: ET.Element, new_name: str) -> Non
     if sys_name is not None and (sys_name.text or "").strip() == old_name:
         sys_name.text = new_name
 
-    for line in device.findall("./ENGINE/RUNNINGCONFIG/LINE"):
-        text = line.text or ""
-        if old_name and text == f"hostname {old_name}":
-            line.text = f"hostname {new_name}"
-    for line in device.findall("./ENGINE/STARTUPCONFIG/LINE"):
-        text = line.text or ""
-        if old_name and text == f"hostname {old_name}":
-            line.text = f"hostname {new_name}"
-    for line in device.findall(".//FILE_CONTENT/CONFIG/LINE"):
-        text = line.text or ""
-        if old_name and text == f"hostname {old_name}":
-            line.text = f"hostname {new_name}"
+    # The hostname follows the device, whatever it used to say. Matching on the
+    # old *device* name never fired in practice: a donor switch called
+    # `Multilayer Switch0` carries `hostname Switch`, so the two never agreed
+    # and the line was left behind. Measured across the corpus: 84 of 90
+    # configured devices ended up with a hostname that was not their name, and
+    # in a two-switch lab both CLI prompts read `Switch`, which makes them
+    # indistinguishable from the console.
+    #
+    # A hostname the user asked for still wins, because `apply_cli_lines` runs
+    # after the renames and replaces the line it finds. Names with whitespace --
+    # `Patch Panel1`, `Power Distribution Device0` -- are not valid IOS
+    # hostnames, and those devices carry no configuration anyway.
+    if new_name and not any(character.isspace() for character in new_name):
+        for path in (
+            "./ENGINE/RUNNINGCONFIG/LINE",
+            "./ENGINE/STARTUPCONFIG/LINE",
+            ".//FILE_CONTENT/CONFIG/LINE",
+        ):
+            for line in device.findall(path):
+                if (line.text or "").startswith("hostname "):
+                    line.text = f"hostname {new_name}"
+                    break
 
     physical = device.findtext("./WORKSPACE/PHYSICAL", default="")
     leaf_uuid = physical.split(",")[-1].strip() if physical else ""
