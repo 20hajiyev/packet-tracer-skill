@@ -596,9 +596,18 @@ def _without_longer_aliases(text: str, aliases: list[str]) -> str:
     router and a plain one from `1 wireless router 2 laptop qur`. A counted
     match never had this problem because the digit anchors it; only the
     no-number fallback needs the guard.
+
+    A device type's *own* longer aliases are never masked. They are the same
+    device, not a different one, and blanking them deleted the only word the
+    scan had to go on: `switchler ve routerler qur` masked `switchler` because
+    it contains `switch`, masked `routerler` because it contains `router`, and
+    parsed as an empty plan -- no devices, no warning, nothing to build.
     """
+    own = set(aliases)
     masked = text
     for other in {alias for group in NATURAL_DEVICE_ALIASES.values() for alias in group}:
+        if other in own:
+            continue
         if any(alias != other and alias in other for alias in aliases):
             masked = re.sub(rf"\b{re.escape(other)}\b", " ", masked)
     return masked
@@ -668,37 +677,84 @@ def _extract_network_style(normalized_prompt: str) -> str | None:
     return None
 
 
+# One vocabulary for "a repeated group of devices". The count pattern and the
+# per-group pattern used to carry their own lists -- the first knew
+# `department`, the second knew `departmentda` -- so a word added to one half
+# worked in silence. Measured: `3 mertebe, her mertebede 6 komputer` produced
+# six PCs on one switch, because neither list had heard of a floor, and no
+# warning said so. The same prompt with `sobe` produced eighteen PCs on three.
+#
+# Stems are matched with optional Azerbaijani and English suffixes; locatives
+# are spelled out because Azerbaijani vowel harmony picks -de or -da and
+# guessing it in a regex would be worse than listing twelve words.
+GROUP_NOUN_STEMS = (
+    "departament",
+    "department",
+    "building",
+    "mertebe",
+    "filial",
+    "branch",
+    "office",
+    "bolme",
+    "floor",
+    "sobe",
+    "ofis",
+    "bina",
+    "kat",
+)
+
+GROUP_NOUN_LOCATIVES = (
+    "departamentde",
+    "departmentda",
+    "mertebede",
+    "filialda",
+    "bolmede",
+    "sobede",
+    "ofisde",
+    "binada",
+    "katda",
+)
+
+
+def _group_noun_alternation(words: tuple[str, ...]) -> str:
+    """Longest first, so `department` never matches inside `departament`."""
+    return "|".join(re.escape(word) for word in sorted(words, key=len, reverse=True))
+
+
 def _extract_department_count(normalized_prompt: str) -> int:
-    patterns = [
-        re.compile(r"\b(\d+)\s+(?:sobeli|sobe|department|departamentli)\b"),
-        re.compile(r"\b(\d+)\s+(?:depart(?:ment)?|bolme)\b"),
-    ]
-    for pattern in patterns:
-        match = pattern.search(normalized_prompt)
-        if match:
-            return int(match.group(1))
-    return 0
+    stems = _group_noun_alternation(GROUP_NOUN_STEMS)
+    pattern = re.compile(rf"\b(\d+)\s+(?:{stems})(?:li|lu|ler|lar|s)?\b")
+    match = pattern.search(normalized_prompt)
+    return int(match.group(1)) if match else 0
 
 
 def _extract_per_department_devices(normalized_prompt: str) -> dict[str, int]:
     counts: dict[str, int] = {}
+    stems = _group_noun_alternation(GROUP_NOUN_STEMS)
+    locatives = _group_noun_alternation(GROUP_NOUN_LOCATIVES)
     group_segment = ""
     segment_match = re.search(
-        r"\bher\s+(?:sobede|bolmede|departmentda)\s+(.+?)(?=\b(?:router|dhcp|vlan|ssid|acl|telnet|ospf|eigrp|rip|nat)\b|$)",
+        rf"\bher\s+(?:{locatives})\s+(.+?)(?=\b(?:router|dhcp|vlan|ssid|acl|telnet|ospf|eigrp|rip|nat)\b|$)",
         normalized_prompt,
     )
     if segment_match:
         group_segment = segment_match.group(1)
     for device_type, aliases in PER_DEPARTMENT_DEVICE_ALIASES.items():
         alias_pattern = "|".join(re.escape(alias) for alias in aliases)
-        patterns = [
-            re.compile(rf"\bher\s+(?:sobede|bolmede|departmentda)\s+(\d+)\s+(?:dene\s+)?(?:{alias_pattern})\b"),
-            re.compile(rf"\beach\s+(?:department|group)\s+(\d+)\s+(?:{alias_pattern})\b"),
-            re.compile(rf"\b(\d+)\s+(?:dene\s+)?(?:{alias_pattern})\b"),
+        # Each pattern says whether it may be read from the whole prompt or only
+        # from the per-group segment. That used to be inferred from whether the
+        # pattern text began with a digit group, which the reversed English form
+        # below would have tripped: `6 computers each` starts with one and must
+        # still be read from the whole prompt.
+        patterns: list[tuple[re.Pattern[str], bool]] = [
+            (re.compile(rf"\bher\s+(?:{locatives})\s+(\d+)\s+(?:dene\s+)?(?:{alias_pattern})s?\b"), False),
+            (re.compile(rf"\b(?:each|per)\s+(?:{stems}|group)\s+(\d+)\s+(?:{alias_pattern})s?\b"), False),
+            (re.compile(rf"\b(\d+)\s+(?:{alias_pattern})s?\s+(?:each|per\s+(?:{stems}))\b"), False),
+            (re.compile(rf"\b(\d+)\s+(?:dene\s+)?(?:{alias_pattern})s?\b"), True),
         ]
         values: list[int] = []
-        for pattern in patterns:
-            target_text = group_segment if pattern.pattern.startswith(r"\b(\d+)") and group_segment else normalized_prompt
+        for pattern, prefer_segment in patterns:
+            target_text = group_segment if prefer_segment and group_segment else normalized_prompt
             values.extend(int(value) for value in pattern.findall(target_text))
         if values:
             counts[device_type] = max(values)

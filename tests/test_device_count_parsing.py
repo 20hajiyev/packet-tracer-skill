@@ -269,3 +269,54 @@ def test_a_large_but_ordinary_count_is_not_capped() -> None:
     assert parse_intent("1000 pc 40 switch qur").device_counts == {"Switch": 40, "PC": 1000}
     # And a model designation is still not a count.
     assert parse_intent("2911 router qur").device_counts == {"Router": 1}
+
+
+def test_a_group_noun_other_than_department_repeats_its_devices() -> None:
+    """The count pattern and the per-group pattern carried separate word lists,
+    so a noun in one and not the other half worked in silence. `3 mertebe, her
+    mertebede 6 komputer` gave six PCs on one switch -- neither list had heard
+    of a floor -- while the same prompt with `sobe` gave eighteen on three."""
+    for prompt in (
+        "3 mertebe, her mertebede 6 komputer qur",
+        "3 mərtəbə, hər mərtəbədə 6 komputer qur",
+        "3 sobe, her sobede 6 komputer qur",
+    ):
+        assert parse_intent(prompt).device_requirements == {"PC": 18, "Switch": 3}, prompt
+
+    assert parse_intent("4 ofis, her ofisde 5 komputer 1 printer qur").device_requirements == {
+        "PC": 20,
+        "Printer": 4,
+        "Switch": 4,
+    }
+
+
+def test_english_per_group_counts_parse_in_both_orders() -> None:
+    """`6 computers each` names the count after the device, which the forward
+    pattern could not read; the plural `computers` also broke the word boundary
+    the forward pattern relied on."""
+    assert parse_intent("3 department, 6 computers each qur").device_requirements == {
+        "PC": 18,
+        "Switch": 3,
+    }
+    assert parse_intent("3 floors, each floor 4 computers qur").device_requirements == {
+        "PC": 12,
+        "Switch": 3,
+    }
+
+
+def test_a_bare_plural_still_names_a_device() -> None:
+    """`switchler ve routerler qur` parsed as an empty plan. The no-number
+    fallback masks longer aliases that contain a shorter one, to stop `wireless
+    router` crediting a plain router -- but it also masked a type's own longer
+    aliases, deleting the only word the scan had."""
+    assert parse_intent("switchler ve routerler qur").device_requirements == {
+        "Router": 1,
+        "Switch": 1,
+    }
+    assert parse_intent("serverler ve komputerler qur").device_requirements["Server"] == 1
+
+    # The guard the masking exists for still holds: no plain Router is credited.
+    assert parse_intent("1 wireless router 2 laptop qur").device_requirements == {
+        "WirelessRouter": 1,
+        "Laptop": 2,
+    }
