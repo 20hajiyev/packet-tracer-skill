@@ -1921,3 +1921,33 @@ The shape is the one this document keeps recording -- two models of one concept
 that disagree -- and here the two models were a device's port *count* and its
 port *names*. What made it survive so long is that the count model is the one
 every other check also uses, so every check agreed with itself.
+
+## The first real number: 31 of 33 open
+
+With the port checks fixed and the open check able to see a refusal, the corpus
+was run against Packet Tracer for the first time.
+
+    32/33 generated, 31 opened in Packet Tracer, 0 unexpected
+
+The thirty-third is `no_devices`, which is meant to refuse and does. So of the
+thirty-two labs the skill produces, thirty-one open. A few hours earlier the
+number was zero, and no measurement in this repo could tell.
+
+`four_switch` is the one that still refuses, and the theory that suggested
+itself is wrong: Layer-3 core promotion fires on four corpus cases, and
+`hosts_across_switches`, `campus_star_vlan` and `ospf_routing` all open. Only
+this one does not.
+
+Bisecting it a prefix at a time puts the first break at a single `set_link`:
+`PC3 <-> SW3:FastEthernet0/3`, where `SW3` is a duplicated multilayer switch
+whose ports are all `GigabitEthernet1/0/N` and which has no FastEthernet at all.
+The planner picked a port family the device does not have. In the finished file
+the repair pass corrects that -- the shipped lab has twelve links and no invalid
+port -- and Packet Tracer still refuses it, so at least one further cause
+remains in this case. Recorded as open, not as solved.
+
+Worth noting how nearly this measurement lied. Re-checking a staged file that
+Packet Tracer still had on screen reported `opened` in 0.0 seconds without
+loading anything, while every other stage of the same chain reported `refused`
+in nine. A pre-existing window is now excluded. The tool built to catch false
+confidence had its own.
