@@ -2242,6 +2242,7 @@ def _write_pkt_root(root: ET.Element, pkt_path: Path, xml_path: Path | None = No
     _align_router_access_vlan(root)
     _align_router_gateway(root)
     _separate_overlapping_devices(root)
+    _save_running_config_to_startup(root)
     prune_unused_images(root)
     xml_bytes = serialize_pkt_xml(root)
     pkt_path.parent.mkdir(parents=True, exist_ok=True)
@@ -4513,6 +4514,41 @@ def _align_router_gateway(root: ET.Element) -> list[str]:
 
 
 _SVI_ADDRESS_PATTERN = re.compile(r"^ip address (\d+\.\d+\.\d+\.\d+) (\d+\.\d+\.\d+\.\d+)$")
+
+
+def _save_running_config_to_startup(root: ET.Element) -> list[str]:
+    """Save each device's configuration, the way `write memory` would.
+
+    Reported from a screenshot of a generated lab: opening a switch's CLI shows
+    the boot sequence ending at "Press RETURN to get started!", with no
+    hostname and no configuration -- while the interfaces the lab wired come up
+    fine. A device applies its *startup* config when it boots, and the generated
+    labs left that empty: 82 devices across the corpus had a running config and
+    no saved one, so every one of them booted blank.
+
+    The note on `_config_targets` explains why the editor refuses to write into
+    an empty startup config: it used to add only the new lines, which turned a
+    router's saved configuration into the three lines someone had just added, so
+    a reload wiped every interface. It also names the right answer, which is
+    this one -- copy the whole running config rather than a stub.
+
+    Only devices that have a running config and an empty startup node are
+    touched. A donor that already saved something keeps what it saved.
+    """
+    saved: list[str] = []
+    for device in root.findall(".//DEVICES/DEVICE"):
+        running = device.find("./ENGINE/RUNNINGCONFIG")
+        startup = device.find("./ENGINE/STARTUPCONFIG")
+        if running is None or startup is None:
+            continue
+        running_lines = running.findall("LINE")
+        if not running_lines or startup.findall("LINE"):
+            continue
+        for line in running_lines:
+            copied = ET.SubElement(startup, "LINE")
+            copied.text = line.text
+        saved.append(f"{device.findtext('./ENGINE/NAME') or ''}: {len(running_lines)} line(s)")
+    return saved
 
 
 def _next_free_address(address: str, taken: set[str]) -> str:
@@ -7019,6 +7055,7 @@ def generate_from_prompt(
         raise ValueError("; ".join(unexpected_workspace_issues))
     validate_donor_coherence(donor_root, root)
     _separate_overlapping_devices(root)
+    _save_running_config_to_startup(root)
     _annotate_generated_lab(root, blueprint, prepared_plan)
     prune_unused_images(root)
     xml_bytes = serialize_pkt_xml(root)
