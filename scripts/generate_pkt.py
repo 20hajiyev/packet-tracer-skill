@@ -5167,6 +5167,14 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
                     "y": int(target_router.get("y", 0)),
                 }
             )
+        # Donor routers past the ones the topology asked for belong to no path
+        # at all. The sweep further down skips Router and Switch by kind, so
+        # they survive untouched, in the middle of the canvas: `1 central office
+        # server 1 router` against a five-router donor produced all five. The
+        # branch below already parks every donor router when the prompt asks for
+        # none, and this is that same decision applied to the surplus.
+        for donor_router in donor_routers[len(target_routers) :]:
+            park_device(str(donor_router["name"]))
     else:
         for donor_router in donor_routers:
             park_device(str(donor_router["name"]))
