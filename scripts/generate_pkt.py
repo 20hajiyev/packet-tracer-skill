@@ -1611,8 +1611,33 @@ def _device_kind(device: dict[str, object]) -> str:
     return str(device.get("type", ""))
 
 
+# What may be cabled to a switch. The list is short on purpose and every entry
+# was measured across 120 local donors by asking whether instances of that kind
+# actually carry a copper port:
+#
+#     IpPhone   4/4 copper      Tablet        0/11 copper, 11/11 wireless
+#     HomeVoip  2/2 copper      AnalogPhone   0/2  copper
+#     Sniffer   3/3 copper      IoT           0/1  copper
+#
+# A tablet has no Ethernet at all, an analog phone takes a phone line, and the
+# IoT things in these donors are wireless, so none of them may be cabled to a
+# switch: that would put a cable on a socket that does not exist, which is
+# exactly what Packet Tracer refuses to open.
+#
+# The sniffer has copper and still cannot go here. Its ports are
+# `eCopperEthernet`, which `port_capacity` counts as neither FastEthernet nor
+# GigabitEthernet, so port selection fell through and put the cable on
+# `Port-channel 5` -- a logical interface. The lab was refused. Wiring it needs
+# its own port naming first; leaving it out costs an unwired device, and
+# including it costs the whole file.
+#
+# Before this, `1 switch 3 ip phone qur` produced a lab with four devices and
+# zero cables, and reported success.
+HOST_DEVICE_KINDS = {"PC", "Server", "Printer", "Laptop", "IpPhone", "HomeVoip"}
+
+
 def _is_host_device(device: dict[str, object]) -> bool:
-    return _device_kind(device) in {"PC", "Server", "Printer", "Laptop"}
+    return _device_kind(device) in HOST_DEVICE_KINDS
 
 
 def _is_wireless_client_device(device: dict[str, object]) -> bool:
@@ -1673,6 +1698,20 @@ def _host_port(device: dict[str, object]) -> str:
     kind = _device_kind(device)
     if kind in {"Tablet", "Smartphone"}:
         return "Wireless0"
+    # An IP phone's network socket is called `Switch`; the second one, `PC`, is
+    # the pass-through a computer plugs into behind the phone. It has no
+    # `FastEthernet0` at all. Measured: the donor's own phone links use `Switch`,
+    # and a created link naming `FastEthernet0` was pushed to `FastEthernet1` by
+    # port claiming and produced a lab Packet Tracer refused -- while the same
+    # prompt with two PCs alongside opened, because there the phones kept the
+    # donor's wiring and only the PCs got new cables.
+    if kind == "IpPhone":
+        return "Switch"
+    # A home VoIP adapter is an ATA: `Ethernet` faces the network and `Phone`
+    # takes the analog handset. Read off the donors that contain one -- every
+    # working link in them uses those two names, and none uses `Switch`.
+    if kind == "HomeVoip":
+        return "Ethernet"
     return "FastEthernet0"
 
 
