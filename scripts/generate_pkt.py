@@ -2195,6 +2195,7 @@ def _write_pkt_root(root: ET.Element, pkt_path: Path, xml_path: Path | None = No
     # route, and the fix never ran for it.
     _repair_invalid_link_ports(root)
     _assign_unique_macs(root)
+    _assign_unique_switch_management_ips(root)
     _reconcile_cable_media(root)
     _trunk_uplinks_in_file(root)
     _align_router_access_vlan(root)
@@ -4467,6 +4468,79 @@ def _align_router_gateway(root: ET.Element) -> list[str]:
                 note += f"; cleared overlapping address on {', '.join(cleared)}"
             return [note]
     return []
+
+
+_SVI_ADDRESS_PATTERN = re.compile(r"^ip address (\d+\.\d+\.\d+\.\d+) (\d+\.\d+\.\d+\.\d+)$")
+
+
+def _assign_unique_switch_management_ips(root: ET.Element) -> list[str]:
+    """Give every switch its own management address.
+
+    A duplicated switch is a deep copy, so it inherits the prototype's `Vlan1`
+    address along with everything else. Measured on `4 switch 1 router 8
+    komputer`: SW1, SW3 and MultiLayerSwitch1 all answered to 2.1.1.6, and
+    Packet Tracer's own health check reported the collision.
+
+    Nothing else catches it. The lab opens, every host pings every other host,
+    and the duplicate only bites whoever tries to manage the switches -- which
+    is exactly the kind of fault that survives a green test suite. It is fixed
+    here, at the file level, for the same reason MAC uniqueness is: cloning
+    happens on several paths and the file is the one place they all meet.
+
+    Only the host part is changed, so the address stays on the subnet the donor
+    put it on, and every address already in the lab is avoided -- including the
+    hosts', which sit in the same range.
+    """
+    taken: set[str] = set()
+    for device in root.findall(".//DEVICES/DEVICE"):
+        for port in device.iter("PORT"):
+            address = (port.findtext("IP") or "").strip()
+            if address:
+                taken.add(address)
+
+    renumbered: list[str] = []
+    seen: set[str] = set()
+    for device in root.findall(".//DEVICES/DEVICE"):
+        name = device.findtext("./ENGINE/NAME") or ""
+        for tag in ("RUNNINGCONFIG", "STARTUPCONFIG"):
+            config = device.find(f"./ENGINE/{tag}")
+            if config is None:
+                continue
+            inside_svi = False
+            for line in config.findall("LINE"):
+                text = (line.text or "").strip()
+                if text.startswith("interface "):
+                    inside_svi = text.lower().startswith("interface vlan")
+                    continue
+                if not inside_svi:
+                    continue
+                match = _SVI_ADDRESS_PATTERN.match(text)
+                if match is None:
+                    continue
+                address, mask = match.group(1), match.group(2)
+                if address not in seen and address not in taken:
+                    seen.add(address)
+                    taken.add(address)
+                    continue
+                head, _, last = address.rpartition(".")
+                try:
+                    start = int(last)
+                except ValueError:
+                    continue
+                candidate = ""
+                for step in range(1, 254):
+                    value = ((start + step - 1) % 254) + 1
+                    trial = f"{head}.{value}"
+                    if trial not in taken:
+                        candidate = trial
+                        break
+                if not candidate:
+                    continue
+                seen.add(candidate)
+                taken.add(candidate)
+                line.text = f"ip address {candidate} {mask}"
+                renumbered.append(f"{name}: Vlan management {address} -> {candidate}")
+    return renumbered
 
 
 def _reconcile_cable_media(root: ET.Element) -> list[str]:
@@ -6755,6 +6829,7 @@ def generate_from_prompt(
     _sanitize_runtime_sections(root)
     port_repairs = _repair_invalid_link_ports(root)
     mac_repairs = _assign_unique_macs(root)
+    _assign_unique_switch_management_ips(root)
     media_notes = _reconcile_cable_media(root)
     trunk_notes = _trunk_uplinks_in_file(root)
     vlan_notes = _align_router_access_vlan(root)
