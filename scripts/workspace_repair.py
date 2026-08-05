@@ -273,8 +273,16 @@ def inspect_workspace_integrity(root: ET.Element) -> WorkspaceValidationResult:
             if int(from_idx) >= device_count or int(to_idx) >= device_count:
                 issues.append("Link references a device index outside the DEVICES list")
         elif save_ref_ids:
-            if from_idx not in save_ref_ids or to_idx not in save_ref_ids:
-                issues.append("Link references device SAVE_REF_ID values not present in DEVICES")
+            missing = [ref for ref in (from_idx, to_idx) if ref not in save_ref_ids]
+            if missing:
+                # Naming the dangling reference matters: this message is what a
+                # failed generation reports, and "values not present" gave no
+                # way to tell which device went missing without re-running the
+                # whole plan under a debugger.
+                issues.append(
+                    "Link references device SAVE_REF_ID values not present in DEVICES "
+                    f"({', '.join(missing)})"
+                )
         else:
             issues.append("Link FROM or TO index is not numeric")
             continue

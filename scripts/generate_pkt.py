@@ -4788,6 +4788,56 @@ def _switch_hops_from_router(
     return {name: hops.get(name, unreachable) for name in switches}
 
 
+def _seat_surplus_donor_groups(
+    ranked_donors: list[dict[str, object]],
+    target_groups: list[dict[str, object]],
+    target_order: list[str],
+) -> list[dict[str, object]]:
+    """Move donor groups that can supply their target's hosts to the front.
+
+    Only called when the donor has more switch groups than the topology needs.
+    The caller zips donor groups against targets, so everything past
+    `len(target_groups)` is never consulted -- and hop order alone decides who
+    lands inside that window.
+
+    Measured on a donor whose router-facing group carries the exotic devices and
+    whose second switch carries the PCs: `1 router 1 switch 1 patch panel 2
+    komputer` refused with "donor switch group 'SW1' has 0 PC device(s)". The
+    donor had two, one group over, past the end of the zip.
+
+    Groups that cannot cover their target keep their relative hop order, so a
+    donor with nothing to offer anywhere produces the same seating as before.
+    """
+    targets_by_name = {str(group["switch"]["name"]): group for group in target_groups}
+    remaining = list(ranked_donors)
+    seated: list[dict[str, object]] = []
+
+    for target_name in target_order[: len(target_groups)]:
+        target_group = targets_by_name.get(target_name)
+        if target_group is None or not remaining:
+            continue
+        needed: Counter[str] = Counter(
+            _device_kind(member) for member in target_group.get("members", [])
+        )
+        covering = next(
+            (
+                group
+                for group in remaining
+                if all(
+                    len(group["members_by_type"].get(kind, [])) >= count
+                    for kind, count in needed.items()
+                )
+            ),
+            None,
+        )
+        chosen = covering if covering is not None else remaining[0]
+        seated.append(chosen)
+        remaining.remove(chosen)
+
+    seated.extend(remaining)
+    return seated
+
+
 def _align_donor_groups_to_targets(
     donor_groups: list[dict[str, object]],
     target_groups: list[dict[str, object]],
@@ -4848,6 +4898,15 @@ def _align_donor_groups_to_targets(
             _name_sort_key(str(group["switch"]["name"])),
         ),
     )
+
+    # A donor with more switch groups than the topology needs has spare seats,
+    # and hop order alone decides who fills them. Prefer the groups that can
+    # actually supply their target's hosts; see `_seat_surplus_donor_groups`.
+    # Equal counts are left alone, so the chain ordering `four_switch` relies on
+    # is untouched -- a kind-aware match across *all* groups was tried before
+    # and stopped that case from opening.
+    if len(ranked_donors) > len(target_groups):
+        ranked_donors = _seat_surplus_donor_groups(ranked_donors, target_groups, target_order)
 
     # `target_groups` is consumed in its own order, so map back into it. The
     # output must always contain exactly the donor groups that came in: an
@@ -5356,8 +5415,25 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
         tuple(sorted((str(link["a"]["dev"]), str(link["b"]["dev"]))))
         for link in blueprint.get("links", [])
     }
+    # A donor device the plan prunes must not go on claiming its name here.
+    # `rename_map.get(name, name)` falls back to the donor's own name, so a
+    # pruned SW1 still registered its router cable under the target name SW1 --
+    # the very name a *different* donor switch was being renamed into. The
+    # planner read `R1 <-> SW1` as already wired, created nothing, and the prune
+    # then took the cable away with the old switch. The lab generated, opened,
+    # and had its router connected to nothing.
+    pruned_spare_set = set(pruned_spares)
+
+    def touches_pruned_spare(donor_link: dict[str, object]) -> bool:
+        return (
+            str(donor_link["from"]) in pruned_spare_set
+            or str(donor_link["to"]) in pruned_spare_set
+        )
+
     existing_links: dict[tuple[str, str], dict[str, object]] = {}
     for donor_link in donor_links:
+        if touches_pruned_spare(donor_link):
+            continue
         left_name = rename_map.get(str(donor_link["from"]), str(donor_link["from"]))
         right_name = rename_map.get(str(donor_link["to"]), str(donor_link["to"]))
         if not left_name or not right_name or left_name == right_name:
@@ -5367,6 +5443,11 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
     parked_name_set = set(parked_devices)
     removed_pairs: set[tuple[str, str]] = set()
     for donor_link in donor_links:
+        if touches_pruned_spare(donor_link):
+            # Pruning removes the cable with the device. Emitting a removal by
+            # name here could strike the link of whichever device now answers
+            # to that name instead.
+            continue
         left_name = rename_map.get(str(donor_link["from"]), str(donor_link["from"]))
         right_name = rename_map.get(str(donor_link["to"]), str(donor_link["to"]))
         if not left_name or not right_name or left_name == right_name:

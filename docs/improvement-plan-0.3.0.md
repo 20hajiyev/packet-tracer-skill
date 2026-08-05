@@ -1815,3 +1815,55 @@ The lesson is not about switches. Seven rounds asked "did the bundle work?"
 when the answer needed was "which part did what", and each wrong answer was
 written down as fact for the next round to build on.
 
+
+## The device that was there all along, three defects deep
+
+The previous section closed with the honest position that a kind is supported
+only when a donor carries it *and* the prompt's shape fits the donor's. This
+section is what happened when that was measured rather than assumed.
+
+A scan of every local lab answered the first question: which donors carry the
+rare kinds, and do they have hosts on a switch? One does --
+`pkt_skill_device_palette.pkt`, holding the patch panel, bridge, sniffer, TV,
+cell tower and coaxial splitter, with two PCs. So `1 router 1 switch 1 patch
+panel 2 komputer` had a donor that fit, and still refused. Three defects were
+stacked behind that refusal, each invisible until the one in front of it moved.
+
+**Seating.** The donor has two switches: `SW1` carries the exotic devices and no
+hosts, `SWP1` carries the PCs. Groups are seated by distance from the router, so
+the single target landed on `SW1` and the request was refused as impossible --
+"donor switch group 'SW1' has 0 PC device(s)". The donor had two, one group
+over, past the end of the zip that pairs donors with targets. Seating now
+prefers a group that can supply its target's hosts, but only when the donor has
+more groups than the topology needs. Equal counts keep the old chain ordering,
+because a kind-aware match across *all* groups was tried before and stopped
+`four_switch` from opening.
+
+**Naming.** With `SWP1` seated, the plan renamed it to `SW1` while the donor's
+own `SW1` was still present, then pruned "SW1" by name. Two devices answered to
+that name and the wrong one's cables went: the two PCs ended up with no links at
+all, and the old switch's router cable was left pointing at a device that no
+longer existed. Prunes cannot simply run first -- the ones recorded for clone
+collisions name devices by their *final* name -- so only the prune a rename is
+about to collide with is pulled forward.
+
+**Link reuse.** With both fixed the lab generated, opened, and had its router
+connected to nothing. `existing_links` maps donor links through
+`rename_map.get(name, name)`, which falls back to the donor's own name, so the
+pruned `SW1` still registered its router cable under the target name `SW1`. The
+planner read `R1 <-> SW1` as already wired, created nothing, and the prune took
+the cable away. Donor links touching a pruned spare are now excluded.
+
+Result: 6 devices, 3 links, structural check clean, `exact` tier.
+
+The shape is the one this repo keeps meeting -- a device name treated as an
+identity while the plan is busy reassigning names -- and the reason it took
+three passes is that each defect produced a *plausible* error message blaming
+the donor. The first blamed it for having no PCs. Only printing the applied plan
+and the resulting links, rather than reading the message, showed otherwise.
+
+Worth recording separately: the fix for defect one was measured against a
+`--donor` flag that does not exist. argparse abbreviation matched it to
+`--donor-root`, so the "forced" donor was being passed as a directory and the
+run was ordinary donor selection. The flag is `--compat-donor`. A measurement
+whose knob is not connected reports the baseline back as a result.

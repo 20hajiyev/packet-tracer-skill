@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 import re
+from collections import Counter
 from pathlib import Path
 import xml.etree.ElementTree as ET
 from functools import lru_cache
@@ -2153,6 +2154,25 @@ def apply_plan_operations(root: ET.Element, plan: IntentPlan) -> ET.Element:
             operation["acl_kind"] = acl_kind_map[str(operation["acl_name"])]
         if operation["op"] == "add_acl_rule" and operation.get("acl_name") in acl_device_map:
             operation["device"] = acl_device_map[str(operation["acl_name"])]
+    # Renaming a device onto a name another device still holds leaves two
+    # devices answering to it, and every later lookup by name becomes a coin
+    # toss. Measured: a plan renamed SWP1 to SW1 while the donor's own SW1 was
+    # still there, waiting to be pruned two operations later. The prune then
+    # stripped the *new* SW1's cables -- its two PCs ended up with no links at
+    # all -- and left the old SW1's link pointing at a device that no longer
+    # existed, which is the dangling SAVE_REF the workspace check reports.
+    #
+    # Prunes cannot simply run first: the ones recorded for clone collisions
+    # name devices by their *final* name, so they depend on the renames. Pull
+    # forward only the prune that a rename is about to collide with, and let
+    # the original operation no-op when its turn comes.
+    pending_prunes = Counter(
+        str(operation.get("device"))
+        for operation in plan.edit_operations
+        if operation.get("op") == "prune_device"
+    )
+    prunes_pulled_forward: Counter[str] = Counter()
+
     for operation in plan.edit_operations:
         if operation["op"] == "duplicate_host":
             _duplicate_host_onto_switch(
@@ -2187,7 +2207,15 @@ def apply_plan_operations(root: ET.Element, plan: IntentPlan) -> ET.Element:
             )
             continue
         if operation["op"] == "prune_device":
-            _prune_device(updated, str(operation["device"]))
+            prune_name = str(operation["device"])
+            pending_prunes[prune_name] -= 1
+            if prunes_pulled_forward[prune_name] > 0:
+                # Already done, ahead of the rename that needed it gone. Running
+                # it again here would delete the device that now carries the
+                # name -- the very device the plan renamed into place.
+                prunes_pulled_forward[prune_name] -= 1
+                continue
+            _prune_device(updated, prune_name)
             continue
         if operation["op"] == "remove_link":
             _remove_link(updated, str(operation["a"]["dev"]), str(operation["b"]["dev"]))
@@ -2212,7 +2240,17 @@ def apply_plan_operations(root: ET.Element, plan: IntentPlan) -> ET.Element:
         if device is None:
             continue
         if operation["op"] == "rename_device":
-            _set_device_name(updated, device, str(operation["new_name"]))
+            new_name = str(operation["new_name"])
+            occupant = _find_device(updated, new_name)
+            if (
+                occupant is not None
+                and occupant is not device
+                and pending_prunes[new_name] > 0
+            ):
+                _prune_device(updated, new_name)
+                pending_prunes[new_name] -= 1
+                prunes_pulled_forward[new_name] += 1
+            _set_device_name(updated, device, new_name)
         elif operation["op"] == "reflow_layout":
             _set_device_position(device, int(operation["x"]), int(operation["y"]))
 
