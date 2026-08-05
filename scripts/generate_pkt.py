@@ -2235,6 +2235,7 @@ def _write_pkt_root(root: ET.Element, pkt_path: Path, xml_path: Path | None = No
     # route, and the fix never ran for it.
     _repair_invalid_link_ports(root)
     _assign_unique_macs(root)
+    _assign_unique_interface_addresses(root)
     _assign_unique_switch_management_ips(root)
     _reconcile_cable_media(root)
     _trunk_uplinks_in_file(root)
@@ -4512,6 +4513,68 @@ def _align_router_gateway(root: ET.Element) -> list[str]:
 
 
 _SVI_ADDRESS_PATTERN = re.compile(r"^ip address (\d+\.\d+\.\d+\.\d+) (\d+\.\d+\.\d+\.\d+)$")
+
+
+def _next_free_address(address: str, taken: set[str]) -> str:
+    """The next address on the same subnet that nothing else is using."""
+    head, _, last = address.rpartition(".")
+    try:
+        start = int(last)
+    except ValueError:
+        return ""
+    for step in range(1, 254):
+        candidate = f"{head}.{((start + step - 1) % 254) + 1}"
+        if candidate not in taken:
+            return candidate
+    return ""
+
+
+def _assign_unique_interface_addresses(root: ET.Element) -> list[str]:
+    """Stop two devices from answering to the same address.
+
+    A cloned device is a deep copy, so it arrives holding the prototype's
+    interface addresses. Measured across the corpus: 7 of 32 labs carried a
+    duplicate. `multiarea_ospf` had R1, R2 and R3 all on 192.168.1.1, .2.1 and
+    .3.1; `router_dhcp` had three PCs all on 1.1.1.3.
+
+    The same defect as the MAC addresses and the switch management addresses,
+    one layer out, and it is the reason those were fixed here too: cloning
+    happens on several paths and the written file is where they all meet.
+
+    A device's address lives in two places at once -- the PORT node and the
+    `ip address` line in its configuration -- so both are moved together.
+    Anything else leaves the device disagreeing with itself. The first holder
+    keeps the address, so the gateway hosts were told to use stays put.
+    """
+    taken: set[str] = set()
+    renumbered: list[str] = []
+    for device in root.findall(".//DEVICES/DEVICE"):
+        name = device.findtext("./ENGINE/NAME") or ""
+        for port in device.iter("PORT"):
+            node = port.find("IP")
+            address = (node.text or "").strip() if node is not None else ""
+            if not address or address == "0.0.0.0":
+                continue
+            if address not in taken:
+                taken.add(address)
+                continue
+            candidate = _next_free_address(address, taken)
+            if not candidate:
+                continue
+            taken.add(candidate)
+            node.text = candidate
+            # The configuration carries the same address; leaving it behind
+            # would make `show running-config` disagree with the interface.
+            for tag in ("RUNNINGCONFIG", "STARTUPCONFIG"):
+                config = device.find(f"./ENGINE/{tag}")
+                if config is None:
+                    continue
+                for line in config.findall("LINE"):
+                    match = _SVI_ADDRESS_PATTERN.match((line.text or "").strip())
+                    if match is not None and match.group(1) == address:
+                        line.text = f"ip address {candidate} {match.group(2)}"
+            renumbered.append(f"{name}: {address} -> {candidate}")
+    return renumbered
 
 
 # How far apart two device icons have to be before they stop reading as one.
@@ -6944,6 +7007,7 @@ def generate_from_prompt(
     _sanitize_runtime_sections(root)
     port_repairs = _repair_invalid_link_ports(root)
     mac_repairs = _assign_unique_macs(root)
+    _assign_unique_interface_addresses(root)
     _assign_unique_switch_management_ips(root)
     media_notes = _reconcile_cable_media(root)
     trunk_notes = _trunk_uplinks_in_file(root)
