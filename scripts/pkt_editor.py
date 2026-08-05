@@ -652,10 +652,50 @@ def _splice_into_config(existing: list[str], additions: list[str]) -> list[str]:
     return [*existing, *additions]
 
 
+# Globals a device can only have one of. Everything else at the top level --
+# `ip route`, `access-list`, `network`, `snmp-server host` -- legitimately
+# repeats, so replacement has to be by name rather than a blanket rule.
+_SINGLETON_GLOBALS = (
+    "hostname",
+    "ip domain-name",
+    "ip domain name",
+    "enable secret",
+    "enable password",
+    "banner motd",
+)
+
+
+def _singleton_global_prefix(line: str) -> str:
+    text = line.strip()
+    for prefix in sorted(_SINGLETON_GLOBALS, key=len, reverse=True):
+        if text.startswith(prefix + " "):
+            return prefix
+    return ""
+
+
 def _append_unique_config_lines(parent: ET.Element | None, lines: list[str]) -> None:
     if parent is None:
         return
     existing = [line.text or "" for line in parent.findall("./LINE")]
+
+    # A device can only have one hostname, so a new one has to replace the old
+    # rather than sit beside it. `cli R1: hostname CORE-R1` used to leave both
+    # `hostname Router` and `hostname CORE-R1` in the running config: IOS
+    # applies the last, so it worked, and the configuration still contradicted
+    # itself. Only the settings that genuinely cannot repeat are replaced.
+    replaced: set[int] = set()
+    for line in lines:
+        prefix = _singleton_global_prefix(line)
+        if not prefix:
+            continue
+        for index, current in enumerate(existing):
+            if index in replaced or current.startswith(" ") or current.startswith("\t"):
+                continue
+            if _singleton_global_prefix(current) == prefix:
+                existing[index] = line
+                replaced.add(index)
+                break
+
     additions = [line for line in lines if line not in existing]
     _replace_lines(parent, _splice_into_config(existing, additions))
 
