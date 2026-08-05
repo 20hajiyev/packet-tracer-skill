@@ -760,6 +760,30 @@ def port_exists(device: ET.Element, port_name: str) -> bool:
     for kind, count in port_capacity(device).items():
         if not canonical.startswith(kind):
             continue
+        # `port_capacity` reports every kind it models, including the ones the
+        # device has none of, so a match here means the *name* is of this kind,
+        # not that the hardware exists. Without this guard the multi-slot router
+        # branch below answered `0 <= 0 <= 0` and declared
+        # `GigabitEthernet0/0/0` present on a 2811 that has two FastEthernet
+        # ports and no gigabit at all. The link kept that interface, the repair
+        # pass found nothing to fix, and Packet Tracer refused the file --
+        # measured as "Incompatible File" on every generated lab.
+        if count <= 0:
+            return False
+        # Counting ports says how many exist, not what they are called. A
+        # stacked 3650 numbers its uplinks `GigabitEthernet1/0/1`, and asking
+        # for `GigabitEthernet0/1` on it passed the count test -- twenty-eight
+        # gigabit ports, index one -- while naming an interface the switch does
+        # not have. Packet Tracer refused the lab.
+        #
+        # The device's own configuration is the only place its naming shape is
+        # written down, since a PORT node carries no name at all. Compare the
+        # slot depth rather than requiring an exact match: a config lists the
+        # interfaces someone touched, not every socket on the device.
+        named = [name for name in donor_interface_names(device) if name.startswith(kind)]
+        if named and canonical not in named:
+            if canonical.count("/") not in {name.count("/") for name in named}:
+                return False
         if device_type in HOST_DEVICE_TYPES:
             # `FastEthernet0` and, for tolerance, a bare `FastEthernet`.
             return count > 0 and canonical in {kind, f"{kind}0"}
@@ -772,12 +796,14 @@ def port_exists(device: ET.Element, port_name: str) -> bool:
         if index is None:
             return canonical == kind or canonical == f"{kind}0"
         if device_type == "Router":
-            # Routers number from zero. Multi-slot models such as the ISR spell
-            # interfaces `GigabitEthernet0/0/1`, where the trailing number is a
-            # position within a slot rather than an index into the whole card,
-            # so those are bounded by the count instead.
-            if canonical.count("/") >= 2:
-                return 0 <= index <= count
+            # Routers number from zero, in every form. The multi-slot spelling
+            # used to be bounded inclusively -- `0 <= index <= count` -- on the
+            # theory that the trailing number is a position within a slot. On an
+            # ISR4331 carrying three gigabit ports, `GigabitEthernet0/0/0`
+            # through `0/0/2`, that admitted `GigabitEthernet0/0/3`, and the
+            # generated lab named an interface the router does not have. Packet
+            # Tracer refused it. Measured on the donor: three PORT nodes, three
+            # interfaces in the configuration, highest index two.
             return 0 <= index < count
         return 0 < index <= count
     return False

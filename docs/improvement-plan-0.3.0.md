@@ -1867,3 +1867,57 @@ Worth recording separately: the fix for defect one was measured against a
 `--donor-root`, so the "forced" donor was being passed as a directory and the
 run was ordinary donor selection. The flag is `--compat-donor`. A measurement
 whose knob is not connected reports the baseline back as a result.
+
+## Every generated lab was refused by Packet Tracer
+
+This is the finding that reframes the rest of the document.
+
+Packet Tracer became available mid-session, so the generated labs were opened
+for the first time. All of them are refused with a dialog titled "Incompatible
+File" -- the patch-panel lab built earlier today, an ordinary `corpus_minimal`,
+and a lab generated in a session four months ago. A genuine donor opens in
+eight seconds under the identical method.
+
+Nothing in the repo caught this. `structural_check` passes, donor coherence
+passes, `_unexpected_workspace_issues` passes, 613 tests pass. The corpus
+reports `32/33 generated` and labels every one of them `generated_unverified` --
+an honest status whose `--open` tier had simply never been run. The lesson
+already recorded here as "opens is not the same as works" has a floor below it:
+*passes every static check* is not the same as *opens*.
+
+Two controls made the diagnosis possible. Re-encoding a donor's decoded bytes
+with no edit at all produces a file that opens, so the codec is sound. Parsing
+that XML and serialising it again -- the path generation takes, and one that
+drops fifty kilobytes of whitespace -- also opens, so the round trip is sound.
+The breakage is in what the plan does to the tree.
+
+Bisecting the plan's operations one prefix at a time located it exactly.
+Renames open. Prunes open. Reflows open. The first `set_link` does not. And the
+cause was not link creation, which an earlier note in this repo had already
+acquitted and then over-acquitted: it was that the link named an interface the
+device does not have. `port_exists` said it did, three different ways.
+
+**A kind with no ports counts as present.** `port_capacity` reports every kind
+it models, so a 2811 with two FastEthernet interfaces still carries a
+`GigabitEthernet` key with the value zero. The multi-slot router branch then
+evaluated `0 <= 0 <= 0` and confirmed `GigabitEthernet0/0/0`.
+
+**Counting is not naming.** A stacked switch calls its uplinks
+`GigabitEthernet1/0/1`. Asking for `GigabitEthernet0/1` passed on count alone --
+twenty-eight gigabit ports, index one, well inside the range -- while naming an
+interface the switch has never had. A PORT node carries no name at all, so the
+device's own configuration is the only written record of its naming shape.
+
+**Off by one.** Multi-slot router interfaces were bounded inclusively, on the
+theory that the trailing number is a position within a slot. An ISR4331 with
+three gigabit ports has `0/0/0` through `0/0/2`; the bound admitted `0/0/3`.
+
+With all three fixed, both labs open. Confirmed live through the bridge: the
+patch-panel lab loads with six devices, and `1 router 1 switch ve 3 komputer`
+loads with seven devices and four links, its hosts on 192.168.1.21-23 and the
+router's `GigabitEthernet0/0/0` on 192.168.1.1.
+
+The shape is the one this document keeps recording -- two models of one concept
+that disagree -- and here the two models were a device's port *count* and its
+port *names*. What made it survive so long is that the count model is the one
+every other check also uses, so every check agreed with itself.
