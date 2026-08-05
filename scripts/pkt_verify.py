@@ -63,7 +63,11 @@ class StructuralReport:
 
 @dataclass
 class OpenReport:
-    status: str  # opened | timeout | process_exited | packet_tracer_missing
+    # opened | refused | timeout | process_exited | packet_tracer_missing.
+    # `refused` is Packet Tracer's own answer -- the incompatible-file dialog --
+    # and is worth distinguishing from `timeout`, which only means nothing was
+    # observed in the time allowed.
+    status: str
     pkt_path: str
     elapsed_seconds: float = 0.0
     observed_title: str = ""
@@ -192,24 +196,94 @@ def structural_check(pkt_path: str | Path, expected_devices: int | None = None) 
     return report
 
 
-def _windows_titles_matching(stem: str) -> str:
-    script = (
-        "Get-Process -Name PacketTracer -ErrorAction SilentlyContinue | "
-        "Where-Object { $_.MainWindowTitle -ne '' } | "
-        "Select-Object -ExpandProperty MainWindowTitle"
-    )
+# Packet Tracer's own title for the dialog it shows when it will not load a
+# file. Detecting it turns a 150-second timeout into an immediate, correctly
+# named answer, which is the difference between a corpus run that takes eighty
+# minutes to say nothing and one that says which labs are refused.
+REFUSAL_WINDOW_TITLE = "Incompatible File"
+
+
+def _top_level_window_titles() -> list[str]:
+    """Every visible top-level window title on the desktop.
+
+    `MainWindowTitle` reports one window per process, and Packet Tracer moves
+    which of its windows holds that role: the same open showed only the
+    extension's log window in one run and the loaded document in the next. It
+    also never shows the modal refusal dialog, so a refused file was
+    indistinguishable from a slow one. Enumerating every window is what let
+    "opened" and "refused" be told apart at all.
+    """
+    if platform.system() != "Windows":
+        return []
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    titles: list[str] = []
+
+    def collect(hwnd, _lparam):  # pragma: no cover - GUI enumeration
+        if not user32.IsWindowVisible(hwnd):
+            return True
+        length = user32.GetWindowTextLengthW(hwnd)
+        if length <= 0:
+            return True
+        buffer = ctypes.create_unicode_buffer(length + 1)
+        user32.GetWindowTextW(hwnd, buffer, length + 1)
+        text = buffer.value.strip()
+        if text:
+            titles.append(text)
+        return True
+
     try:
-        completed = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-            capture_output=True,
-            text=True,
-            timeout=20,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return ""
-    for line in completed.stdout.splitlines():
-        if stem.lower() in line.strip().lower():
-            return line.strip()
+        user32.EnumWindows(callback_type(collect), 0)
+    except OSError:  # pragma: no cover - defensive
+        return []
+    return titles
+
+
+def _dismiss_refusal_dialogs() -> int:
+    """Close any incompatible-file dialog left on screen, returning how many.
+
+    The dialog is modal: while one is up Packet Tracer will not load anything
+    else, so a batch run would report every lab after the first refusal as
+    refused too -- and instantly, since the dialog is already there. Clearing it
+    before each launch is what makes a sequence of checks mean anything.
+    """
+    if platform.system() != "Windows":
+        return 0
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    handles: list[int] = []
+
+    def collect(hwnd, _lparam):  # pragma: no cover - GUI enumeration
+        length = user32.GetWindowTextLengthW(hwnd)
+        if length <= 0:
+            return True
+        buffer = ctypes.create_unicode_buffer(length + 1)
+        user32.GetWindowTextW(hwnd, buffer, length + 1)
+        if REFUSAL_WINDOW_TITLE in buffer.value:
+            handles.append(hwnd)
+        return True
+
+    try:
+        user32.EnumWindows(callback_type(collect), 0)
+        for hwnd in handles:
+            user32.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE
+    except OSError:  # pragma: no cover - defensive
+        return 0
+    if handles:
+        time.sleep(1.5)
+    return len(handles)
+
+
+def _windows_titles_matching(stem: str) -> str:
+    for title in _top_level_window_titles():
+        if stem.lower() in title.lower():
+            return title
     return ""
 
 
@@ -235,6 +309,7 @@ def open_check(
         report.detail = f"file does not exist: {path}"
         return report
 
+    _dismiss_refusal_dialogs()
     started = time.monotonic()
     try:
         process = subprocess.Popen([str(executable), str(path)])
@@ -246,20 +321,32 @@ def open_check(
     is_windows = platform.system() == "Windows"
     try:
         while time.monotonic() - started < timeout_seconds:
-            if process.poll() is not None:
-                report.status = "process_exited"
-                report.elapsed_seconds = time.monotonic() - started
-                report.detail = f"Packet Tracer exited with code {process.returncode} before the file opened"
-                return report
-
             if is_windows:
-                title = _windows_titles_matching(path.stem)
+                titles = _top_level_window_titles()
+                title = next((entry for entry in titles if path.stem.lower() in entry.lower()), "")
                 if title:
                     report.status = "opened"
                     report.observed_title = title
                     report.elapsed_seconds = time.monotonic() - started
                     report.detail = "Packet Tracer window title contains the file name"
                     return report
+                refusal = next((entry for entry in titles if REFUSAL_WINDOW_TITLE in entry), "")
+                if refusal:
+                    report.status = "refused"
+                    report.observed_title = refusal
+                    report.elapsed_seconds = time.monotonic() - started
+                    report.detail = "Packet Tracer put up its incompatible-file dialog"
+                    return report
+
+            # Checked after the windows, not before. Packet Tracer runs one
+            # instance: launching it again while a copy is open hands the file
+            # over and the new process exits at once, which this read as a
+            # failure while the file was loading perfectly well behind it.
+            if process.poll() is not None and not is_windows:
+                report.status = "process_exited"
+                report.elapsed_seconds = time.monotonic() - started
+                report.detail = f"Packet Tracer exited with code {process.returncode} before the file opened"
+                return report
 
             time.sleep(POLL_INTERVAL_SECONDS)
 
