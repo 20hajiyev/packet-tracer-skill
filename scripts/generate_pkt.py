@@ -8,6 +8,7 @@ from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass, field
 from functools import lru_cache
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -2239,6 +2240,7 @@ def _write_pkt_root(root: ET.Element, pkt_path: Path, xml_path: Path | None = No
     _trunk_uplinks_in_file(root)
     _align_router_access_vlan(root)
     _align_router_gateway(root)
+    _separate_overlapping_devices(root)
     prune_unused_images(root)
     xml_bytes = serialize_pkt_xml(root)
     pkt_path.parent.mkdir(parents=True, exist_ok=True)
@@ -4510,6 +4512,80 @@ def _align_router_gateway(root: ET.Element) -> list[str]:
 
 
 _SVI_ADDRESS_PATTERN = re.compile(r"^ip address (\d+\.\d+\.\d+\.\d+) (\d+\.\d+\.\d+\.\d+)$")
+
+
+# How far apart two device icons have to be before they stop reading as one.
+# The generator already spaces hosts 130 apart, so this is a floor rather than a
+# grid: it moves what collides and leaves everything else where it was put.
+LOGICAL_ICON_SPACING = 110
+# Spare donor devices are deliberately parked far off-canvas, in their own grid.
+PARKED_LOGICAL_X = 9000
+
+
+def _separate_overlapping_devices(root: ET.Element) -> list[str]:
+    """Move devices that were placed on top of each other.
+
+    Measured across the corpus: 22 of 32 labs had at least one overlapping pair,
+    and several were exactly coincident. Three separate causes, all landing in
+    the same place -- a lab that looks like a tangle:
+
+    - every Power Distribution Device is kept at one hardcoded point, so a donor
+      carrying two stacks them precisely;
+    - a duplicated host or group inherits coordinates from its source, which is
+      how `PC3` and `PC6` ended up at the same pixel;
+    - routers matched one-to-one can be handed the same target position.
+
+    Fixed here rather than at each source for the reason the other file-level
+    passes exist: the placements come from several paths and the written file is
+    where they all meet. It runs before the annotation pass so the group boxes
+    are drawn around where the devices actually end up.
+    """
+
+    def too_close(x: float, y: float, placed: list[tuple[float, float]]) -> bool:
+        return any(
+            math.hypot(x - other_x, y - other_y) < LOGICAL_ICON_SPACING
+            for other_x, other_y in placed
+        )
+
+    placed: list[tuple[float, float]] = []
+    moved: list[str] = []
+    for device in root.findall(".//DEVICES/DEVICE"):
+        x_node = device.find("./WORKSPACE/LOGICAL/X")
+        y_node = device.find("./WORKSPACE/LOGICAL/Y")
+        if x_node is None or y_node is None:
+            continue
+        try:
+            x = float((x_node.text or "").strip())
+            y = float((y_node.text or "").strip())
+        except ValueError:
+            continue
+        if x >= PARKED_LOGICAL_X:
+            continue
+        if not too_close(x, y, placed):
+            placed.append((x, y))
+            continue
+
+        name = device.findtext("./ENGINE/NAME") or ""
+        spot: tuple[float, float] | None = None
+        for ring in range(1, 10):
+            for step_x, step_y in ((1, 0), (0, 1), (-1, 0), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)):
+                candidate_x = x + step_x * ring * LOGICAL_ICON_SPACING
+                candidate_y = y + step_y * ring * LOGICAL_ICON_SPACING
+                if candidate_x < 60 or candidate_y < 60 or candidate_x >= PARKED_LOGICAL_X:
+                    continue
+                if not too_close(candidate_x, candidate_y, placed):
+                    spot = (candidate_x, candidate_y)
+                    break
+            if spot is not None:
+                break
+        if spot is None:
+            placed.append((x, y))
+            continue
+        x_node.text = str(int(spot[0]))
+        y_node.text = str(int(spot[1]))
+        placed.append(spot)
+        moved.append(f"{name}: ({x:.0f},{y:.0f}) -> ({spot[0]:.0f},{spot[1]:.0f})")
+    return moved
 
 
 def _assign_unique_switch_management_ips(root: ET.Element) -> list[str]:
@@ -6878,6 +6954,7 @@ def generate_from_prompt(
     if unexpected_workspace_issues:
         raise ValueError("; ".join(unexpected_workspace_issues))
     validate_donor_coherence(donor_root, root)
+    _separate_overlapping_devices(root)
     _annotate_generated_lab(root, blueprint, prepared_plan)
     prune_unused_images(root)
     xml_bytes = serialize_pkt_xml(root)
