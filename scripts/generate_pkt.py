@@ -1634,7 +1634,25 @@ def _device_kind(device: dict[str, object]) -> str:
 #
 # Before this, `1 switch 3 ip phone qur` produced a lab with four devices and
 # zero cables, and reported success.
-HOST_DEVICE_KINDS = {"PC", "Server", "Printer", "Laptop", "IpPhone", "HomeVoip", "Sniffer"}
+# The two after the sniffer come from the same scan and plug into a switch for
+# the same reason a phone does. Two more were tried and taken back out: an
+# access point and a Meraki server each carry exactly one port, named
+# `GigabitEthernet0` and `FastEthernet0`, and the cable arrived on
+# `GigabitEthernet0/1` and `FastEthernet0/1` -- something downstream of
+# `_host_port` appends a slot to a name that has none. Both labs opened while
+# the device sat unwired and were refused once it was cabled, so wiring them is
+# worse than leaving them until that path is traced.
+HOST_DEVICE_KINDS = {
+    "PC",
+    "Server",
+    "Printer",
+    "Laptop",
+    "IpPhone",
+    "HomeVoip",
+    "Sniffer",
+    "WirelessLanController",
+    "NetworkController",
+}
 
 
 def _is_host_device(device: dict[str, object]) -> bool:
@@ -1720,6 +1738,10 @@ def _host_port(device: dict[str, object]) -> str:
     # cable in a saved lab.
     if kind == "Sniffer":
         return "Ethernet0"
+    if kind == "NetworkController":
+        return "GigabitEthernet0"
+    if kind == "WirelessLanController":
+        return "GigabitEthernet1"
     return "FastEthernet0"
 
 
