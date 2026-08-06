@@ -2140,3 +2140,137 @@ What this does establish is that the capability is real and the remaining
 problem is donor quality, not donor absence. A single purpose-built donor
 carrying two serial routers *and* a switch with hosts would settle it, the way
 the device palette settled the patch panel.
+
+## The donor cannot be asked whether it will produce a serial WAN
+
+Five donors were staged into separate folders and the same prompt -- `iki
+noqte arasinda leased line ile 2 router 4 komputer qur` -- was generated
+against each with `--donor-root`, then opened in Packet Tracer:
+
+| donor | opened | serial in the result |
+| --- | --- | --- |
+| `company_network.pkt` | yes | yes |
+| `pkt_skill_serial_wan.pkt` | yes | no |
+| `Senan_Haciyev_tapsiriq.pkt` | no | yes |
+| `test.pkt` | yes | no |
+| `train9ng.pkt` | yes | no |
+
+One donor of five gives both. It is not the richest -- `train9ng` has 11
+switches and 18 PCs and yields no serial. It is not the one with the most
+serial routers -- `Senan_Haciyev_tapsiriq` has five and is refused. The
+host-richness ranking tried in the previous cycle is therefore wrong, measured.
+
+Three counts taken from the donors, looking for one that separates the working
+donor from the rest:
+
+| donor | serial routers | also facing a switch | router-to-router serial pairs |
+| --- | --- | --- | --- |
+| `Senan_Haciyev_tapsiriq.pkt` | 5 | 3 | 4 |
+| `company_network.pkt` | 2 | 1 | 1 |
+| `pkt_skill_serial_wan.pkt` | 2 | 2 | 1 |
+| `test.pkt` | 2 | 1 | 1 |
+| `train9ng.pkt` | 2 | 1 | 1 |
+
+`company_network` (works), `test` (does not) and `train9ng` (does not) are
+indistinguishable on all three. No cheap static signal predicts the outcome,
+because what decides it is which cable survives pruning, and that is a property
+of the prune, not of the donor.
+
+So the selector stopped asking the donor and started asking the built lab. The
+check is free: the candidate loop already decodes and prunes each donor, so the
+answer is sitting in memory at the moment the decision is made.
+
+### The check had to be about ports, not about the cable's label
+
+The first version counted `LINK/TYPE == eSerial` and reported a serial WAN for
+a lab pruned from `Maarif_K231.pkt`. Tracing the stages showed why:
+
+```
+after prune:    eSerial on ['GigabitEthernet0/0/1', 'GigabitEthernet0/0/0']
+after repair:   eSerial on ['GigabitEthernet0/0/1', 'GigabitEthernet0/0/0']
+after families: eSerial on ['GigabitEthernet0/0/1', 'GigabitEthernet0/0/0']
+after media:    NO SERIAL
+```
+
+A serial cable in two Ethernet sockets. `_reconcile_cable_media` demoted it to
+copper further down the pipeline, correctly -- Packet Tracer will not open that
+file. The selector was reading a label the pipeline was about to overwrite.
+The recurring shape of this project's defects, once more: two models of one
+concept, cable type and port names, and the wrong one consulted.
+
+The check now requires both ends to be `Serial*`, which is what survives
+reconciliation and therefore what the written file will actually contain.
+
+### The widened pool was never reached
+
+Fixing the check exposed a second defect above it. When no ranked donor could
+serve the WAN, `_evaluate_donor_prune_candidates` returned the deferred
+candidate -- a workable lab without its serial link -- and that early return
+skipped the widened local-donor pool below it, which is where
+`company_network.pkt` lives. Settling for a lab without the WAN is still the
+right ending; doing it before looking in the second pool is not. The caller now
+distinguishes "this pool chose a donor" from "this pool made do", and only
+settles once both pools have been asked.
+
+### The requirement was being rewritten by donors that were not chosen
+
+Fixing the two problems above only moved the failure. Instrumenting
+`_blueprint_wants_serial` around each pool showed the requirement itself
+disappearing:
+
+```
+wants_serial before: True
+  after a pool of 8 -> wants_serial: False
+  after a pool of 4 -> wants_serial: False
+```
+
+and the link that changed:
+
+```
+{'a': {'dev': 'R1', 'port': 'Serial0/0/0'}, 'b': {'dev': 'R2', 'port': 'Serial0/0/0'}, 'media': 'serial'}
+                                  ->
+{'a': {'dev': 'R1', 'port': 'GigabitEthernet0/0'}, 'b': {'dev': 'R2', 'port': 'GigabitEthernet0/1'}, 'media': 'eCrossOver'}
+```
+
+Donor adaptation rewrites the blueprint's links to the ports the donor really
+owns, and it did so on the caller's dict. So the *first* donor tried -- one
+that could not serve a WAN -- edited the requirement into copper, and every
+donor, pool, check and pipeline stage after it saw a prompt that had never
+asked for serial. This is the mechanism behind "topology follows the donor's
+shape instead of the requirement", stated concretely.
+
+Each candidate now adapts a deep copy, and the adaptation is written back onto
+the caller's blueprint only by the donor that is actually committed to.
+Downstream stages still read the ports and cable families that ended up in the
+file; a rejected donor simply cannot edit what was asked for. 638 tests pass.
+
+### What a serial link has to be before it counts
+
+With the requirement intact, the selector found a donor that builds
+`Serial0/0/0 <-> Serial0/0/0` -- and Packet Tracer refused the lab. Two things
+came out of chasing that.
+
+First, the refusal is still unexplained, but the search narrowed. Removing each
+device in turn and opening the result:
+
+```
+without Power Distribution Device0 -> refused    without PC4  -> refused
+without PC1                        -> refused    without R1   -> opened
+without PC2                        -> refused    without R2   -> refused
+without SW1                        -> refused    ...
+```
+
+Only R1 matters, and R1 and R2 are twins: identical tag structure, identical
+module and port layout. Giving R1 R2's port state (`POWER`, `UP_METHOD`,
+`FULLDUPLEX`), making R1's `PORT/IP` agree with its own config, and replacing
+R1's entire running config with R2's each left the file refused. So the trigger
+is neither port state, nor the address disagreement, nor the config text.
+
+Second, and more useful: both routers' only serial interfaces are `Serial2/0`
+and `Serial3/0`. The cable named `Serial0/0/0` on both ends -- a port neither
+device owns. `port_exists` accepts the name, so the "serial WAN" the check was
+celebrating was wired to nothing. `_root_has_serial_link` now resolves each
+cable end to its device and requires the port to appear in that device's own
+interface list. With that, the leased-line prompt settles on a donor that opens
+rather than one that is refused, and the result is the same working copper lab
+as before -- no regression, and one fewer way to ship a lab that cannot open.

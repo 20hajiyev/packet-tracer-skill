@@ -1359,13 +1359,89 @@ def _blueprint_wants_serial(blueprint: dict[str, object]) -> bool:
     return False
 
 
-def _donor_has_serial_router(root: ET.Element) -> bool:
-    for device in root.findall(".//DEVICES/DEVICE"):
-        if (device.findtext("./ENGINE/TYPE") or "").strip() != "Router":
+def _root_has_serial_link(root: ET.Element) -> bool:
+    """Whether a built lab actually carries a serial cable.
+
+    A donor owning serial-capable routers does not mean the generated lab
+    inherits a serial link: pruning may drop the very cable that used it.
+    Five donors were probed by hand and the ones that produced a serial WAN
+    could not be told apart by any count taken from the donor -- serial
+    routers, routers also facing a switch, and router-to-router pairs were
+    identical across the ones that worked and the ones that did not. The
+    finished lab is the only place the answer is written down.
+
+    The `eSerial` tag alone is not that answer. A pruned lab was measured
+    carrying an `eSerial` cable whose two ends were `GigabitEthernet0/0/1` and
+    `GigabitEthernet0/0/0`; `_reconcile_cable_media` then demoted it to copper,
+    as it should, because Packet Tracer refuses a serial cable in an Ethernet
+    socket. The ports are what make a link serial, so the ports are what is
+    counted here.
+
+    Nor is a serial-looking name enough. A lab pruned from
+    `Senan_Haciyev_tapsiriq.pkt` was measured wiring `Serial0/0/0 <-> Serial0/0/0`
+    between two routers whose only serial interfaces are `Serial2/0` and
+    `Serial3/0`; `port_exists` accepts the name, but the devices' own interface
+    lists do not have it. A cable between ports that do not exist is not a WAN,
+    so both ends must name an interface the device actually owns.
+    """
+    order: list[ET.Element] = list(root.findall(".//DEVICES/DEVICE"))
+    by_ref: dict[str, ET.Element] = {}
+    for device in order:
+        ref = (device.findtext("./ENGINE/SAVE_REF_ID") or "").strip()
+        if ref:
+            by_ref[ref] = device
+
+    def resolve(value: str) -> ET.Element | None:
+        value = value.strip()
+        if value in by_ref:
+            return by_ref[value]
+        if value.isdigit() and int(value) < len(order):
+            return order[int(value)]
+        return None
+
+    for link in root.findall(".//LINKS/LINK"):
+        if (link.findtext("./TYPE") or "").strip() != "eSerial":
             continue
-        if port_capacity(device).get("Serial", 0) > 0:
+        cable = link.find("./CABLE")
+        if cable is None:
+            continue
+        ports = [(node.text or "") for node in cable.findall("PORT")]
+        if len(ports) < 2 or not all(port.startswith("Serial") for port in ports):
+            continue
+        ends = (
+            (resolve(cable.findtext("FROM", default="")), ports[0]),
+            (resolve(cable.findtext("TO", default="")), ports[1]),
+        )
+        if all(
+            device is not None and port in donor_interface_names(device)
+            for device, port in ends
+        ):
             return True
     return False
+
+
+def _adopt_blueprint(blueprint: dict[str, object], archetype_plan: DonorArchetypePlan) -> None:
+    """Write a committed donor's adaptation back onto the caller's blueprint.
+
+    Downstream stages read the blueprint expecting the ports and cable families
+    that ended up in the file, so the adaptation still has to land -- just from
+    the donor that was chosen, and only once the choice is made.
+    """
+    adapted = archetype_plan.adapted_blueprint
+    if not adapted:
+        return
+    blueprint.clear()
+    blueprint.update(adapted)
+
+
+def _pool_selected_a_donor(diagnostics: list[dict[str, object]]) -> bool:
+    """Whether a pool produced a donor it was happy with, rather than settling.
+
+    The deferred fallback returns a candidate whose diagnostic stays labelled
+    `deferred_no_serial`, so the absence of a `selected` entry is what tells
+    the caller the pool made do.
+    """
+    return any(item.get("status") == "selected" for item in diagnostics)
 
 
 def _evaluate_donor_prune_candidates(
@@ -1406,7 +1482,20 @@ def _evaluate_donor_prune_candidates(
             "donor_graph_summary": _donor_graph_fit_summary(donor_graph_fit, blueprint),
         }
         try:
-            adapted_plan, archetype_plan = _build_donor_prune_plan_for_donor(plan, blueprint, donor_path)
+            # Adaptation rewrites the blueprint's links to the ports the donor
+            # actually owns, and it used to do so on the caller's dict. Measured
+            # on `iki noqte arasinda leased line`: the first donor tried could
+            # not serve the WAN, so it rewrote the requirement itself --
+            # `R1 Serial0/0/0 <-> R2 Serial0/0/0 (serial)` became
+            # `R1 GigabitEthernet0/0 <-> R2 GigabitEthernet0/1 (eCrossOver)` --
+            # and from that point no later donor, pool or check could tell the
+            # prompt had asked for serial at all. A rejected donor must not be
+            # able to edit what was asked for, so each one adapts a copy and
+            # only the chosen one writes back.
+            candidate_blueprint = copy.deepcopy(blueprint)
+            adapted_plan, archetype_plan = _build_donor_prune_plan_for_donor(
+                plan, candidate_blueprint, donor_path
+            )
             donor_root = decode_pkt_to_root(donor_path)
             candidate_root = apply_plan_operations(donor_root, adapted_plan)
             _sanitize_runtime_sections(candidate_root)
@@ -1417,17 +1506,19 @@ def _evaluate_donor_prune_candidates(
             archetype_plan.compat_donor_origin = donor_candidate.sample.origin
             archetype_plan.compat_donor_relative_path = donor_candidate.sample.relative_path
             archetype_plan.selection_reasons = donor_candidate.reasons[:8]
+            archetype_plan.adapted_blueprint = candidate_blueprint
             diagnostic["status"] = "selected"
             diagnostic["rejection_reasons"] = []
             diagnostics.append(diagnostic)
             result = (adapted_plan, archetype_plan, donor_root, donor_candidate)
-            if wants_serial and not _donor_has_serial_router(donor_root):
-                # Workable, but it cannot carry the WAN that was asked for.
-                # Hold it in case nothing better turns up.
+            if wants_serial and not _root_has_serial_link(candidate_root):
+                # Workable, but it did not come out with the WAN that was asked
+                # for. Hold it in case nothing better turns up.
                 if serial_deferred is None:
                     serial_deferred = result
+                # The diagnostic is already in the list; relabel it in place
+                # rather than recording the same candidate twice.
                 diagnostic["status"] = "deferred_no_serial"
-                diagnostics.append(diagnostic)
                 continue
             return result, diagnostics
         except PlanningError as exc:
@@ -1439,8 +1530,8 @@ def _evaluate_donor_prune_candidates(
             diagnostic["rejection_reasons"] = _summarize_rejection_issues([str(exc)])
         diagnostics.append(diagnostic)
     if serial_deferred is not None:
-        # No donor in the pool has a serial router. A lab without the WAN beats
-        # no lab at all, so the best workable candidate is used after all.
+        # No donor in the pool produced a serial link. A lab without the WAN
+        # beats no lab at all, so the best workable candidate is used after all.
         return serial_deferred, diagnostics
     if latest_plan is not None:
         plan.blocking_gaps = list(dict.fromkeys([*plan.blocking_gaps, *latest_plan.blocking_gaps]))
@@ -1504,6 +1595,11 @@ class DonorArchetypePlan:
     compat_donor_origin: str | None = None
     compat_donor_relative_path: str | None = None
     selection_reasons: list[str] = field(default_factory=list)
+    # The blueprint as this donor rewrote it -- its real port names and cable
+    # families. Candidates adapt a copy so that a donor which is not chosen
+    # cannot edit the requirement out from under the ones tried after it; the
+    # caller adopts this one only once it commits to the donor.
+    adapted_blueprint: dict[str, object] | None = None
 
 
 @dataclass
@@ -6639,8 +6735,16 @@ def _build_donor_prune_plan(
         raise PlanningError("Prompt plan is incomplete; generation was skipped.", blocked_plan)
 
     evaluation, diagnostics = _evaluate_donor_prune_candidates(plan, blueprint, donor_candidates)
-    if evaluation is not None:
+    # A serial prompt that no ranked donor could serve comes back as a workable
+    # lab without its WAN -- the deferred fallback, which leaves no diagnostic
+    # marked "selected". Measured on `iki noqte arasinda leased line`: the
+    # ranked pool settled for copper while `company_network.pkt`, which yields a
+    # real serial link, sat in the widened pool below and was never reached.
+    # Settling is still the right ending, just not before looking there.
+    settled_without_the_wan = evaluation is not None and not _pool_selected_a_donor(diagnostics)
+    if evaluation is not None and not settled_without_the_wan:
         adapted_plan, archetype_plan, _, _ = evaluation
+        _adopt_blueprint(blueprint, archetype_plan)
         return adapted_plan, archetype_plan
 
     # Nothing in the ranked pool worked. That pool is one file in practice: the
@@ -6658,11 +6762,31 @@ def _build_donor_prune_plan(
     )
     if extra_candidates:
         widened = _rerank_candidates_for_blueprint(extra_candidates, blueprint)
-        evaluation, more_diagnostics = _evaluate_donor_prune_candidates(plan, blueprint, widened)
+        widened_evaluation, more_diagnostics = _evaluate_donor_prune_candidates(plan, blueprint, widened)
         diagnostics = list(diagnostics) + list(more_diagnostics)
-        if evaluation is not None:
-            adapted_plan, archetype_plan, _, _ = evaluation
-            return adapted_plan, archetype_plan
+        if widened_evaluation is not None:
+            if _pool_selected_a_donor(more_diagnostics):
+                adapted_plan, archetype_plan, _, _ = widened_evaluation
+                _adopt_blueprint(blueprint, archetype_plan)
+                return adapted_plan, archetype_plan
+            if evaluation is None:
+                evaluation = widened_evaluation
+
+    # A third pass was tried here and removed. Both pools are capped at four
+    # summarised labs and stop discovery as soon as four match, so a serial
+    # request spends its budget on labs with no serial port anywhere; asking
+    # discovery for `__serial_routers__` fixes that and does find a donor that
+    # builds a real `Serial0/0/0 <-> Serial0/0/0` WAN. Measured end to end, the
+    # donor it reaches on this machine is `Senan_Haciyev_tapsiriq.pkt`, and
+    # Packet Tracer refuses the lab built from it -- the refusal that is still
+    # unexplained. An unwired device costs one device; a refused file costs the
+    # whole lab, so the pass stays out until the refusal is understood.
+    if evaluation is not None:
+        # Every pool was asked and none could carry the WAN. A lab without it
+        # beats no lab at all.
+        adapted_plan, archetype_plan, _, _ = evaluation
+        _adopt_blueprint(blueprint, archetype_plan)
+        return adapted_plan, archetype_plan
 
     blocked_plan = _copy_plan(plan)
     summary = "No ranked donor candidate passed donor-prune compatibility validation."
