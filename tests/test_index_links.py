@@ -85,3 +85,45 @@ def test_a_links_own_device_going_takes_the_link_with_it() -> None:
     _prune_device(root, "PC1")
 
     assert _endpoints(root) == [("SW1", "PC2")]
+
+
+def test_the_port_repair_runs_on_positional_links_too() -> None:
+    """The repair looked devices up by `SAVE_REF_ID` alone, so on a donor whose
+    devices have none it skipped every link and reported no work to do.
+
+    Measured on a sniffer lab: four devices, not one with a save ref, three
+    positional links, and a cable sitting on `Port-channel 5` -- a logical
+    interface nothing can plug into. The repair walked straight past it and
+    Packet Tracer refused the file.
+    """
+    import xml.etree.ElementTree as ET
+
+    from generate_pkt import _repair_invalid_link_ports
+
+    root = ET.Element("PACKETTRACER5")
+    network = ET.SubElement(root, "NETWORK")
+    devices = ET.SubElement(network, "DEVICES")
+    for name, kind, port_count in (("SW1", "Switch", 24), ("PC1", "Pc", 1)):
+        device = ET.SubElement(devices, "DEVICE")
+        engine = ET.SubElement(device, "ENGINE")
+        ET.SubElement(engine, "NAME").text = name
+        ET.SubElement(engine, "TYPE").text = kind
+        # Deliberately no SAVE_REF_ID: that is the shape this pass ignored.
+        ports = ET.SubElement(device, "PORTS")
+        for _ in range(port_count):
+            port = ET.SubElement(ports, "PORT")
+            ET.SubElement(port, "TYPE").text = "eCopperFastEthernet"
+
+    links = ET.SubElement(network, "LINKS")
+    link = ET.SubElement(links, "LINK")
+    cable = ET.SubElement(link, "CABLE")
+    ET.SubElement(cable, "FROM").text = "0"
+    ET.SubElement(cable, "TO").text = "1"
+    ET.SubElement(cable, "PORT").text = "Port-channel 5"
+    ET.SubElement(cable, "PORT").text = "FastEthernet0"
+
+    repairs = _repair_invalid_link_ports(root)
+
+    assert repairs, "a cable on a logical interface must be repaired, not skipped"
+    ports = [(node.text or "") for node in cable.findall("PORT")]
+    assert not ports[0].startswith("Port-channel"), ports

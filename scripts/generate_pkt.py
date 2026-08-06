@@ -1625,16 +1625,16 @@ def _device_kind(device: dict[str, object]) -> str:
 # switch: that would put a cable on a socket that does not exist, which is
 # exactly what Packet Tracer refuses to open.
 #
-# The sniffer has copper and still cannot go here. Its ports are
-# `eCopperEthernet`, which `port_capacity` counts as neither FastEthernet nor
-# GigabitEthernet, so port selection fell through and put the cable on
-# `Port-channel 5` -- a logical interface. The lab was refused. Wiring it needs
-# its own port naming first; leaving it out costs an unwired device, and
-# including it costs the whole file.
+# The sniffer was left out at first: its ports are `eCopperEthernet`, which
+# `port_capacity` counts as neither FastEthernet nor GigabitEthernet, so port
+# selection fell through and put the cable on `Port-channel 5` and the lab was
+# refused. It is back, because the missing piece was only the port's name.
+# Scanning what donors actually cable, per kind, gives `Ethernet0` -- not the
+# `FastEthernet0` the device palette reports for the same device.
 #
 # Before this, `1 switch 3 ip phone qur` produced a lab with four devices and
 # zero cables, and reported success.
-HOST_DEVICE_KINDS = {"PC", "Server", "Printer", "Laptop", "IpPhone", "HomeVoip"}
+HOST_DEVICE_KINDS = {"PC", "Server", "Printer", "Laptop", "IpPhone", "HomeVoip", "Sniffer"}
 
 
 def _is_host_device(device: dict[str, object]) -> bool:
@@ -1713,6 +1713,13 @@ def _host_port(device: dict[str, object]) -> str:
     # working link in them uses those two names, and none uses `Switch`.
     if kind == "HomeVoip":
         return "Ethernet"
+    # Measured the same way, by scanning every cable in 130 donor labs and
+    # grouping the port names by device kind. Worth doing rather than trusting
+    # the device palette, which reports `FastEthernet0` for a sniffer and
+    # `Port 0`/`PC Port` for an IP phone -- neither of which appears on a single
+    # cable in a saved lab.
+    if kind == "Sniffer":
+        return "Ethernet0"
     return "FastEthernet0"
 
 
@@ -5161,11 +5168,19 @@ def _repair_invalid_link_ports(root: ET.Element) -> list[str]:
 
     Returns a description of every rename, for the generation report.
     """
+    # Endpoints come in two spellings, and this pass only understood one. A
+    # donor whose devices carry no `SAVE_REF_ID` addresses its links by position
+    # instead, and every lookup here returned nothing -- so the repair skipped
+    # every link and reported no work to do. Measured on a sniffer lab: four
+    # devices, none with a save ref, three positional links, and a cable sitting
+    # on `Port-channel 5`, which the repair walked straight past.
+    device_order = list(root.findall(".//DEVICES/DEVICE"))
     device_by_ref: dict[str, ET.Element] = {}
-    for device in root.findall(".//DEVICES/DEVICE"):
+    for index, device in enumerate(device_order):
         ref = (device.findtext("./ENGINE/SAVE_REF_ID") or "").strip()
         if ref:
             device_by_ref[ref] = device
+        device_by_ref.setdefault(str(index), device)
 
     used: set[tuple[str, str]] = set()
     for link in root.findall(".//LINKS/LINK"):
