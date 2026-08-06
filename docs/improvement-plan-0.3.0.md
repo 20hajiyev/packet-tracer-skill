@@ -2057,3 +2057,25 @@ the samples themselves rather than inferred from their names, and then let a
 blueprint carrying a serial link prefer donors that have serial ports. Recorded
 rather than attempted, because guessing at a capability token would be exactly
 the kind of unmeasured assumption this document exists to record the cost of.
+
+### The measurement that was wrong because of the bug it was measuring
+
+Scanning for donors with two or more serial-capable routers found six, almost
+all of them with no switch and no hosts -- which read as "serial donors exist
+but none can also supply the topology". That conclusion was wrong, and wrong
+for an instructive reason: the scan used `port_capacity`, which was blind to
+`eSmartSerial`. It was measuring the defect while trying to measure around it.
+
+With the family map corrected the same scan finds **35**, several of them with
+switches and hosts.
+
+The serial WAN still comes out over copper, and the reason has moved one layer
+out. The ranked candidate pool for a WAN prompt is eight samples -- firewall and
+Meraki labs, because `wan` maps to the WAN/security-edge archetype -- and not
+one of them has a serial router. The thirty-five that do never enter the pool,
+so the preference added to the candidate loop has nothing to prefer.
+
+That makes the next step concrete rather than speculative: `build_sample_catalog.py`
+regenerates the catalogue, and a serial attribute can now be computed from the
+samples themselves, since `port_capacity` finally reports it. Ranking can then
+lift serial-capable donors for a blueprint that plans a serial link.
