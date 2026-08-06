@@ -685,7 +685,27 @@ def port_capacity(device: ET.Element) -> dict[str, int]:
 
 # Hosts carry a single unslotted interface. Switches and routers slot theirs.
 HOST_DEVICE_TYPES = {"PC", "Server", "Printer", "Laptop", "Tablet", "Smartphone", "WirelessEndDevice"}
-UNSLOTTED_MULTIPORT_TYPES = {"Hub", "Repeater", "CoaxialSplitter"}
+# Devices whose interfaces are numbered straight through, with no slot: a hub's
+# `FastEthernet0`, an access point's `GigabitEthernet0`, a controller's
+# `GigabitEthernet1`.
+#
+# The four after the first three were measured by scanning every cable in 130
+# donor labs, and by asking what happened to a lab that wired one. A device
+# missing from this set falls to the slotted rule, `0 < index <= count`, which
+# rejects index 0 and accepts index 1 -- so for an access point carrying a
+# single `GigabitEthernet0`, the real port was reported absent and the
+# nonexistent `GigabitEthernet0/1` was reported present. The port repair then
+# dutifully replaced the good name with the bad one, and Packet Tracer refused
+# the file.
+UNSLOTTED_MULTIPORT_TYPES = {
+    "Hub",
+    "Repeater",
+    "CoaxialSplitter",
+    "LightWeightAccessPoint",
+    "WirelessLanController",
+    "NetworkController",
+    "MerakiServer",
+}
 
 
 def donor_interface_names(device: ET.Element) -> list[str]:

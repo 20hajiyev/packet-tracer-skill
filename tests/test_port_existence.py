@@ -133,3 +133,29 @@ def test_a_stale_configuration_line_does_not_make_a_port_real() -> None:
     )
     assert port_exists(access, "GigabitEthernet0/1") is True
     assert port_exists(access, "FastEthernet0/5") is True
+
+
+def test_a_device_with_unslotted_ports_numbers_from_zero() -> None:
+    """An access point carries a single `GigabitEthernet0`. Falling to the
+    slotted rule, `0 < index <= count`, rejected index 0 and accepted index 1 --
+    so the real port was reported absent and `GigabitEthernet0/1`, which the
+    device does not have, was reported present.
+
+    That is worse than a wrong answer: the port repair trusts this, so it
+    replaced the good name with the invented one and Packet Tracer refused the
+    lab. Wiring an access point had to be reverted until this was fixed.
+    """
+    access_point = _device("LightWeightAccessPoint", ["eCopperGigabitEthernet"])
+
+    assert port_exists(access_point, "GigabitEthernet0") is True
+    assert port_exists(access_point, "GigabitEthernet0/1") is False
+    assert port_exists(access_point, "GigabitEthernet1") is False
+
+    meraki = _device("MerakiServer", ["eCopperFastEthernet"])
+    assert port_exists(meraki, "FastEthernet0") is True
+    assert port_exists(meraki, "FastEthernet0/1") is False
+
+    # A switch still numbers from one, and a bare name is not a port on it.
+    switch = _device("Switch", ["eCopperFastEthernet"] * 24, ["FastEthernet0/1"])
+    assert port_exists(switch, "FastEthernet0/1") is True
+    assert port_exists(switch, "FastEthernet0") is False

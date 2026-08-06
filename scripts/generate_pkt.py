@@ -1634,14 +1634,14 @@ def _device_kind(device: dict[str, object]) -> str:
 #
 # Before this, `1 switch 3 ip phone qur` produced a lab with four devices and
 # zero cables, and reported success.
-# The two after the sniffer come from the same scan and plug into a switch for
-# the same reason a phone does. Two more were tried and taken back out: an
-# access point and a Meraki server each carry exactly one port, named
-# `GigabitEthernet0` and `FastEthernet0`, and the cable arrived on
-# `GigabitEthernet0/1` and `FastEthernet0/1` -- something downstream of
-# `_host_port` appends a slot to a name that has none. Both labs opened while
-# the device sat unwired and were refused once it was cabled, so wiring them is
-# worse than leaving them until that path is traced.
+# The five after the sniffer come from the same scan and plug into a switch for
+# the same reason a phone does. The access point and the Meraki server were
+# tried once before and taken back out, because the cable arrived on
+# `GigabitEthernet0/1` and `FastEthernet0/1` when each device carries a single
+# unslotted port. That turned out not to be this table's fault: `port_exists`
+# was answering that the real port was absent and the invented one present, so
+# the port repair replaced the good name with the bad. With those kinds
+# recognised as unslotted, both are back.
 HOST_DEVICE_KINDS = {
     "PC",
     "Server",
@@ -1652,6 +1652,8 @@ HOST_DEVICE_KINDS = {
     "Sniffer",
     "WirelessLanController",
     "NetworkController",
+    "LightWeightAccessPoint",
+    "MerakiServer",
 }
 
 
@@ -1738,7 +1740,7 @@ def _host_port(device: dict[str, object]) -> str:
     # cable in a saved lab.
     if kind == "Sniffer":
         return "Ethernet0"
-    if kind == "NetworkController":
+    if kind in {"NetworkController", "LightWeightAccessPoint"}:
         return "GigabitEthernet0"
     if kind == "WirelessLanController":
         return "GigabitEthernet1"
