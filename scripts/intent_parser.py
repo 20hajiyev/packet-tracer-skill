@@ -434,11 +434,21 @@ def _number_word_pattern() -> re.Pattern[str]:
     preposition in English, so a bare substitution turns `dhcp on router` into
     `dhcp 10 router` and silently orders ten routers. Requiring a device alias
     next confines the rewrite to phrases that are actually counts.
+
+    A group noun counts too. `2 ofis, her ofisde 1 switch ve 4 komputer` builds
+    two offices with four PCs each; the same sentence written `iki ofis` built
+    one office with four, because `ofis` is not a device alias so `iki` was
+    never turned into a digit and the group extractor, which matches `\\d+`,
+    found nothing. Both spellings now mean the same thing.
     """
     words = "|".join(sorted(NUMBER_WORDS, key=len, reverse=True))
-    return re.compile(
-        rf"\b({words})\b(?=\s+(?:dene|eded|tane)?\s*(?:{_any_device_alias_pattern()})\b)"
+    followers = "|".join(
+        (
+            _any_device_alias_pattern(),
+            _group_noun_alternation(GROUP_NOUN_STEMS + GROUP_NOUN_LOCATIVES),
+        )
     )
+    return re.compile(rf"\b({words})\b(?=\s+(?:dene|eded|tane)?\s*(?:{followers})\b)")
 
 
 def _digits_for_number_words(text: str) -> str:
@@ -783,8 +793,14 @@ def _extract_per_department_devices(normalized_prompt: str) -> dict[str, int]:
     stems = _group_noun_alternation(GROUP_NOUN_STEMS)
     locatives = _group_noun_alternation(GROUP_NOUN_LOCATIVES)
     group_segment = ""
+    # The segment ends at a capability word, because `her ofisde 4 komputer,
+    # dhcp ile` describes one office and then the whole lab. `router` used to
+    # end it too, which truncated any per-office list that happens to start
+    # with one: `her ofisde 1 router 1 switch 4 komputer` left a segment of
+    # `1 ` and the four PCs were counted once for the whole lab instead of once
+    # per office. A router is a device in that sentence, not a capability.
     segment_match = re.search(
-        rf"\bher\s+(?:{locatives})\s+(.+?)(?=\b(?:router|dhcp|vlan|ssid|acl|telnet|ospf|eigrp|rip|nat)\b|$)",
+        rf"\bher\s+(?:{locatives})\s+(.+?)(?=\b(?:dhcp|vlan|ssid|acl|telnet|ospf|eigrp|rip|nat)\b|$)",
         normalized_prompt,
     )
     if segment_match:
