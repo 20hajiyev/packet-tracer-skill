@@ -2079,3 +2079,32 @@ That makes the next step concrete rather than speculative: `build_sample_catalog
 regenerates the catalogue, and a serial attribute can now be computed from the
 samples themselves, since `port_capacity` finally reports it. Ranking can then
 lift serial-capable donors for a blueprint that plans a serial link.
+
+### The serial WAN, end to end
+
+`iki noqte arasinda leased line ile 2 router 4 komputer qur --donor-root <folder>`
+
+    eSerial  R1:Serial0/2/0 <-> R2:Serial0/3/0
+    open: opened
+    PC1 -> 172.10.12.2 (the far router across the WAN): 4/4, 0% loss
+
+Addressing is coherent throughout: the point-to-point on 172.10.12.1/.2, the
+hosts on 172.10.10.20-23 with the router's LAN interface on .1.
+
+Three separate pieces had to be true at once, and each was measured rather than
+assumed. `eSmartSerial` had to count as serial, or the interface looked absent
+and the cable was demoted to copper. A cable's two ends had to land on the same
+kind of socket, or the pair was `Serial3/0` against `FastEthernet1/0` and the
+file was refused. And a donor with both serial hardware and hosts on a switch
+had to be reachable at all -- which the installed samples do not provide, since
+the 42 labs carrying serial are mostly EIGRP and frame-relay tests with no
+switch and no hosts.
+
+The donor that finally served it came from the GitHub import: a CCNA lab under a
+permissive licence, fetched earlier in the session. The two threads -- build a
+donor, search for one -- met here.
+
+What remains is a usability question rather than a capability one. This works
+only when `--donor-root` is passed. Whether the local donor folder should be
+searched by default is a behaviour change for every prompt, not just WAN ones,
+so it wants its own measurement.
