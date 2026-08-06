@@ -2274,3 +2274,63 @@ cable end to its device and requires the port to appear in that device's own
 interface list. With that, the leased-line prompt settles on a donor that opens
 rather than one that is refused, and the result is the same working copper lab
 as before -- no regression, and one fewer way to ship a lab that cannot open.
+
+### The refused lab: what it actually is, and eleven things it is not
+
+The rule turned out to be much simpler than "R1 is cursed", and finding that
+out meant discarding the first reading of the evidence.
+
+Removing devices one at a time said only R1 mattered. But removing R1 removes
+both of the cables that reach a router, and the decisive test was to keep R1
+and delete just its two links: **that opens**. Then, with R1 still present and
+unlinked, adding a cable between the switch and R2 is refused as well. So R1
+was never the variable:
+
+> A lab pruned from `Senan_Haciyev_tapsiriq.pkt` opens if and only if no router
+> is cabled. Cables among the PCs and the switch are fine.
+
+Everything tried against it, each measured by generating the file and opening
+it in Packet Tracer:
+
+| tried | result |
+| --- | --- |
+| version stamp (`9.0.0.0810`, same as labs that open) | refused |
+| removing the three leftover Power Distribution Devices | refused |
+| giving R1 R2's `POWER` / `UP_METHOD` / `FULLDUPLEX` | refused |
+| making R1's `PORT/IP` agree with its own running config | refused |
+| replacing R1's entire running config with R2's | refused |
+| copying all 101 differing leaf values from R2 onto R1 | refused |
+| the same, excluding identity fields (82 leaves) | refused |
+| deleting the link memory-address fields, on R1 and everywhere | refused |
+| adding the two missing `*_PORT_MEM_ADDR` elements (`0` and empty) | refused |
+| each of R1's six real port names on the uplink | refused |
+| rewiring both cables onto ports both devices genuinely have | refused |
+| re-adding the uplink as a clone of an inherited, working link | refused |
+| deleting both cables that reach a router | **opened** |
+
+Two things worth keeping from the failed attempts. The first control was
+confounded: copying every differing leaf included `SAVE_REF_ID`, which made R1
+a duplicate of R2, so that run proved nothing until it was redone without
+identity fields. And the port-name sweep varied only the router's end while
+leaving `SW1:FastEthernet0/2` in place -- a name the switch does not have,
+since its inherited cables all use `X/1`. Holding an invalid value constant
+across a sweep makes every result look the same.
+
+The routers' hardware, which the naming now explains exactly:
+
+```
+R1/R2  SLOT[1] eCopperFastEthernet -> FastEthernet0/0
+       SLOT[2] eCopperFastEthernet -> FastEthernet1/0
+       SLOT[3] eSerial             -> Serial2/0
+       SLOT[4] eSerial             -> Serial3/0
+       SLOT[5] eFiberFastEthernet  -> FastEthernet4/0
+       SLOT[6] eFiberFastEthernet  -> FastEthernet5/0
+```
+
+Slot index first, and the generated serial cable's `Serial0/0/0` matches no slot
+at all -- which is why `_root_has_serial_link` now checks the device's own
+interface list rather than `port_exists`.
+
+The next thing to compare is a *connected* port against an unconnected one: what
+does PC1's `FastEthernet0` carry, once a cable is attached to it, that these
+routers' ports do not?
