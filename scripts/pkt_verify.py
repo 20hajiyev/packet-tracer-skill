@@ -14,8 +14,11 @@ immediately printed `{"status": "launched"}` without observing anything at all.
 
 from __future__ import annotations
 
+import itertools
 import json
+import os
 import platform
+import shutil
 import subprocess
 import time
 import xml.etree.ElementTree as ET
@@ -287,11 +290,62 @@ def _windows_titles_matching(stem: str) -> str:
     return ""
 
 
+_PROBE_COUNTER = itertools.count(1)
+
+
+def _unique_probe_copy(path: Path) -> Path:
+    """A copy of the lab under a name no window can already be showing.
+
+    Kept beside the original on purpose: labs reference their artwork with
+    relative paths such as `../art/Background/grid_100x100.png`, so a copy in a
+    temp directory would be a different file in a way that matters.
+    """
+    probe = path.with_name(f"{path.stem}__probe{os.getpid()}_{next(_PROBE_COUNTER)}{path.suffix}")
+    try:
+        shutil.copyfile(path, probe)
+    except OSError:  # pragma: no cover - falls back to checking the file itself
+        return path
+    return probe
+
+
+def _discard_probe_copy(probe: Path, original: Path) -> None:
+    if probe == original:
+        return
+    try:
+        probe.unlink()
+    except OSError:  # pragma: no cover - Packet Tracer may still hold it open
+        pass
+
+
 def open_check(
     pkt_path: str | Path,
     timeout_seconds: int = DEFAULT_OPEN_TIMEOUT_SECONDS,
+    attempts: int = 2,
 ) -> OpenReport:
     """Launch Packet Tracer and wait until the file's window appears.
+
+    A negative verdict has to reproduce before it is reported. Measured: a
+    bisect over 57 plan operations called one step `refused`, and the same file
+    re-checked five times afterwards opened five times out of five. The dialog
+    Packet Tracer raises for the *previous* probe is a window that did not
+    exist when this check started, so it was counted against the wrong file.
+    An open is believed on the first try; anything else is tried again, because
+    a false refusal sends the search after a defect that is not there.
+    """
+    attempts = max(1, attempts)
+    report = _open_check_once(pkt_path, timeout_seconds)
+    for _ in range(attempts - 1):
+        if report.status == "opened":
+            return report
+        report = _open_check_once(pkt_path, timeout_seconds)
+    return report
+
+
+def _open_check_once(
+    pkt_path: str | Path,
+    timeout_seconds: int = DEFAULT_OPEN_TIMEOUT_SECONDS,
+) -> OpenReport:
+    """One launch and one verdict.
 
     Window-title observation is currently implemented for Windows. On other
     hosts the launch still happens and process liveness is reported, which is
@@ -315,10 +369,18 @@ def open_check(
     # in 0.0 seconds without loading anything -- the same shape of false
     # positive that let unopenable labs pass for months. Anything present before
     # the launch is excluded from counting as a result.
+    #
+    # Excluding it costs the opposite error, though: with the old window still
+    # up, the title this check is waiting for is already excluded, so the check
+    # goes blind to its own success and times out. Measured on one lab checked
+    # five times in a row: opened, timeout, timeout, opened, opened. Opening a
+    # uniquely named copy sidesteps both -- the title cannot collide with
+    # anything already on screen, so no window has to be closed or guessed at.
+    probe = _unique_probe_copy(path)
     titles_before = set(_top_level_window_titles())
     started = time.monotonic()
     try:
-        process = subprocess.Popen([str(executable), str(path)])
+        process = subprocess.Popen([str(executable), str(probe)])
     except OSError as exc:
         report.status = "process_exited"
         report.detail = f"could not launch Packet Tracer: {exc}"
@@ -331,7 +393,7 @@ def open_check(
                 titles = [
                     entry for entry in _top_level_window_titles() if entry not in titles_before
                 ]
-                title = next((entry for entry in titles if path.stem.lower() in entry.lower()), "")
+                title = next((entry for entry in titles if probe.stem.lower() in entry.lower()), "")
                 if title:
                     report.status = "opened"
                     report.observed_title = title
@@ -361,7 +423,7 @@ def open_check(
         report.elapsed_seconds = time.monotonic() - started
         if is_windows:
             report.status = "timeout"
-            report.detail = f"no Packet Tracer window titled with {path.stem!r} within {timeout_seconds}s"
+            report.detail = f"no Packet Tracer window titled with {probe.stem!r} within {timeout_seconds}s"
         else:
             report.status = "timeout"
             report.detail = (
@@ -372,6 +434,7 @@ def open_check(
     finally:
         if process.poll() is None:
             process.terminate()
+        _discard_probe_copy(probe, path)
 
 
 def main() -> int:

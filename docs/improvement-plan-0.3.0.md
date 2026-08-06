@@ -2334,3 +2334,55 @@ interface list rather than `port_exists`.
 The next thing to compare is a *connected* port against an unconnected one: what
 does PC1's `FastEthernet0` carry, once a cable is attached to it, that these
 routers' ports do not?
+
+## The measuring instrument was wrong
+
+Chasing the refused lab produced a bisect over the 57 plan operations that
+build it, and the bisect named a culprit: `prune_device A2`, a PC. Re-running
+the same operation list with that prune appended by hand opened the file. The
+two runs produce byte-identical input, so the verdict, not the file, was the
+variable.
+
+Repeating three files five times each:
+
+```
+ops_48.pkt   opened  opened  opened  opened  opened
+auto6.pkt    refused refused refused refused refused
+auto7.pkt    opened  timeout timeout opened  opened
+```
+
+`auto6` is genuinely refused. `auto7` genuinely opens, and the check said
+otherwise twice out of five. Every single-shot open verdict taken this session
+-- including the device-by-device bisect that pointed at R1, and the
+pipeline-stage bisect that pointed at `apply_plan_operations` -- rests on a
+measurement with that error rate.
+
+Two mechanisms, both in `open_check`, and they pull in opposite directions.
+
+The check records every window title present before it launches and ignores
+those, which is correct: a window Packet Tracer already had on screen is not
+evidence that this check opened anything, and without the exclusion a re-check
+returned `opened` in 0.0 seconds having loaded nothing. But when the file being
+checked is the one already on screen, the title being waited for is exactly the
+one excluded, so the check goes blind to its own success and times out.
+
+And Packet Tracer raises its incompatible-file dialog for whatever it was last
+asked to load. That dialog is a window which did not exist when the *next*
+check started, so a refusal belonging to the previous file is counted against
+the current one.
+
+Both are fixed by changing what is launched rather than how windows are read:
+each check copies the lab to a uniquely named file beside the original -- beside
+it, because labs reference their artwork by relative path -- so the title cannot
+collide with anything already up. On top of that, a negative verdict has to
+reproduce before it is reported; an open is believed the first time, so a
+passing corpus pays nothing for the change.
+
+Measured after the fix, same three files, five runs each: `auto7` 5/5 opened
+(was 3/5), `ops_48` 5/5 opened, `auto6` 5/5 refused, and no probe copies left
+behind.
+
+The conclusions this invalidates are recorded rather than quietly dropped:
+`prune_device A2` is **not** the breaking operation, and the earlier statement
+that only R1 mattered needs re-measuring with the fixed checker before it can be
+trusted. What survives is `auto6.pkt` itself, which refuses reproducibly.
