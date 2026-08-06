@@ -5320,6 +5320,64 @@ def _set_link_family(
     sub.text = subtype
 
 
+def _declare_serial_dce_ends(root: ET.Element) -> list[str]:
+    """Give every serial cable the DCE end Packet Tracer expects.
+
+    A serial line has one side that supplies clocking, and the file records it
+    as `DCEDEV` and `DCEPORT` on the cable. Every serial link in every donor
+    carries both; links this generator built carried neither, and that is the
+    whole reason a lab with a WAN was refused.
+
+    Measured by holding the topology fixed and changing one thing at a time:
+    the same lab opens with no second cable, opens with a *copper* cable
+    between the same two routers, and is refused with a serial cable on any of
+    `Serial2/0 <-> Serial2/0`, `Serial3/0 <-> 3/0` or `2/0 <-> 3/0`. So it was
+    neither the ports nor the second router being cabled -- it was the medium.
+    Adding `DCEDEV` and `DCEPORT` to that refused file opens it.
+
+    The `FROM` end is named as DCE, which is what the donors do: every serial
+    link in `Senan_Haciyev_tapsiriq.pkt` names its `FROM` device and port.
+    """
+    changed: list[str] = []
+    for link in root.findall(".//LINKS/LINK"):
+        cable = link.find("./CABLE")
+        if cable is None:
+            continue
+        is_serial = (link.findtext("TYPE") or "").strip() == "eSerial"
+        existing_dev = cable.find("DCEDEV")
+        existing_port = cable.find("DCEPORT")
+
+        if not is_serial:
+            # Media reconciliation can demote a serial cable to copper, and a
+            # copper cable has no clocking end to declare.
+            for node in (existing_dev, existing_port):
+                if node is not None:
+                    cable.remove(node)
+                    changed.append("removed a DCE end from a cable that is no longer serial")
+            continue
+
+        from_ref = (cable.findtext("FROM") or "").strip()
+        ports = [(node.text or "").strip() for node in cable.findall("PORT")]
+        if not from_ref or not ports:
+            continue
+        if existing_dev is not None and existing_port is not None:
+            continue
+
+        anchor = cable.find("TO_PORT_MEM_ADDR")
+        position = list(cable).index(anchor) + 1 if anchor is not None else len(list(cable))
+        if existing_dev is None:
+            node = ET.Element("DCEDEV")
+            node.text = from_ref
+            cable.insert(position, node)
+            position += 1
+        if existing_port is None:
+            node = ET.Element("DCEPORT")
+            node.text = ports[0]
+            cable.insert(position, node)
+        changed.append(f"{ports[0]} declared as the DCE end of a serial cable")
+    return changed
+
+
 def _assign_unique_macs(root: ET.Element) -> list[str]:
     """Give every interface in the lab its own MAC address.
 
@@ -6772,15 +6830,42 @@ def _build_donor_prune_plan(
             if evaluation is None:
                 evaluation = widened_evaluation
 
-    # A third pass was tried here and removed. Both pools are capped at four
-    # summarised labs and stop discovery as soon as four match, so a serial
-    # request spends its budget on labs with no serial port anywhere; asking
-    # discovery for `__serial_routers__` fixes that and does find a donor that
-    # builds a real `Serial0/0/0 <-> Serial0/0/0` WAN. Measured end to end, the
-    # donor it reaches on this machine is `Senan_Haciyev_tapsiriq.pkt`, and
-    # Packet Tracer refuses the lab built from it -- the refusal that is still
-    # unexplained. An unwired device costs one device; a refused file costs the
-    # whole lab, so the pass stays out until the refusal is understood.
+    # Both pools are capped at four summarised labs and stop discovery as soon
+    # as four match, so a serial request spends its whole budget on labs that
+    # have no serial port anywhere. Measured: `company_network.pkt`, the one lab
+    # on this machine known to yield a working serial WAN, appeared in neither
+    # pool -- the eight ranked candidates were Meraki and firewall samples, and
+    # the four widened ones were whatever matched first.
+    #
+    # `__serial_routers__` is the count the catalogue already measures, so
+    # asking discovery for it skips the labs that cannot help instead of letting
+    # them use up the cap. Only a prompt that asked for a WAN and did not get
+    # one pays for this pass.
+    #
+    # This pass was held out for a while: the donor it reaches on this machine
+    # is `Senan_Haciyev_tapsiriq.pkt`, and Packet Tracer refused the lab built
+    # from it -- an unwired device costs one device, a refused file costs the
+    # whole lab. That refusal is fixed now. It was a serial cable with no DCE
+    # end declared, plus two port names taken from an assumed switch model.
+    if _blueprint_wants_serial(blueprint):
+        serial_requirements = dict(plan.device_requirements)
+        serial_requirements["__serial_routers__"] = 2
+        serial_candidates = _local_donor_candidates(
+            exclude={str(candidate.sample.path) for candidate in donor_candidates},
+            required_types=serial_requirements,
+        )
+        if serial_candidates:
+            serial_ranked = _rerank_candidates_for_blueprint(serial_candidates, blueprint)
+            serial_evaluation, serial_diagnostics = _evaluate_donor_prune_candidates(
+                plan, blueprint, serial_ranked
+            )
+            diagnostics = list(diagnostics) + list(serial_diagnostics)
+            if serial_evaluation is not None:
+                if _pool_selected_a_donor(serial_diagnostics) or evaluation is None:
+                    adapted_plan, archetype_plan, _, _ = serial_evaluation
+                    _adopt_blueprint(blueprint, archetype_plan)
+                    return adapted_plan, archetype_plan
+
     if evaluation is not None:
         # Every pool was asked and none could carry the WAN. A lab without it
         # beats no lab at all.
@@ -7604,6 +7689,10 @@ def generate_from_prompt(
     _assign_unique_interface_addresses(root)
     _assign_unique_switch_management_ips(root)
     media_notes = _reconcile_cable_media(root)
+    # After reconciliation, because that is what settles which cables are
+    # serial: a cable demoted to copper must lose its clocking end, and one
+    # promoted to serial must gain one.
+    _declare_serial_dce_ends(root)
     trunk_notes = _trunk_uplinks_in_file(root)
     vlan_notes = _align_router_access_vlan(root)
     gateway_repairs = _align_router_gateway(root)

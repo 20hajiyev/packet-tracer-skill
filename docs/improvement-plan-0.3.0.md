@@ -2445,3 +2445,70 @@ continues. But this is the first time the mechanism behind any part of it has
 been named, and it is exactly the hardcoded port naming the project set out to
 remove: the generator was inventing names from a model it assumed, and the one
 place that could have caught it was agreeing with the invention.
+
+## The serial WAN, working: a cable with no clocking end
+
+The port-naming fix moved both cables onto real interfaces and the lab was
+still refused, so the next question was designed rather than guessed. Three
+things change at once when the router-to-router cable is added -- the medium,
+the port identity, and R2 gaining its first cable -- and they had never been
+separated. Six variants against one base, all built first and checked in a
+single Packet Tracer session:
+
+| variant | result |
+| --- | --- |
+| control: no second cable | opened |
+| serial `2/0 <-> 2/0` | refused |
+| serial `3/0 <-> 3/0` | refused |
+| serial `2/0 <-> 3/0` | refused |
+| **copper** R1 `<->` R2 | **opened** |
+| copper R1 `<->` SW1 | opened |
+
+Not the ports: all three serial pairs refuse. Not R2 being cabled: the identical
+topology over copper opens. The medium was the only variable left.
+
+Diffing a donor serial link against a generated one showed the difference as two
+elements the generated cable did not have at all:
+
+```
+tags only in DONOR serial link : ['CABLE/DCEDEV', 'CABLE/DCEPORT']
+tags only in MINE  serial link : []
+```
+
+A serial line has one side supplying clocking, and the file records which. Every
+serial link in the donor names it:
+
+```
+Router 2 Serial2/0 <-> ROUTERMAIN Serial2/0   DCEDEV=Router 2  DCEPORT=Serial2/0
+Router 4 Serial2/0 <-> ROUTERMAIN Serial6/0   DCEDEV=Router 4  DCEPORT=Serial2/0
+Router 3 Serial2/0 <-> ROUTERMAIN Serial3/0   DCEDEV=Router 3  DCEPORT=Serial2/0
+```
+
+Adding `DCEDEV` and `DCEPORT` to the refused file opened it. `_declare_serial_dce_ends`
+now runs after media reconciliation -- after, because that pass is what settles
+which cables are serial, so a demoted cable loses its clocking end and a promoted
+one gains it.
+
+The lab that had been refused since this work began now opens:
+
+```
+SW1 <-> R1   FastEthernet2/1 <-> FastEthernet1/0
+R1  <-> R2   Serial3/0       <-> Serial2/0   DCE=Serial3/0
+OPEN -> opened
+```
+
+With the refusal gone, the `__serial_routers__` donor pass was restored -- it had
+been held out only because the donor it reached produced that refused file. So
+the prompt works end to end, with no donor forced:
+
+```
+iki noqte arasinda leased line ile 2 router 4 komputer qur
+  ->  2 routers, 1 switch, 4 PCs
+      R1 <-> R2  Serial0/1/1 <-> Serial0/1/0  DCE=Serial0/1/1
+      opened
+```
+
+Three defects sat on top of one another here, and each hid the next: a blueprint
+rewritten by donors that were not chosen, port names invented from an assumed
+switch model, and a serial cable with no clocking end. The first two were found
+only after the measuring instrument itself was fixed.
