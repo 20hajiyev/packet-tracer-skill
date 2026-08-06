@@ -2386,3 +2386,62 @@ The conclusions this invalidates are recorded rather than quietly dropped:
 `prune_device A2` is **not** the breaking operation, and the earlier statement
 that only R1 mattered needs re-measuring with the fixed checker before it can be
 trusted. What survives is `auto6.pkt` itself, which refuses reproducibly.
+
+## The refused lab, found: a port name the switch does not use
+
+With the open check fixed, the bisect over the 57 plan operations was rerun and
+gave a different, sensible answer:
+
+```
+ops[:0]  -> opened
+ops[:57] -> refused
+ops[:28] -> opened   (prune_device C1)
+ops[:42] -> opened   (prune_device D6)
+ops[:49] -> opened   (prune_device A3)
+ops[:53] -> opened   (prune_device E2)
+ops[:55] -> opened   (prune_device E4)
+ops[:56] -> refused  (set_link)
+
+FIRST BREAKING OPERATION:
+  set_link SW1:FastEthernet0/2 <-> R1:FastEthernet1/0
+```
+
+Not a prune at all -- the router uplink. `prune_device A2`, which the flaky
+checker had named, is nowhere near it.
+
+SW1's own interfaces are `FastEthernet0/1, 1/1, 2/1 ... 9/1`: it numbers by
+slot. The generator composes `FastEthernet0/{index}`, the 2960 convention, and
+asked it for `FastEthernet0/2`. Changing only that one port name:
+
+```
+set_link SW1:FastEthernet0/2  -> refused
+set_link SW1:FastEthernet2/1  -> opened
+```
+
+`port_exists(SW1, 'FastEthernet0/2')` answered True. The guard it already had
+compares slot *depth*, and `0/2` and `0/1` both have one slash, so the two
+spellings are indistinguishable that way. What separates them is which
+component varies: a 2960 holds the slot fixed and varies the port, a modular
+switch holds the port fixed and varies the slot. That is now checked, and only
+when at least two interfaces are configured -- one sample says nothing about
+which component is the variable one.
+
+The same blindness existed for serial, one layer up: `port_exists` short-
+circuited to "does this device have any serial port", so routers whose only
+serial interfaces are `Serial2/0` and `Serial3/0` answered True for
+`Serial0/0/0`. Owning serial hardware is not owning that interface. Both kinds
+now go through one shared shape check.
+
+Rebuilding the lab that had been refused since this work began, every cable now
+lands on a port its device really has:
+
+```
+SW1 <-> R1   FastEthernet2/1 <-> FastEthernet1/0
+R1  <-> R2   Serial3/0       <-> Serial2/0
+```
+
+The file is still refused, so at least one more cause remains and the hunt
+continues. But this is the first time the mechanism behind any part of it has
+been named, and it is exactly the hardcoded port naming the project set out to
+remove: the generator was inventing names from a model it assumed, and the one
+place that could have caught it was agreeing with the invention.

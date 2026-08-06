@@ -752,6 +752,57 @@ def donor_interface_names(device: ET.Element) -> list[str]:
     return []
 
 
+def _name_contradicts_device_shape(device: ET.Element, canonical: str, kind: str) -> bool:
+    """Whether this interface name disagrees with how the device names its own.
+
+    Counting ports says how many exist, not what they are called. A stacked 3650
+    numbers its uplinks `GigabitEthernet1/0/1`, and asking for
+    `GigabitEthernet0/1` on it passed the count test -- twenty-eight gigabit
+    ports, index one -- while naming an interface the switch does not have.
+    Packet Tracer refused the lab.
+
+    The device's own configuration is the only place its naming shape is written
+    down, since a PORT node carries no name at all. Membership in the
+    configuration is not enough either: a stacked switch whose sockets are all
+    `GigabitEthernet1/0/N` still carried a stale `interface GigabitEthernet0/1`
+    line, so accepting any name the config mentions let a cable land on it --
+    the one link, out of twelve, that made `four_switch` the last corpus lab
+    Packet Tracer refused.
+
+    So the shape is compared, not the set. Two axes matter:
+
+    * Depth. `FastEthernet0/1` and `GigabitEthernet1/0/1` are different shapes,
+      and the shape the device really uses is the one most of its interfaces of
+      that kind share.
+    * Which component varies. A 2960 numbers within one slot -- `FastEthernet0/1`
+      .. `0/24` -- while a modular switch numbers by slot: `FastEthernet0/1`,
+      `1/1`, ... `9/1`. Both have one slash, so depth cannot tell them apart,
+      and the generator's `FastEthernet0/{index}` asked such a switch for
+      `FastEthernet0/2`. Measured: that single link is why a lab built from
+      `Senan_Haciyev_tapsiriq.pkt` was refused; the same file with the uplink on
+      `FastEthernet2/1` opens.
+
+    Two names are required before concluding anything about the second axis, so
+    a device with one configured interface keeps the benefit of the doubt rather
+    than having its whole numbering inferred from a single sample.
+    """
+    named = [name for name in donor_interface_names(device) if name.startswith(kind)]
+    if not named:
+        return False
+
+    depths = Counter(name.count("/") for name in named)
+    if canonical.count("/") != depths.most_common(1)[0][0]:
+        return True
+
+    slotted = [name for name in named if "/" in name]
+    if len(slotted) > 1 and "/" in canonical:
+        tails = {name.rsplit("/", 1)[-1] for name in slotted}
+        heads = {name.rsplit("/", 1)[0] for name in slotted}
+        if len(tails) == 1 and len(heads) > 1:
+            return canonical.rsplit("/", 1)[-1] not in tails
+    return False
+
+
 def port_exists(device: ET.Element, port_name: str) -> bool:
     """Whether `port_name` names an interface this device actually has.
 
@@ -779,8 +830,16 @@ def port_exists(device: ET.Element, port_name: str) -> bool:
     # Serial is modelled now, so it gets a real answer: a router with no serial
     # card cannot carry `Serial0/0/0`, and letting that through produced a WAN
     # lab whose PPP configuration sat on an interface that was never cabled.
+    #
+    # Owning serial hardware is not the same as owning *that* interface. A pair
+    # of routers whose only serial ports are `Serial2/0` and `Serial3/0` passed
+    # this test for `Serial0/0/0` -- two serial ports, so yes -- and the lab
+    # built from them was refused. The naming shape is checked here for the same
+    # reason it is checked for Ethernet below.
     if canonical.startswith("Serial"):
-        return port_capacity(device).get("Serial", 0) > 0
+        if port_capacity(device).get("Serial", 0) <= 0:
+            return False
+        return not _name_contradicts_device_shape(device, canonical, "Serial")
 
     # Everything else is genuinely outside this module -- `Port 0` on an access
     # point, `RS 232` on a laptop, the `Switch` pass-through on an IP phone.
@@ -821,11 +880,8 @@ def port_exists(device: ET.Element, port_name: str) -> bool:
         #
         # The shape the device really uses is the one most of its interfaces of
         # that kind share, so compare against that rather than against the set.
-        named = [name for name in donor_interface_names(device) if name.startswith(kind)]
-        if named:
-            depths = Counter(name.count("/") for name in named)
-            if canonical.count("/") != depths.most_common(1)[0][0]:
-                return False
+        if _name_contradicts_device_shape(device, canonical, kind):
+            return False
         if device_type in HOST_DEVICE_TYPES:
             # `FastEthernet0` and, for tolerance, a bare `FastEthernet`.
             return count > 0 and canonical in {kind, f"{kind}0"}
