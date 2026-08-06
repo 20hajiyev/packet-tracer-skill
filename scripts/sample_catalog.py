@@ -484,6 +484,20 @@ def infer_capability_tags(item: dict[str, Any]) -> list[str]:
             tags.add(tag)
     if router_count >= 2:
         tags.add("multi_router")
+    # Two routers with serial hardware is what a leased line needs: one has
+    # nothing to reach. Ranking had no way to tell these apart from any other
+    # multi-router lab, so a WAN prompt was answered with firewall samples that
+    # could only ever produce the link over copper.
+    if (
+        sum(
+            1
+            for device, dtype in zip(devices, normalized_types)
+            if dtype == "Router" and int(device.get("serial_ports") or 0) > 0
+        )
+        >= 2
+    ):
+        tags.add("serial_wan")
+        tags.add("wan")
     if switch_count >= 1:
         tags.add("switching")
     if host_count >= 1:
@@ -1139,6 +1153,10 @@ def _summarize_pkt(path: Path, relative_path: str, origin: str, prototype_eligib
         for device in indexed_devices
         if device.findtext("./ENGINE/SAVE_REF_ID", default="")
     }
+    # Imported here rather than at module scope: `pkt_transformer` imports this
+    # module, so a top-level import would close the circle.
+    from pkt_transformer import port_capacity
+
     for device in root.findall(".//DEVICES/DEVICE"):
         type_node = device.find("./ENGINE/TYPE")
         devices.append(
@@ -1146,6 +1164,12 @@ def _summarize_pkt(path: Path, relative_path: str, origin: str, prototype_eligib
                 "name": device.findtext("./ENGINE/NAME", default=""),
                 "type": device.findtext("./ENGINE/TYPE", default=""),
                 "model": type_node.get("model", "") if type_node is not None else "",
+                # Whether a device can carry a serial WAN is not visible from
+                # its type or model: the ports live on an installed module. A
+                # prompt asking for a leased line was ranked against samples
+                # that had no serial hardware at all, because nothing in the
+                # catalogue recorded it.
+                "serial_ports": port_capacity(device).get("Serial", 0),
             }
         )
     links = []

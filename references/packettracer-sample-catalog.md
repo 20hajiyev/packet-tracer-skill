@@ -104,7 +104,7 @@ Source root: `<PACKET_TRACER_SAVES_ROOT>`
   devices: DHCPv6Server (Router/1941), Power Distribution Device0 (Power Distribution Device/Power Distribution Device), RouterClient (Router/1941)
 - `01 Networking\DNS\Multilevel_DNS.pkt`
   version: `5.2.0.0068`, devices: `10`, links: `9`
-  tags: dns, host_server, management_vlan, multi_router, rip, ripv2, server_dns, ssh_ios, switching, telnet, vlan
+  tags: dns, host_server, management_vlan, multi_router, rip, ripv2, serial_wan, server_dns, ssh_ios, switching, telnet, vlan, wan
   topology: chain, core_access, server_services
   devices: Client (Pc/PC-PT), Local DNS Server (Server/Server-PT), Internet (Router/1841), Switch0 (Switch/2950-24), Root DNS Server (Server/Server-PT), Example (Router/1841), Company (Router/1841), Switch1 (Switch/2950-24), server.example.com (Server/Server-PT), authority.example.com (Server/Server-PT)
 - `01 Networking\EIGRP\baseEigrpAuth_packet.pkt`
@@ -114,37 +114,37 @@ Source root: `<PACKET_TRACER_SAVES_ROOT>`
   devices: Router0 (Router/2811), Router1 (Router/2811), Router2 (Router/2811)
 - `01 Networking\EIGRP\eigrp_fr_no_broadcast.pkt`
   version: `6.1.0.0026`, devices: `3`, links: `2`
-  tags: eigrp, eigrp_ipv4, management_vlan, multi_router, stp, telnet, vlan, wan
+  tags: eigrp, eigrp_ipv4, management_vlan, multi_router, serial_wan, stp, telnet, vlan, wan
   topology: general
   devices: Router0 (Router/1841), Router1 (Router/1841), Cloud0 (Cloud/Cloud-PT)
 - `01 Networking\EIGRP\eigrp_fr_no_broadcast_no_network.pkt`
   version: `6.1.0.0026`, devices: `3`, links: `2`
-  tags: eigrp, eigrp_ipv4, management_vlan, multi_router, stp, telnet, vlan, wan
+  tags: eigrp, eigrp_ipv4, management_vlan, multi_router, serial_wan, stp, telnet, vlan, wan
   topology: general
   devices: Router0 (Router/1841), Router1 (Router/1841), Cloud0 (Cloud/Cloud-PT)
 - `01 Networking\EIGRP\eigrp_fr_no_broadcast_preconfigured.pkt`
   version: `6.1.0.0026`, devices: `3`, links: `2`
-  tags: eigrp, eigrp_ipv4, management_vlan, multi_router, stp, telnet, vlan, wan
+  tags: eigrp, eigrp_ipv4, management_vlan, multi_router, serial_wan, stp, telnet, vlan, wan
   topology: general
   devices: Router0 (Router/1841), Router1 (Router/1841), Cloud0 (Cloud/Cloud-PT)
 - `01 Networking\EIGRP\eigrp_neighbor_hdlc.pkt`
   version: `6.1.0.0026`, devices: `3`, links: `2`
-  tags: eigrp, eigrp_ipv4, management_vlan, multi_router, stp, telnet, vlan
+  tags: eigrp, eigrp_ipv4, management_vlan, multi_router, serial_wan, stp, telnet, vlan, wan
   topology: general
   devices: Router0 (Router/1841), Router1 (Router/1841), Router2 (Router/1841)
 - `01 Networking\EIGRP\eigrp_neighbor_hdlc_preconfigured.pkt`
   version: `6.1.0.0026`, devices: `3`, links: `2`
-  tags: eigrp, eigrp_ipv4, management_vlan, multi_router, stp, telnet, vlan
+  tags: eigrp, eigrp_ipv4, management_vlan, multi_router, serial_wan, stp, telnet, vlan, wan
   topology: general
   devices: Router0 (Router/1841), Router1 (Router/1841), Router2 (Router/1841)
 - `01 Networking\EIGRP\ipv6_eigrp_fr_no_broadcast.pkt`
   version: `6.1.0.0026`, devices: `3`, links: `2`
-  tags: eigrp, eigrp_ipv4, eigrp_ipv6, management_vlan, multi_router, stp, telnet, vlan, wan
+  tags: eigrp, eigrp_ipv4, eigrp_ipv6, management_vlan, multi_router, serial_wan, stp, telnet, vlan, wan
   topology: general
   devices: Router0 (Router/1841), Router1 (Router/1841), Cloud0 (Cloud/Cloud-PT)
 - `01 Networking\EIGRP\ipv6_eigrp_neighbor.pkt`
   version: `6.1.0.0026`, devices: `2`, links: `1`
-  tags: eigrp, eigrp_ipv4, eigrp_ipv6, management_vlan, multi_router, stp, telnet, vlan
+  tags: eigrp, eigrp_ipv4, eigrp_ipv6, management_vlan, multi_router, serial_wan, stp, telnet, vlan, wan
   topology: general
   devices: Router0 (Router/1841), Router1 (Router/1841)
 - `01 Networking\FTP\FTP.pkt`
@@ -224,7 +224,7 @@ Source root: `<PACKET_TRACER_SAVES_ROOT>`
   devices: Switch1 (Switch/2960-24TT), Router0 (Router/1941), Router1 (Router/2901), Router2 (Router/2911), TFTP Server (Server/Server-PT), Power Distribution Device0 (Power Distribution Device/Power Distribution Device)
 - `01 Networking\IPv4\IP fragmentation.pkt`
   version: `5.2.0.0068`, devices: `4`, links: `3`
-  tags: host_server, management_vlan, multi_router, rip, ripv2, ssh_ios, telnet, vlan
+  tags: host_server, management_vlan, multi_router, rip, ripv2, serial_wan, ssh_ios, telnet, vlan, wan
   topology: server_services
   devices: Router1 (Router/2811), Server0 (Server/Server-PT), PC0 (Pc/PC-PT), Router0 (Router/2811)
 - `01 Networking\IPv6\dhcpv6_pt_server.pkt`
@@ -269,17 +269,17 @@ Source root: `<PACKET_TRACER_SAVES_ROOT>`
   devices: Power Distribution Device0 (Power Distribution Device/Power Distribution Device), Switch0 (Switch/2960-24TT), PC0 (Pc/PC-PT), Router1 (Router/1941), Router0 (Router/2901)
 - `01 Networking\IPv6\Ipv6Ip Tunneling\ipv6ip_eigrp.pkt`
   version: `6.0.0.0018`, devices: `3`, links: `2`
-  tags: eigrp, eigrp_ipv4, ipv6_tunneling, management_vlan, multi_router, stp, telnet, vlan
+  tags: eigrp, eigrp_ipv4, ipv6_tunneling, management_vlan, multi_router, serial_wan, stp, telnet, vlan, wan
   topology: general
   devices: R1 (Router/2811), R2 (Router/2811), R3 (Router/2811)
 - `01 Networking\IPv6\Ipv6Ip Tunneling\ipv6ip_ospf.pkt`
   version: `6.0.0.0002`, devices: `3`, links: `2`
-  tags: eigrp, eigrp_ipv4, ipv6_tunneling, management_vlan, multi_router, ospf, ospfv2, stp, telnet, vlan
+  tags: eigrp, eigrp_ipv4, ipv6_tunneling, management_vlan, multi_router, ospf, ospfv2, serial_wan, stp, telnet, vlan, wan
   topology: general
   devices: R1 (Router/2811), R2 (Router/2811), R3 (Router/2811)
 - `01 Networking\IPv6\Ipv6Ip Tunneling\ipv6ip_ospf_rip.pkt`
   version: `6.0.0.0002`, devices: `5`, links: `4`
-  tags: ipv6_tunneling, management_vlan, multi_router, ospf, ospfv2, rip, ripv2, stp, telnet, vlan
+  tags: ipv6_tunneling, management_vlan, multi_router, ospf, ospfv2, rip, ripv2, serial_wan, stp, telnet, vlan, wan
   topology: general
   devices: R1 (Router/2811), R2 (Router/2811), R3 (Router/2811), R4 (Router/2811), R5 (Router/2811)
 - `01 Networking\IPv6\Ipv6Ip Tunneling\IsatapPcClient.pkt`
@@ -354,7 +354,7 @@ Source root: `<PACKET_TRACER_SAVES_ROOT>`
   devices: Security Appliance0 (SecurityAppliance/Meraki-MX65W), Power Distribution Device0 (Power Distribution Device/Power Distribution Device), PC0 (Pc/PC-PT), Router0 (Router/2901), Router1 (Router/2901), Switch0 (Switch/2960-24TT), Meraki Server0 (MerakiServer/Meraki-Server), PC1 (Pc/PC-PT), PC2 (Pc/PC-PT), PC3 (Pc/PC-PT)
 - `01 Networking\NAT\Outside_Nat.pkt`
   version: `5.2.0.0068`, devices: `3`, links: `2`
-  tags: acl, default_route, multi_router, nat, static_route, telnet
+  tags: acl, default_route, multi_router, nat, serial_wan, static_route, telnet, wan
   topology: acl_policy
   devices: Outside_Router (Router/Router-PT), Router1 (Router/Router-PT), Inside_Router (Router/Router-PT)
 - `01 Networking\Netflow\flexible_netflow.pkt`
@@ -364,7 +364,7 @@ Source root: `<PACKET_TRACER_SAVES_ROOT>`
   devices: Router0 (Router/1841), Router1 (Router/1841), PC0 (Pc/PC-PT), Router2 (Router/1841), PC1 (Pc/PC-PT)
 - `01 Networking\Netflow\traditional_netflow.pkt`
   version: `6.1.0.0026`, devices: `3`, links: `2`
-  tags: default_route, host_server, management_vlan, multi_router, netflow, static_route, stp, telnet, vlan
+  tags: default_route, host_server, management_vlan, multi_router, netflow, serial_wan, static_route, stp, telnet, vlan, wan
   topology: server_services
   devices: NFCollector (Server/Server-PT), R1 (Router/2811), NFExporter (Router/2811)
 - `01 Networking\NTP\chained_ntp_network.pkt`
@@ -384,27 +384,27 @@ Source root: `<PACKET_TRACER_SAVES_ROOT>`
   devices: Power Distribution Device0 (Power Distribution Device/Power Distribution Device), Switch0 (Switch/2960-24TT), Switch1 (Switch/2960-24TT)
 - `01 Networking\OSPF\ipv6_ospf_area_range.pkt`
   version: `6.1.0.0026`, devices: `3`, links: `2`
-  tags: management_vlan, multi_router, ospf, ospfv2, ospfv3, stp, telnet, vlan
+  tags: management_vlan, multi_router, ospf, ospfv2, ospfv3, serial_wan, stp, telnet, vlan, wan
   topology: general
   devices: Router0 (Router/1841), Router1 (Router/1841), Router2 (Router/1841)
 - `01 Networking\OSPF\ipv6_ospf_network_p2p.pkt`
   version: `6.1.0.0026`, devices: `2`, links: `1`
-  tags: management_vlan, multi_router, ospf, ospfv2, ospfv3, stp, telnet, vlan
+  tags: management_vlan, multi_router, ospf, ospfv2, ospfv3, serial_wan, stp, telnet, vlan, wan
   topology: general
   devices: Router0 (Router/1841), Router1 (Router/1841)
 - `01 Networking\OSPF\ipv6_ospf_network_p2p_configured.pkt`
   version: `6.1.0.0026`, devices: `2`, links: `1`
-  tags: management_vlan, multi_router, ospf, ospfv2, ospfv3, stp, telnet, vlan
+  tags: management_vlan, multi_router, ospf, ospfv2, ospfv3, serial_wan, stp, telnet, vlan, wan
   topology: general
   devices: Router0 (Router/1841), Router1 (Router/1841)
 - `01 Networking\OSPF\ospf_area_range.pkt`
   version: `6.1.0.0092`, devices: `3`, links: `2`
-  tags: management_vlan, multi_router, ospf, ospfv2, stp, telnet, vlan
+  tags: management_vlan, multi_router, ospf, ospfv2, serial_wan, stp, telnet, vlan, wan
   topology: general
   devices: Router0 (Router/1841), Router1 (Router/1841), Router2 (Router/1841)
 - `01 Networking\OSPF\ospf_auto_cost.pkt`
   version: `6.0.0.0002`, devices: `4`, links: `3`
-  tags: management_vlan, multi_router, ospf, ospfv2, stp, telnet, vlan
+  tags: management_vlan, multi_router, ospf, ospfv2, serial_wan, stp, telnet, vlan, wan
   topology: general
   devices: Router0 (Router/1841), Router1 (Router/1841), Router2 (Router/1841), Router3 (Router/1841)
 - `01 Networking\OSPF\ospf_distance_update.pkt`
@@ -414,52 +414,52 @@ Source root: `<PACKET_TRACER_SAVES_ROOT>`
   devices: Router0 (Router/1841), Router1 (Router/1841), Router2 (Router/1841)
 - `01 Networking\OSPF\ospf_neighbor_with_framerelay.pkt`
   version: `6.1.0.0026`, devices: `4`, links: `3`
-  tags: management_vlan, multi_router, ospf, ospfv2, stp, telnet, vlan, wan
+  tags: management_vlan, multi_router, ospf, ospfv2, serial_wan, stp, telnet, vlan, wan
   topology: general
   devices: Router0 (Router/1841), Router1 (Router/1841), Cloud0 (Cloud/Cloud-PT), Router2 (Router/1841)
 - `01 Networking\OSPF\ospf_network_lo_p2p.pkt`
   version: `6.1.0.0026`, devices: `2`, links: `1`
-  tags: management_vlan, multi_router, ospf, ospfv2, stp, telnet, vlan
+  tags: management_vlan, multi_router, ospf, ospfv2, serial_wan, stp, telnet, vlan, wan
   topology: general
   devices: Router0 (Router/1841), Router1 (Router/1841)
 - `01 Networking\OSPF\ospf_networkbroadcast_with_framerelay.pkt`
   version: `6.1.0.0026`, devices: `3`, links: `2`
-  tags: management_vlan, multi_router, ospf, ospfv2, stp, telnet, vlan, wan
+  tags: management_vlan, multi_router, ospf, ospfv2, serial_wan, stp, telnet, vlan, wan
   topology: general
   devices: Router0 (Router/1841), Router1 (Router/1841), Cloud0 (Cloud/Cloud-PT)
 - `01 Networking\OSPF\ospf_range_cost.pkt`
   version: `6.1.0.0092`, devices: `3`, links: `2`
-  tags: management_vlan, multi_router, ospf, ospfv2, stp, telnet, vlan
+  tags: management_vlan, multi_router, ospf, ospfv2, serial_wan, stp, telnet, vlan, wan
   topology: general
   devices: Router0 (Router/1841), Router1 (Router/1841), Router2 (Router/1841)
 - `01 Networking\OSPF\ospfv3_neighbor_with_framerelay.pkt`
   version: `6.1.0.0026`, devices: `4`, links: `3`
-  tags: management_vlan, multi_router, ospf, ospfv2, ospfv3, stp, telnet, vlan, wan
+  tags: management_vlan, multi_router, ospf, ospfv2, ospfv3, serial_wan, stp, telnet, vlan, wan
   topology: general
   devices: Router0 (Router/1841), Router1 (Router/1841), Cloud0 (Cloud/Cloud-PT), Router2 (Router/1841)
 - `01 Networking\OSPF\ospfv3_neighbor_with_framerelay_configured.pkt`
   version: `6.1.0.0026`, devices: `4`, links: `3`
-  tags: management_vlan, multi_router, ospf, ospfv2, ospfv3, stp, telnet, vlan, wan
+  tags: management_vlan, multi_router, ospf, ospfv2, ospfv3, serial_wan, stp, telnet, vlan, wan
   topology: general
   devices: Router0 (Router/1841), Router1 (Router/1841), Cloud0 (Cloud/Cloud-PT), Router2 (Router/1841)
 - `01 Networking\OSPF\show_ip_ospf_database.pkt`
   version: `6.2.0.0000`, devices: `3`, links: `2`
-  tags: default_route, management_vlan, multi_router, ospf, ospfv2, static_route, stp, telnet, vlan
+  tags: default_route, management_vlan, multi_router, ospf, ospfv2, serial_wan, static_route, stp, telnet, vlan, wan
   topology: general
   devices: Router0 (Router/1841), Router1 (Router/1841), Router2 (Router/1841)
 - `01 Networking\OSPF\show_ip_ospf_database_virtual.pkt`
   version: `6.2.0.0000`, devices: `3`, links: `2`
-  tags: management_vlan, multi_router, ospf, ospfv2, stp, telnet, vlan
+  tags: management_vlan, multi_router, ospf, ospfv2, serial_wan, stp, telnet, vlan, wan
   topology: general
   devices: Router0 (Router/1841), Router1 (Router/1841), Router2 (Router/1841)
 - `01 Networking\OSPF\show_ipv6_ospf_database.pkt`
   version: `6.2.0.0000`, devices: `3`, links: `2`
-  tags: management_vlan, multi_router, ospf, ospfv2, ospfv3, stp, telnet, vlan
+  tags: management_vlan, multi_router, ospf, ospfv2, ospfv3, serial_wan, stp, telnet, vlan, wan
   topology: general
   devices: R1 (Router/1841), R2 (Router/1841), R3 (Router/1841)
 - `01 Networking\OSPF\show_ipv6_ospf_database_virtual.pkt`
   version: `6.2.0.0000`, devices: `3`, links: `2`
-  tags: management_vlan, multi_router, ospf, ospfv2, ospfv3, stp, telnet, vlan
+  tags: management_vlan, multi_router, ospf, ospfv2, ospfv3, serial_wan, stp, telnet, vlan, wan
   topology: general
   devices: 2.2.2.2 (Router/1841), 1.1.1.1 (Router/1841), Router2 (Router/1841)
 - `01 Networking\PPPOE\client.server.aaa.pkt`
@@ -494,7 +494,7 @@ Source root: `<PACKET_TRACER_SAVES_ROOT>`
   devices: Router0 (Router/2811), Wireless Router0 (WirelessRouter/Linksys-WRT300N), PC0 (Pc/PC-PT), Power Distribution Device0 (Power Distribution Device/Power Distribution Device)
 - `01 Networking\QoS\QoS.pkt`
   version: `5.2.0.0068`, devices: `3`, links: `2`
-  tags: eigrp, eigrp_ipv4, management_vlan, multi_router, qos, ssh_ios, telnet, vlan
+  tags: eigrp, eigrp_ipv4, management_vlan, multi_router, qos, serial_wan, ssh_ios, telnet, vlan, wan
   topology: general
   devices: R2 (Router/1841), QoS_Router (Router/1841), R3 (Router/1841)
 - `01 Networking\REP\rep_four_devices.pkt`
@@ -509,7 +509,7 @@ Source root: `<PACKET_TRACER_SAVES_ROOT>`
   devices: Switch0 (MultiLayerSwitch/IE-2000), Switch1 (MultiLayerSwitch/IE-2000), Power Distribution Device0 (Power Distribution Device/Power Distribution Device), PC0 (Pc/PC-PT), PC1 (Pc/PC-PT)
 - `01 Networking\RIP\rip_default_information_originate_ipv4_ipv6.pkt`
   version: `6.1.0.0026`, devices: `3`, links: `2`
-  tags: management_vlan, multi_router, nat, rip, ripv2, stp, telnet, vlan
+  tags: management_vlan, multi_router, nat, rip, ripv2, serial_wan, stp, telnet, vlan, wan
   topology: general
   devices: R1 (Router/1841), R2 (Router/1841), R3 (Router/1841)
 - `01 Networking\SNMP\SNMP_Router.pkt`
@@ -529,7 +529,7 @@ Source root: `<PACKET_TRACER_SAVES_ROOT>`
   devices: RSPAN SRC (Switch/2950-24), RSPAN DEST (Switch/2950-24), PC0 (Pc/PC-PT), PC1 (Pc/PC-PT), Sniffer0 (Sniffer/Sniffer), Sniffer1 (Sniffer/Sniffer), Sniffer2 (Sniffer/Sniffer)
 - `01 Networking\Terminal Server\cable_test.pkt`
   version: `5.4.0.0002`, devices: `9`, links: `8`
-  tags: host_server, management_vlan, multi_router, stp, telnet, vlan
+  tags: host_server, management_vlan, multi_router, serial_wan, stp, telnet, vlan, wan
   topology: general
   devices: Router0 (Router/1841), Router1 (Router/1841), Router2 (Router/2620XM), Router3 (Router/2621XM), Router4 (Router/1841), Router5 (Router/1941), Router6 (Router/2901), Router7 (Router/2911), Router8 (Router/Router-PT)
 - `01 Networking\Terminal Server\ssh_test.pkt`
@@ -650,7 +650,7 @@ Source root: `<PACKET_TRACER_SAVES_ROOT>`
 - `01 Networking\Wireless\Wireless LAN\WLC\wlc_2504_startup_wizard.pkt`
   version: `7.1.0.0000`, devices: `4`, links: `2`
   tags: host_server, management_vlan, multilayer_switching, stp, telnet, vlan, wireless, wireless_ap, wireless_client, wlc
-  topology: wireless_edge
+  topology: general
   devices: Multilayer Switch0 (MultiLayerSwitch/3560-24PS), PC0 (Pc/PC-PT), Power Distribution Device0 (Power Distribution Device/Power Distribution Device), Wireless LAN Controller0 (WirelessLanController/WLC-2504)
 - `01 Networking\Wireless\Wireless LAN\WLC\wlc_2504_two_wlans.pkt`
   version: `7.1.0.0000`, devices: `10`, links: `5`
@@ -665,7 +665,7 @@ Source root: `<PACKET_TRACER_SAVES_ROOT>`
 - `01 Networking\Wireless\Wireless LAN\WLC\wlc_3504_startup_wizard.pkt`
   version: `7.3.0.0902`, devices: `4`, links: `2`
   tags: host_server, management_vlan, multilayer_switching, stp, telnet, vlan, wireless, wireless_ap, wireless_client, wlc
-  topology: wireless_edge
+  topology: general
   devices: Multilayer Switch0 (MultiLayerSwitch/3560-24PS), PC0 (Pc/PC-PT), Power Distribution Device0 (Power Distribution Device/Power Distribution Device), Wireless LAN Controller1 (WirelessLanController/WLC-3504)
 - `01 Networking\Wireless\Wireless LAN\WLC\wlc_3504_two_wlans.pkt`
   version: `7.3.0.0902`, devices: `10`, links: `4`
@@ -754,7 +754,7 @@ Source root: `<PACKET_TRACER_SAVES_ROOT>`
   devices: R1 (Router/2811), ASA0 (ASA/5505), DMZ_Server (Server/Server-PT), Switch0 (Switch/2950-24), Switch1 (Switch/2950-24), Switch2 (Switch/2950-24), Internal_Host (Server/Server-PT), External_Host (Server/Server-PT), DMZ_Router (Router/1841), Internal_Router (Router/1841), External_Router (Router/1841), Power Distribution Device0 (Power Distribution Device/Power Distribution Device), Power Distribution Device1 (Power Distribution Device/Power Distribution Device), Power Distribution Device2 (Power Distribution Device/Power Distribution Device)
 - `03 Cybersecurity\ASA\asa_acl_nat.pkt`
   version: `6.1.0.0026`, devices: `13`, links: `12`
-  tags: acl, asa_acl_nat, default_route, host_server, management_vlan, multi_router, nat, rip, ripv2, security_edge, static_route, stp, switching, telnet, vlan
+  tags: acl, asa_acl_nat, default_route, host_server, management_vlan, multi_router, nat, rip, ripv2, security_edge, serial_wan, static_route, stp, switching, telnet, vlan, wan
   topology: acl_policy, chain, core_access, department_lan, server_services
   devices: R1 (Router/2811), ASA0 (ASA/5505), DMZ_Server (Server/Server-PT), R2 (Router/2811), R3 (Router/2811), Switch0 (Switch/2950-24), Switch1 (Switch/2950-24), Switch2 (Switch/2950-24), Internal_Host (Server/Server-PT), External_Host (Server/Server-PT), DMZ_Router (Router/1841), Internal_Router (Router/1841), External_Router (Router/1841)
 - `03 Cybersecurity\ASA\asa_clientless_vpn.pkt`
@@ -764,7 +764,7 @@ Source root: `<PACKET_TRACER_SAVES_ROOT>`
   devices: PC0 (Pc/PC-PT), PC1 (Pc/PC-PT), Switch0 (Switch/2950-24), Server0 (Server/Server-PT), ASA0 (ASA/5505)
 - `03 Cybersecurity\ASA\asa_service_policy.pkt`
   version: `6.1.0.0026`, devices: `13`, links: `12`
-  tags: acl, asa_service_policy, default_route, host_server, management_vlan, multi_router, rip, ripv2, security_edge, static_route, stp, switching, telnet, vlan
+  tags: acl, asa_service_policy, default_route, host_server, management_vlan, multi_router, rip, ripv2, security_edge, serial_wan, static_route, stp, switching, telnet, vlan, wan
   topology: acl_policy, chain, core_access, department_lan, server_services
   devices: R1 (Router/2811), ASA0 (ASA/5505), DMZ_Server (Server/Server-PT), R2 (Router/2811), R3 (Router/2811), Switch0 (Switch/2950-24), Switch1 (Switch/2950-24), Switch2 (Switch/2950-24), Internal_Host (Server/Server-PT), External_Host (Server/Server-PT), DMZ_Router (Router/1841), Internal_Router (Router/1841), External_Router (Router/1841)
 - `03 Cybersecurity\ASA\enable outside to inside.pkt`
@@ -774,7 +774,7 @@ Source root: `<PACKET_TRACER_SAVES_ROOT>`
   devices: R1 (Router/2811), ASA0 (ASA/5505), DMZ_Server (Server/Server-PT), Switch0 (Switch/2950-24), Switch1 (Switch/2950-24), Switch2 (Switch/2950-24), Internal_Host (Server/Server-PT), External_Host (Server/Server-PT), DMZ_Router (Router/1841), Internal_Router (Router/1841), External_Router (Router/1841)
 - `03 Cybersecurity\CBAC\CBAC_3Interface.pkt`
   version: `5.2.0.0068`, devices: `8`, links: `7`
-  tags: acl, cbac, host_server, management_vlan, multi_router, rip, ripv2, ssh_ios, switching, syslog_ios, telnet, vlan
+  tags: acl, cbac, host_server, management_vlan, multi_router, rip, ripv2, serial_wan, ssh_ios, switching, syslog_ios, telnet, vlan, wan
   topology: acl_policy, chain, core_access, server_services
   devices: PC0 (Pc/PC-PT), PC1 (Pc/PC-PT), DNS Server (Server/Server-PT), Switch0 (Switch/2950-24), Switch1 (Switch/2950-24), Web Server (Server/Server-PT), CBAC_Router (Router/1841), Outside_Router (Router/1841)
 - `03 Cybersecurity\CBAC\CBAC_3Routers.pkt`
@@ -789,17 +789,17 @@ Source root: `<PACKET_TRACER_SAVES_ROOT>`
   devices: Power Distribution Device0 (Power Distribution Device/Power Distribution Device), PC0 (Pc/PC-PT), PC1 (Pc/PC-PT), DHCP Server (Router/ISR4331), Switch0 (Switch/2960-24TT)
 - `03 Cybersecurity\IPSec\GRE_Over_IPSec_EIGRP.pkt`
   version: `6.0.0.0002`, devices: `3`, links: `2`
-  tags: acl, eigrp, eigrp_ipv4, gre, ipsec, management_vlan, multi_router, ssh_ios, stp, telnet, vlan, vpn
+  tags: acl, eigrp, eigrp_ipv4, gre, ipsec, management_vlan, multi_router, serial_wan, ssh_ios, stp, telnet, vlan, vpn, wan
   topology: acl_policy
   devices: R1 (Router/1841), CO (Router/1841), R2 (Router/1841)
 - `03 Cybersecurity\IPSec\Ipsec.pkt`
   version: `5.2.0.0065`, devices: `4`, links: `3`
-  tags: acl, eigrp, eigrp_ipv4, ipsec, management_vlan, multi_router, ssh_ios, switching, telnet, vlan, vpn
+  tags: acl, eigrp, eigrp_ipv4, ipsec, management_vlan, multi_router, serial_wan, ssh_ios, switching, telnet, vlan, vpn, wan
   topology: acl_policy
   devices: R1 (Router/1841), R2 (Router/1841), R3 (Router/1841), Switch0 (Switch/2950-24)
 - `03 Cybersecurity\IPSec\Ipsec2.pkt`
   version: `5.2.0.0065`, devices: `6`, links: `5`
-  tags: acl, eigrp, eigrp_ipv4, host_server, ipsec, management_vlan, multi_router, ssh_ios, telnet, vlan, vpn
+  tags: acl, eigrp, eigrp_ipv4, host_server, ipsec, management_vlan, multi_router, serial_wan, ssh_ios, telnet, vlan, vpn, wan
   topology: acl_policy, server_services
   devices: Router0 (Router/1841), Router1 (Router/1841), Router2 (Router/1841), PC0 (Pc/PC-PT), Server0 (Server/Server-PT), Server1 (Server/Server-PT)
 - `03 Cybersecurity\Port-Based NAC\wired dot1x.pkt`
@@ -829,7 +829,7 @@ Source root: `<PACKET_TRACER_SAVES_ROOT>`
   devices: Router0 (Router/2811), PC0 (Pc/PC-PT)
 - `03 Cybersecurity\Zone Based Firewall (ZFW)\ZFW.pkt`
   version: `5.2.0.0065`, devices: `3`, links: `2`
-  tags: default_route, management_vlan, multi_router, security_edge, ssh_ios, static_route, telnet, vlan, zfw
+  tags: default_route, management_vlan, multi_router, security_edge, serial_wan, ssh_ios, static_route, telnet, vlan, wan, zfw
   topology: general
   devices: private_router (Router/1841), zfwRouter (Router/1841), public_router (Router/1841)
 - `03 Cybersecurity\Zone Based Firewall (ZFW)\zfwIPv4Test.pkt`
@@ -859,7 +859,7 @@ Source root: `<PACKET_TRACER_SAVES_ROOT>`
   devices: PC0 (Pc/PC-PT), TCP Client 2 (Router/819HG-4G-IOX), Switch0 (Switch/2950-24), Router1 (Router/1841), TCP Server (Server/Server-PT), TCP Client 1 (Server/Server-PT)
 - `04 IoT\819HG_4G_IOX\udp_test_app_on_819.pkt`
   version: `9.0.0.0000`, devices: `6`, links: `4`
-  tags: acl, dhcp_pool, host_server, iot, management_vlan, multi_router, nat, pat, router_dhcp, stp, switching, tcp_udp_app, telnet, vlan, vm_iox
+  tags: acl, dhcp_pool, host_server, iot, management_vlan, multi_router, nat, pat, router_dhcp, serial_wan, stp, switching, tcp_udp_app, telnet, vlan, vm_iox, wan
   topology: acl_policy, server_services
   devices: Switch0 (Switch/2950-24), PC0 (Pc/PC-PT), Server0 (Server/Server-PT), Router0 (Router/819HG-4G-IOX), Router1 (Router/819HG-4G-IOX), Power Distribution Device0 (Power Distribution Device/Power Distribution Device)
 - `04 IoT\819HG_4G_IOX\uploading_and_running_vm_on_819.pkt`
@@ -869,7 +869,7 @@ Source root: `<PACKET_TRACER_SAVES_ROOT>`
   devices: PC0 (Pc/PC-PT), Router0 (Router/819HG-4G-IOX)
 - `04 IoT\819HGW\819HGW_cell_nat_configuration.pkt`
   version: `7.0.0.0000`, devices: `10`, links: `4`
-  tags: acl, dhcp_pool, host_server, iot, management_vlan, multi_router, nat, pat, router_dhcp, stp, switching, tablet, telnet, vlan, wireless_client
+  tags: acl, dhcp_pool, host_server, iot, management_vlan, multi_router, nat, pat, router_dhcp, serial_wan, stp, switching, tablet, telnet, vlan, wan, wireless_client
   topology: acl_policy
   devices: Cell Tower0 (CellTower/Cell-Tower), Central Office Server0 (CentralOfficeServer/Central-Office-Server), Cell Tower1 (CellTower/Cell-Tower), Switch0 (Switch/2950-24), 15.0.0.1 (Router/1841), Smartphone0 (Pda/SMARTPHONE-PT), PC0 (Pc/PC-PT), PC1 (Pc/PC-PT), Router0 (Router/819HGW), Router1 (Router/819HGW)
 - `04 IoT\819HGW\819HGW_cellular_activation.pkt`
@@ -879,7 +879,7 @@ Source root: `<PACKET_TRACER_SAVES_ROOT>`
   devices: Central Office Server0 (CentralOfficeServer/Central-Office-Server), Cell Tower1 (CellTower/Cell-Tower), Router1 (Router/819HGW)
 - `04 IoT\819HGW\819HGW_nat_configuration.pkt`
   version: `7.0.0.0000`, devices: `6`, links: `3`
-  tags: acl, default_route, dhcp_pool, host_server, iot, management_vlan, multi_router, nat, ospf, ospfv2, pat, router_dhcp, static_route, stp, telnet, vlan
+  tags: acl, default_route, dhcp_pool, host_server, iot, management_vlan, multi_router, nat, ospf, ospfv2, pat, router_dhcp, serial_wan, static_route, stp, telnet, vlan, wan
   topology: acl_policy
   devices: Router0 (Router/819HGW), Router1 (Router/819HGW), Router2 (Router/1841), Router3 (Router/1841), PC0 (Pc/PC-PT), PC1 (Pc/PC-PT)
 - `04 IoT\819HGW\wpa_psk_authentication.pkt`
