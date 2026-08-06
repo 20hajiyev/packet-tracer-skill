@@ -1036,12 +1036,39 @@ function main() {
         }
       }
       printEnvExamples(runtimeDoctor);
-      const failed = checks.some(([, ok]) => !ok);
+      // The verdict follows the checks that decide whether anything is
+      // actually blocked, not "did any line print MISSING". A fresh install
+      // reported `RUNTIME_GRADE ready`, `BLOCKED_OPERATIONS none` and every
+      // capability ready, and then closed with "Runtime is not fully ready"
+      // and exit 1 -- because `TWOFISH_SHA256` is a checksum of the optional
+      // compiled bridge, which is absent by design when the vendored
+      // pure-Python engine is in use. A first-time user reads that as a failed
+      // install.
+      const status = checkMap(checks);
+      const isClear = (name) => {
+        const entry = status.get(name);
+        if (!entry) return true;
+        const detail = (entry.detail || "").trim().toLowerCase();
+        return entry.ok || detail === "" || detail === "none";
+      };
+      const gradeEntry = status.get("RUNTIME_GRADE");
+      const grade = (gradeEntry && gradeEntry.detail ? gradeEntry.detail : "").trim();
+      const failed =
+        (grade !== "" && grade !== "ready") ||
+        !isClear("RUNTIME_BLOCKERS") ||
+        !isClear("BLOCKED_OPERATIONS");
       if (failed) {
         console.error("\nRuntime is not fully ready. Install copies are fine, but Packet Tracer generation still needs the missing items above.");
         process.exit(1);
       }
-      console.log("\nRuntime looks ready.");
+      const informational = checks.filter(([, ok]) => !ok).map(([name]) => name);
+      if (informational.length > 0) {
+        console.log(
+          `\nRuntime looks ready. Optional items not present: ${informational.join(", ")}.`
+        );
+      } else {
+        console.log("\nRuntime looks ready.");
+      }
       process.exit(0);
     }
 
