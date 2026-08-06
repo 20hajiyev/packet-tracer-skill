@@ -2312,6 +2312,7 @@ def _write_pkt_root(root: ET.Element, pkt_path: Path, xml_path: Path | None = No
     # route, and the fix never ran for it.
     _repair_invalid_link_ports(root)
     _assign_unique_macs(root)
+    _match_link_port_families(root)
     _assign_unique_interface_addresses(root)
     _assign_unique_switch_management_ips(root)
     _reconcile_cable_media(root)
@@ -5088,6 +5089,87 @@ def _assign_unique_switch_management_ips(root: ET.Element) -> list[str]:
     return renumbered
 
 
+def _match_link_port_families(root: ET.Element) -> list[str]:
+    """A cable's two ends must be the same kind of socket.
+
+    `_reconcile_cable_media` settles what the cable *is*; this settles what it
+    lands on. Measured once a serial-capable donor was finally reachable: the
+    port repair moved one end of the WAN to `Serial3/0` and the other to
+    `FastEthernet1/0`, and Packet Tracer refused the file. Demoting the cable to
+    copper does not help -- copper between a serial socket and an Ethernet one
+    is no more real than serial was.
+
+    A mismatch is resolved towards serial when the other device has a free
+    serial interface, since a serial link is what was asked for, and away from
+    it otherwise. Both directions keep the pair consistent, which is the whole
+    requirement.
+    """
+    device_order = list(root.findall(".//DEVICES/DEVICE"))
+    device_by_ref: dict[str, ET.Element] = {}
+    for index, device in enumerate(device_order):
+        ref = (device.findtext("./ENGINE/SAVE_REF_ID") or "").strip()
+        if ref:
+            device_by_ref[ref] = device
+        device_by_ref.setdefault(str(index), device)
+
+    used: set[tuple[str, str]] = set()
+    for link in root.findall(".//LINKS/LINK"):
+        cable = link.find("./CABLE")
+        if cable is None:
+            continue
+        refs = [(cable.findtext("FROM") or "").strip(), (cable.findtext("TO") or "").strip()]
+        for ref, node in zip(refs, cable.findall("PORT")):
+            used.add((ref, node.text or ""))
+
+    def free_port(device: ET.Element, ref: str, wanted_serial: bool) -> str:
+        names = donor_interface_names(device)
+        if not names:
+            names = [f"Serial{slot}/0" for slot in range(0, 8)] if wanted_serial else []
+            names += [f"FastEthernet0/{index}" for index in range(1, 25)]
+        for name in names:
+            if name.startswith("Serial") != wanted_serial:
+                continue
+            if (ref, name) in used or not port_exists(device, name):
+                continue
+            return name
+        return ""
+
+    changed: list[str] = []
+    for link in root.findall(".//LINKS/LINK"):
+        cable = link.find("./CABLE")
+        if cable is None:
+            continue
+        refs = [(cable.findtext("FROM") or "").strip(), (cable.findtext("TO") or "").strip()]
+        nodes = cable.findall("PORT")
+        if len(nodes) < 2:
+            continue
+        ports = [(node.text or "") for node in nodes]
+        serial = [port.startswith("Serial") for port in ports]
+        if serial[0] == serial[1]:
+            continue
+        odd = 0 if not serial[0] else 1
+        device = device_by_ref.get(refs[odd])
+        if device is None:
+            continue
+        replacement = free_port(device, refs[odd], wanted_serial=True)
+        if replacement:
+            used.add((refs[odd], replacement))
+            changed.append(f"{ports[odd]} -> {replacement} (matching the serial end)")
+            nodes[odd].text = replacement
+            continue
+        # No serial socket on that device, so the pair becomes Ethernet.
+        other = 1 - odd
+        device = device_by_ref.get(refs[other])
+        if device is None:
+            continue
+        replacement = free_port(device, refs[other], wanted_serial=False)
+        if replacement:
+            used.add((refs[other], replacement))
+            changed.append(f"{ports[other]} -> {replacement} (no serial socket to match)")
+            nodes[other].text = replacement
+    return changed
+
+
 def _reconcile_cable_media(root: ET.Element) -> list[str]:
     """Make each cable's family agree with the interfaces it ends on.
 
@@ -7382,6 +7464,7 @@ def generate_from_prompt(
     _sanitize_runtime_sections(root)
     port_repairs = _repair_invalid_link_ports(root)
     mac_repairs = _assign_unique_macs(root)
+    _match_link_port_families(root)
     _assign_unique_interface_addresses(root)
     _assign_unique_switch_management_ips(root)
     media_notes = _reconcile_cable_media(root)

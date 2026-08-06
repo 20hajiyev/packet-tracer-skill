@@ -93,10 +93,18 @@ class LocalDonor:
 
 
 def _device_counts_of(path: Path) -> dict[str, int]:
-    """Device types a lab contains. Requires a full decode, so cache the result."""
+    """Device types a lab contains. Requires a full decode, so cache the result.
+
+    `__serial_routers__` rides along under a name no Packet Tracer type can
+    collide with. A serial WAN cannot be built from a donor whose routers have
+    no serial ports, and that is not visible from the type names alone -- the
+    ports live on an installed module. Counting it here means the index pays for
+    the decode once and every later lookup is a dictionary read.
+    """
     from collections import Counter
 
     from pkt_codec import decode_pkt_auto, parse_pkt_xml
+    from pkt_transformer import port_capacity
 
     try:
         xml, _container = decode_pkt_auto(path.read_bytes(), verify=False)
@@ -107,7 +115,14 @@ def _device_counts_of(path: Path) -> dict[str, int]:
         (device.findtext("./ENGINE/TYPE", default="") or "").strip()
         for device in root.findall(".//DEVICES/DEVICE")
     )
-    return {kind: count for kind, count in counts.items() if kind}
+    result = {kind: count for kind, count in counts.items() if kind}
+    result["__serial_routers__"] = sum(
+        1
+        for device in root.findall(".//DEVICES/DEVICE")
+        if (device.findtext("./ENGINE/TYPE", default="") or "").strip() == "Router"
+        and port_capacity(device).get("Serial", 0) > 0
+    )
+    return result
 
 
 # Packet Tracer's own type names do not match the words a prompt uses, and a
@@ -280,6 +295,12 @@ def discover_local_donors(
             if required_types:
                 entry = entries.get(key) or {}
                 cached_counts = entry.get("device_counts")
+                # An entry cached before `__serial_routers__` existed carries
+                # every other count and would answer "no serial" for a lab full
+                # of it. The sentinel doubles as the cache's version marker:
+                # miss it, and the lab is decoded again once.
+                if isinstance(cached_counts, dict) and "__serial_routers__" not in cached_counts:
+                    cached_counts = None
                 if isinstance(cached_counts, dict):
                     counts = {str(k): int(v) for k, v in cached_counts.items()}
                 else:
