@@ -2025,3 +2025,35 @@ source's coordinates, and routers can be handed the same target position. Now 0.
 Every one of these was invisible to the structural check, to donor coherence,
 and to six hundred tests. What made them visible was looking at the thing a user
 looks at.
+
+## Serial WAN is planned correctly and cannot be selected for
+
+`2 router arasinda serial wan qur` produces a lab with no links at all, and
+`iki noqte arasinda leased line ile 2 router 4 komputer` produces a
+router-to-router link over copper. Both open, so nothing complained.
+
+The pipeline is not at fault anywhere it was suspected. The blueprint plans
+exactly the right thing:
+
+    R1 Serial0/0/0 <-> R2 Serial0/0/0   media=serial
+
+The donor that was chosen has routers with `Serial: 0`. The port repair
+replaced the interface the device does not have, and cable reconciliation
+correctly demoted the cable to copper, because a serial cable needs both ends to
+be serial. Every stage behaved as designed.
+
+So this is donor *selection*, which is the same complaint workstream 1 exists
+for: the topology followed the donor's hardware rather than the requirement.
+Serial-capable donors are not scarce -- 196 `eSmartSerial` and 110 `eSerial`
+ports across the local pool, and 60 links already using them.
+
+What blocks the obvious fix is that there is nothing to select on. The sample
+catalogue carries 292 entries and not one capability token mentioning serial,
+WAN, PPP or HDLC, so `_filter_candidates_for_blueprint` -- which deprioritises
+rather than rejects, and would be the right place -- has no signal to read.
+
+The next step is therefore to give the catalogue that attribute, measured from
+the samples themselves rather than inferred from their names, and then let a
+blueprint carrying a serial link prefer donors that have serial ports. Recorded
+rather than attempted, because guessing at a capability token would be exactly
+the kind of unmeasured assumption this document exists to record the cost of.
