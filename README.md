@@ -10,25 +10,46 @@ This repository is built for one job: take a natural-language network request, b
 
 It is intended for networking labs where correctness matters more than producing a pretty but unverifiable diagram. The skill can plan, inspect, edit, compare, and explain Packet Tracer scenarios, but it deliberately separates "recognized by the parser", "visible in inventory", "edit-proven", "donor-backed ready", and "generate-ready" support.
 
-`0.2.3` capability release is focused on:
+## `0.3.0`: generation that was actually opened
+
+This is the first release where a prompt produces a lab Packet Tracer opens.
+
+```bash
+npx packet-tracer-skill --doctor        # is this machine ready?
+python scripts/generate_pkt.py --prompt "1 router 1 switch 4 komputer, DHCP ile avtomatik IP payla" --output lab.pkt
+```
+
+Every number below was measured, and the connectivity ones by running real pings
+from the devices rather than by reading the file:
+
+| | |
+| --- | --- |
+| corpus scenarios generated | 32 of 33 |
+| of those, opened by Packet Tracer | **32 of 32** |
+| tests | 657 passed, 1 skipped |
+| generated DHCP lab | four PCs took leases from the router pool and pinged their gateway and each other **4/4** |
+| generated leased line | traffic crossed `Serial0/1/1 <-> Serial0/1/0` **4/4** |
+
+Three defects had made every generated WAN lab unopenable, each hiding the next:
+a donor that was *rejected* still rewrote the request, so a planned serial link
+became copper before any other donor could serve it; interface names were
+invented from an assumed switch model instead of read from the device; and
+serial cables carried no clocking end. Two of the three were invisible until the
+open check itself was fixed — it had been returning false verdicts often enough
+to send investigations after defects that were not there.
+
+Two numbers in this README mean different things and are easy to confuse. The
+generation above is donor-prune generation: a real lab is pruned and rewired to
+match the request. The atlas `generate_ready` count, discussed further down, is a
+stricter per-feature acceptance gate and is still `0` by design — it is not a
+statement that generation does not work.
+
+The previous line, the `0.2.3` capability release, was focused on:
 
 - donor-backed and scenario-aware public messaging
 - conservative Windows-first runtime truth
 - known working scenario set examples with acceptance-backed artifacts
 - expanded edit-proven capability proof across voice, automation, L2 security, WAN/security, BGP/L2 resiliency, IPv4 routing/NAT, IOS management, and local sample audit workflows
-
-`0.3.0` is the first release where a prompt produces a lab that Packet Tracer
-opens. The corpus generates 32 of 33 scenarios and Packet Tracer opens 32 of 32,
-with 657 tests passing. Connectivity is checked by running real pings, not by
-inspecting the file: a generated DHCP lab hands four PCs their leases and they
-ping each other and their gateway 4/4, and a generated leased line carries
-traffic across `Serial0/1/1 <-> Serial0/1/0` 4/4.
-
-Two numbers in this README mean different things and are easy to confuse. The
-generation above is donor-prune generation: a real lab is pruned and rewired to
-match the request. The atlas `generate_ready` count, discussed further down, is
-a stricter per-feature acceptance gate and is still `0` by design — it is not a
-statement that generation does not work.
 
 ## What It Does
 
@@ -616,57 +637,107 @@ Launch ops references:
 - [docs/post-launch-follow-up.md](docs/post-launch-follow-up.md)
 - [docs/proof-readiness-dashboard.md](docs/proof-readiness-dashboard.md)
 
-## Azerbaijani Summary
+## Azərbaycanca
 
-Bu repo Cisco Packet Tracer 9.x `.pkt` faylları üçün təbii dilə əsaslanan planlama, analiz, edit, parity hesabatı və donor-backed workflow yaradır. Məqsəd sadəcə promptdan topologiya şəkli çıxarmaq deyil. Məqsəd Packet Tracer-in real fayl formatına uyğun, açılan, yoxlanıla bilən və səhv olanda səbəbini izah edən daha etibarlı skill təqdim etməkdir.
+Bu repo Cisco Packet Tracer 9.x `.pkt` faylları üçün təbii dildən laboratoriya
+quran, mövcud faylı redaktə edən və hər iddiasını ölçü ilə əsaslandıran bir
+skilldir. Məqsəd promptdan gözəl şəkil çıxarmaq deyil — Packet Tracer-in
+həqiqətən **açdığı**, cihazlarının bir-birini **ping etdiyi** fayl vermək,
+alınmayanda isə səbəbini açıq demək.
 
-Skill promptu əvvəl scenario family və capability-lərə ayırır, sonra həmin tələbi feature atlas, curated donor registry, runtime doctor, parity report və proof docs ilə yoxlayır. Uyğun donor, runtime bridge, deterministic target və ya acceptance sübutu zəifdirsə, sistem final `.pkt` yaratmaq əvəzinə səbəbli refusal verir. Bu davranış qəsdəndir: faylı korlamaqdansa, nə çatışmadığını və növbəti ən doğru addımı göstərmək daha təhlükəsizdir.
+### `0.3.0` nə dəyişdi
 
-Əsas public səthlər:
+Bu, promptun Packet Tracer-in açdığı fayla çevrildiyi ilk buraxılışdır.
 
-- `--explain-plan`: promptun hansı scenario family və capability-lərə çevrildiyini, hansı donor və readiness qərarlarının verildiyini göstərir.
-- `--compare-scenarios`: bir neçə promptu eyni matrix üzərində müqayisə edir və hansı ailənin report-supported, edit-proven, donor-limited və ya unsupported olduğunu göstərir.
-- `--parity-report`: tələb olunan capability-lərin inventory, edit, donor-backed readiness, generate və acceptance səviyyəsində vəziyyətini izah edir.
-- `--feature-gap-report`: Packet Tracer 9.0-da mövcud olub skill-də hələ tam məhsullaşmamış sahələri atlas/backlog kimi göstərir.
-- `--local-sample-audit-root`: istifadəçinin lokal `.pkt/.pka` nümunə qovluğunu audit edir, decode nəticələrini və capability evidence-ni çıxarır, amma raw faylları repo-ya və npm paketinə daxil etmir.
-- `--doctor`: real `.pkt` runtime üçün Packet Tracer install, donor path, Twofish bridge və blocked/ready operations vəziyyətini yoxlayır.
-- examples gallery və proof docs: screenshot, inventory manifest, acceptance excerpt və donor proof ilə public iddiaları yoxlanıla bilən artefaktlara bağlayır.
+| Ölçü | Nəticə |
+| --- | --- |
+| korpusda qurulan ssenari | 33-dən 32 |
+| onlardan Packet Tracer-in açdığı | **32-dən 32** |
+| testlər | 657 keçdi, 1 ötürüldü |
+| DHCP laboratoriyası | 4 kompüter routerin hovuzundan ünvan aldı, şlüzə və bir-birinə **4/4** ping |
+| icarə xətti (leased line) | trafik `Serial0/1/1 <-> Serial0/1/0` üzərindən **4/4** keçdi |
 
-`0.2.3` release-in əsas dəyəri budur: skill Packet Tracer feature-lərini daha geniş tanıyır, daha çox explicit IOS/script edit path-i roundtrip proof ilə qoruyur və daha çox narrow path üçün donor-backed readiness göstərə bilir. Amma bu release hələ universal generate release deyil. `generate_ready=0` açıq saxlanılır, çünki geniş synthetic generation yalnız single-donor, deterministic inventory və acceptance JSON sübutu ilə açılmalıdır.
+Ping rəqəmləri faylı oxumaqla deyil, cihazların özündən `ping` işlədilməklə
+alınıb. Bu fərq vacibdir: bu layihədə bütün statik yoxlamaları keçən, amma heç
+nəyin ping etmədiyi laboratoriyalar olub.
 
-Hazırda ən güclü sahələr:
+### Nə düzəldildi
 
-- campus və service-heavy lab planning, parity və reporting
-- donor-backed Home IoT constrained edits
-- WAN/security edge report və donor-backed readiness semantics
-- WAN/security edge üçün GRE, PPP, IPSec transform-set, VPN crypto-map, router CBAC və ZFW explicit edit semantics
-- IPv6/routing üçün OSPFv3, EIGRP IPv6, RIPng və HSRP donor-backed-ready subset
-- IPv4 routing/NAT/IOS management üçün OSPFv2, EIGRP IPv4, RIPv2, static/default route, DHCP relay, NAT/PAT, SSH, NTP və syslog explicit edit-proven subset
-- L2 security/monitoring üçün DHCP snooping, DAI, dot1x, QoS, SNMP, NetFlow və SPAN kimi explicit edit/report path-lər
-- BGP və L2 resiliency üçün STP/RSTP, EtherChannel/LACP/PAgP, VTP və DTP explicit IOS edit semantics
-- advanced wireless üçün WEP və WPA Enterprise/RADIUS explicit edit semantics
-- automation/controller və industrial programming üçün Python, JavaScript, TCP/UDP, Real HTTP və Real WebSocket existing script-file explicit edits
-- voice/collaboration üçün IOS telephony-service, ephone-dn/ephone və dial-peer voice explicit edit semantics
+Generasiya edilən hər WAN laboratoriyası açılmırdı və bunun arxasında bir-birini
+gizlədən üç defekt vardı:
 
-Hələ konservativ saxlanan sahələr:
+1. **Seçilməyən donor tələbi yenidən yazırdı.** Sınanan ilk donor WAN-ı daşıya
+   bilmirdisə, planlanmış `R1 Serial0/0/0 <-> R2 Serial0/0/0` xəttini misə
+   çevirirdi — və bundan sonra heç bir mərhələ serial istənildiyini bilmirdi.
+   Yəni topologiya tələbdən yox, donorun formasından çıxırdı.
+2. **Port adları cihazdan alınmırdı, güman edilən modeldən uydurulurdu.** Portlarını
+   `FastEthernet0/1, 1/1 … 9/1` kimi nömrələyən switch-dən `FastEthernet0/2`
+   istənilirdi. Eyni fayl uplink `FastEthernet2/1`-ə keçəndə açılır.
+3. **Serial kabelin clock ucu (DCE) elan olunmurdu.** Donorların hər serial
+   xəttində var idi, bizimkilərin heç birində yox.
 
-- broad synthetic generate bütün Packet Tracer feature-ləri üçün açıq deyil
-- BGP/STP/EtherChannel/VTP/DTP üçün link/topology synthesis və protocol convergence iddiası edilmir
-- WLC, Meraki, cellular, Bluetooth, beamforming və guest Wi-Fi əsasən report-only qalır
-- Linksys voice, Network Controller GUI, Blockly visual graph, VM/IOx və physical/media feature-lər atlasda görünür, amma edit/generate iddiası almır
-- industrial MQTT, Profinet, PTP, L2NAT, CyberObserver və industrial firewall report-only qalır
-- repo-local self-contained runtime readiness iddia edilmir; external bridge-assisted validation ayrıca göstərilir
-- lokal `pkt_examples` və remote GitHub sample importları evidence source-dur, public curated truth və ya npm package content deyil
+Bunlardan ikisi yalnız **ölçü aləti düzəldiləndən sonra** görünə bildi: açılış
+yoxlaması eyni fayla beş sınaqdan ikisində yalan cavab verirdi.
 
-Hazırkı release prioriteti:
+### Necə işləyir
 
-- `0.2.3` capability release-ini published baseline kimi saxlamaq
-- `0.2.4` candidate üçün Examples Truth 2.0, proof-card discoverability və proof-readiness dashboard-u sabitləşdirmək
-- README, npm package, changelog, release notes, examples və proof docs arasında terminologiya drift-ni bağlamaq
-- scenario truth source, donor registry və runtime doctor contract consistency-ni qorumaq
-- local `pkt_examples` evidence-ni public proof queue kimi xülasələmək, amma raw `.pkt/.pka` faylları paylaşmamaq
-- feature atlas üzərindən Packet Tracer-də qalan bütün boşluqları görünən backlog kimi saxlamaq
-- yeni capability-ləri yalnız inventory proof, edit roundtrip proof, deterministic target resolution və donor-backed acceptance olduqda yüksəltmək
+Skill promptu ssenari ailəsinə və tələb olunan imkanlara ayırır, uyğun donor
+laboratoriya seçir, onu tələbə uyğun budayıb yenidən kabelləyir, sonra nəticəni
+yoxlayır. Donor, runtime və ya sübut zəifdirsə, yarımçıq fayl vermək əvəzinə
+səbəbli imtina qaytarır — faylı korlamaqdansa nəyin çatışmadığını demək daha
+təhlükəsizdir.
+
+### Başlamaq üçün
+
+```bash
+npx packet-tracer-skill --doctor
+python scripts/generate_pkt.py --prompt "1 router 1 switch 4 komputer, DHCP ile avtomatik IP payla" --output lab.pkt
+```
+
+Faydalı bayraqlar:
+
+- `--doctor` — Packet Tracer quraşdırması, donor yolu və hansı əməliyyatların
+  hazır olduğunu göstərir
+- `--explain-plan` — promptun hansı ssenariyə çevrildiyini və hansı donorun niyə
+  seçildiyini açır
+- `--parity-report` — tələb olunan imkanların hansı səviyyədə dəstəkləndiyini
+  göstərir
+- `--feature-gap-report` — Packet Tracer 9.0-da olub skilldə hələ tam
+  məhsullaşmamış sahələri sadalayır
+- `--local-sample-audit-root` — öz `.pkt/.pka` qovluğunuzu audit edir; xam
+  fayllar nə repoya, nə də npm paketinə düşmür
+
+### Hazırda güclü olan sahələr
+
+- kampus və servis yüklü laboratoriyaların planlanması, redaktəsi və hesabatı
+- VLAN, DHCP, ACL, NAT/PAT, statik və dinamik marşrutlaşdırma (OSPF, EIGRP,
+  RIP), SSH/NTP/syslog kimi əmr formaları üçün sübutlanmış redaktə yolları
+- router-router serial WAN — planlanır, qurulur, açılır və trafik keçir
+- L2 təhlükəsizliyi və monitorinqi: DHCP snooping, DAI, dot1x, QoS, SNMP,
+  NetFlow, SPAN
+- STP/RSTP, EtherChannel, VTP, DTP və BGP üçün IOS mətn redaktəsi
+- səs və avtomatlaşdırma: `telephony-service`, `ephone`, `dial-peer`, mövcud
+  Python/JavaScript/TCP/UDP skript fayllarının dəyişdirilməsi
+
+### Hələ konservativ qalan sahələr
+
+- atlasdakı `generate_ready` sayğacı qəsdən `0`-dır: o, daha sərt, hər xüsusiyyət
+  üçün ayrıca qəbul qapısıdır və yuxarıdakı generasiya ilə eyni şey deyil
+- switch-lər arasında fiber uplink: 140 laboratoriyanın heç bir switch-ində
+  fiber port yoxdur, ona görə donordan əldə edilə bilmir
+- WLC, Meraki, mobil şəbəkə, Bluetooth və qonaq Wi-Fi əsasən yalnız hesabat
+  səviyyəsindədir
+- sənaye protokolları (MQTT, Profinet, PTP, L2NAT) hesabat səviyyəsində qalır
+- cihaz əhatəsi genişlənir, amma hələ Packet Tracer palitrasının hamısını
+  əhatə etmir
+
+### Növbəti işlər
+
+- port adlarının kodda deyil, hər zaman cihazın öz kataloqundan alınması
+- topologiyanın tələbdən çıxması: core/distribution/access strukturu, rola görə
+  fərqli switch modelləri, uplinklərdə fiber
+- cihaz və kabel əhatəsinin genişləndirilməsi
+- hər yeni imkanın yalnız canlı Packet Tracer-də ölçüldükdən sonra elan edilməsi
 
 ## License
 
