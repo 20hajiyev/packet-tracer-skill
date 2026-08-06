@@ -159,3 +159,31 @@ def test_a_device_with_unslotted_ports_numbers_from_zero() -> None:
     switch = _device("Switch", ["eCopperFastEthernet"] * 24, ["FastEthernet0/1"])
     assert port_exists(switch, "FastEthernet0/1") is True
     assert port_exists(switch, "FastEthernet0") is False
+
+
+def test_a_smart_serial_port_counts_as_serial() -> None:
+    """A router carrying an HWIC-2T reports `eSmartSerial` on its interfaces and
+    cables to another over `Serial0/0/0` -- Packet Tracer's own doing, watched
+    through the bridge. Missing from the family map, `port_capacity` answered
+    `Serial: 0` for exactly the routers that have serial, so `port_exists`
+    rejected `Serial0/0/0`, the port repair moved the WAN cable onto Ethernet,
+    and media reconciliation demoted it to copper.
+
+    Every serial prompt came out over copper for that one line, and it hid 196
+    ports across the local donor pool against 110 spelled `eSerial`.
+    """
+    from pkt_transformer import port_capacity
+
+    router = _device(
+        "Router",
+        ["eCopperGigabitEthernet"] * 3 + ["eSmartSerial"] * 2,
+        ["GigabitEthernet0/0", "GigabitEthernet0/1", "GigabitEthernet0/2"],
+    )
+
+    assert port_capacity(router)["Serial"] == 2
+    assert port_exists(router, "Serial0/0/0") is True
+
+    # A router with no serial hardware still has none.
+    plain = _device("Router", ["eCopperGigabitEthernet"] * 2, ["GigabitEthernet0/0"])
+    assert port_capacity(plain)["Serial"] == 0
+    assert port_exists(plain, "Serial0/0/0") is False

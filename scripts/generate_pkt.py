@@ -42,7 +42,7 @@ from packet_tracer_env import (
 from pkt_builder import build_packet_tracer_xml
 from pkt_codec import decode_pkt_file, decode_pkt_modern, encode_pkt_modern, serialize_pkt_xml
 from pkt_editor import _set_config_block, apply_plan_operations, decode_pkt_to_root, edit_pkt_file, inventory_devices, inventory_links, inventory_root
-from pkt_transformer import donor_interface_names, port_exists, transform_from_blueprint
+from pkt_transformer import donor_interface_names, port_capacity, port_exists, transform_from_blueprint
 import pkt_verify
 import usage_ledger
 from remote_search import (
@@ -1349,6 +1349,25 @@ def _summarize_rejection_issues(issues: list[str]) -> list[str]:
     return summarized
 
 
+def _blueprint_wants_serial(blueprint: dict[str, object]) -> bool:
+    for link in blueprint.get("links", []):
+        if str(link.get("media", "")).lower() == "serial":
+            return True
+        for end in ("a", "b"):
+            if str(link.get(end, {}).get("port", "")).startswith("Serial"):
+                return True
+    return False
+
+
+def _donor_has_serial_router(root: ET.Element) -> bool:
+    for device in root.findall(".//DEVICES/DEVICE"):
+        if (device.findtext("./ENGINE/TYPE") or "").strip() != "Router":
+            continue
+        if port_capacity(device).get("Serial", 0) > 0:
+            return True
+    return False
+
+
 def _evaluate_donor_prune_candidates(
     plan: IntentPlan,
     blueprint: dict[str, object],
@@ -1361,6 +1380,20 @@ def _evaluate_donor_prune_candidates(
     latest_plan: IntentPlan | None = None
     viable_candidates, filtered_diagnostics = _filter_candidates_for_blueprint(donor_candidates, blueprint)
     diagnostics.extend(filtered_diagnostics)
+    # A prompt asking for a serial WAN plans `R1 Serial0/0/0 <-> R2 Serial0/0/0`
+    # correctly, and then the donor decides whether it can happen. Measured on
+    # `iki noqte arasinda leased line`: the donor chosen had routers with no
+    # serial ports at all, so the port repair moved the cable to Ethernet and
+    # media reconciliation demoted it to copper -- every stage behaving as
+    # designed, and the lab arriving without the WAN it was asked for.
+    #
+    # Serial donors are not scarce: 196 `eSmartSerial` and 110 `eSerial` ports
+    # across the local pool. The check is free here because this loop already
+    # decodes each candidate, and a donor that cannot serve the link is only
+    # deferred, never rejected -- if none of them has a serial port, the first
+    # workable candidate is still used and the lab still generates.
+    wants_serial = _blueprint_wants_serial(blueprint)
+    serial_deferred: tuple[IntentPlan, DonorArchetypePlan, ET.Element, SampleCandidate] | None = None
     for donor_candidate in viable_candidates:
         donor_path = Path(donor_candidate.sample.path)
         donor_graph_fit = build_donor_graph_fit(donor_candidate.sample, blueprint)
@@ -1387,7 +1420,16 @@ def _evaluate_donor_prune_candidates(
             diagnostic["status"] = "selected"
             diagnostic["rejection_reasons"] = []
             diagnostics.append(diagnostic)
-            return (adapted_plan, archetype_plan, donor_root, donor_candidate), diagnostics
+            result = (adapted_plan, archetype_plan, donor_root, donor_candidate)
+            if wants_serial and not _donor_has_serial_router(donor_root):
+                # Workable, but it cannot carry the WAN that was asked for.
+                # Hold it in case nothing better turns up.
+                if serial_deferred is None:
+                    serial_deferred = result
+                diagnostic["status"] = "deferred_no_serial"
+                diagnostics.append(diagnostic)
+                continue
+            return result, diagnostics
         except PlanningError as exc:
             latest_plan = exc.plan
             diagnostic["status"] = "rejected"
@@ -1396,6 +1438,10 @@ def _evaluate_donor_prune_candidates(
             diagnostic["status"] = "rejected"
             diagnostic["rejection_reasons"] = _summarize_rejection_issues([str(exc)])
         diagnostics.append(diagnostic)
+    if serial_deferred is not None:
+        # No donor in the pool has a serial router. A lab without the WAN beats
+        # no lab at all, so the best workable candidate is used after all.
+        return serial_deferred, diagnostics
     if latest_plan is not None:
         plan.blocking_gaps = list(dict.fromkeys([*plan.blocking_gaps, *latest_plan.blocking_gaps]))
     return None, diagnostics

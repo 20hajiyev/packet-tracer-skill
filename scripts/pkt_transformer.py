@@ -622,6 +622,17 @@ PORT_TYPE_FAMILIES = {
     "eCopperGigabitEthernet": "GigabitEthernet",
     "eFiberGigabitEthernet": "GigabitEthernet",
     "eSerial": "Serial",
+    # A smart-serial port is a serial port. Measured: a router carrying an
+    # HWIC-2T reports `eSmartSerial` on its two interfaces and cables to another
+    # over `Serial0/0/0` with an `eSerial` link -- Packet Tracer's own doing.
+    # Missing here, `port_capacity` answered `Serial: 0` for exactly the routers
+    # that have serial, so `port_exists` rejected `Serial0/0/0`, the port repair
+    # moved the WAN cable onto Ethernet, and media reconciliation demoted it to
+    # copper. Every serial prompt came out over copper for this one line.
+    #
+    # It hides 196 ports across the local donor pool, against 110 spelled
+    # `eSerial`, so most of the serial hardware available was invisible.
+    "eSmartSerial": "Serial",
     "eHostWirelessN": "Wireless",
     "eHostWirelessG": "Wireless",
     "eHostWirelessAC": "Wireless",
