@@ -4784,8 +4784,14 @@ def _save_running_config_to_startup(root: ET.Element) -> list[str]:
     a reload wiped every interface. It also names the right answer, which is
     this one -- copy the whole running config rather than a stub.
 
-    Only devices that have a running config and an empty startup node are
-    touched. A donor that already saved something keeps what it saved.
+    A donor that already saved something used to keep it, which was wrong for a
+    different reason than the empty case. Measured on a WAN lab: the router's
+    saved configuration still carried the donor's addressing --
+    `ip address 170.18.10.33` and `shutdown` -- while generation had given the
+    running config `ip address 170.18.10.1` and `no shutdown`. The device would
+    have reverted to the donor's network on reload. Whatever a donor saved
+    describes the donor's lab, not this one, so the running config wins
+    outright.
     """
     saved: list[str] = []
     for device in root.findall(".//DEVICES/DEVICE"):
@@ -4794,8 +4800,14 @@ def _save_running_config_to_startup(root: ET.Element) -> list[str]:
         if running is None or startup is None:
             continue
         running_lines = running.findall("LINE")
-        if not running_lines or startup.findall("LINE"):
+        if not running_lines:
             continue
+        existing = [(line.text or "") for line in startup.findall("LINE")]
+        wanted = [(line.text or "") for line in running_lines]
+        if existing == wanted:
+            continue
+        for stale in list(startup):
+            startup.remove(stale)
         for line in running_lines:
             copied = ET.SubElement(startup, "LINE")
             copied.text = line.text
