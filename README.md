@@ -17,7 +17,18 @@ It is intended for networking labs where correctness matters more than producing
 - known working scenario set examples with acceptance-backed artifacts
 - expanded edit-proven capability proof across voice, automation, L2 security, WAN/security, BGP/L2 resiliency, IPv4 routing/NAT, IOS management, and local sample audit workflows
 
-`0.2.3` freezes the voice/collaboration and automation/controller proof work, explicit L2 dot1x/QoS and router-based CBAC/ZFW proof, local-sample-driven BGP/L2 resiliency, IPv4 routing/NAT/IOS-management proof waves, and the first broader donor-backed edit readiness expansion. It remains conservative: `generate_ready=0` is intentional until a future single-donor acceptance-backed pilot is proven.
+`0.3.0` is the first release where a prompt produces a lab that Packet Tracer
+opens. The corpus generates 32 of 33 scenarios and Packet Tracer opens 32 of 32,
+with 657 tests passing. Connectivity is checked by running real pings, not by
+inspecting the file: a generated DHCP lab hands four PCs their leases and they
+ping each other and their gateway 4/4, and a generated leased line carries
+traffic across `Serial0/1/1 <-> Serial0/1/0` 4/4.
+
+Two numbers in this README mean different things and are easy to confuse. The
+generation above is donor-prune generation: a real lab is pruned and rewired to
+match the request. The atlas `generate_ready` count, discussed further down, is
+a stricter per-feature acceptance gate and is still `0` by design — it is not a
+statement that generation does not work.
 
 ## What It Does
 
@@ -558,9 +569,23 @@ See also:
 
 ## Release and Launch State
 
-The current published npm package line is `packet-tracer-skill@0.2.3`. That release is a capability proof and readiness release, not a broad generate-ready release. The GitHub README, npm README, changelog, release notes, proof docs, examples, and feature atlas should all say the same thing: the skill can recognize more Packet Tracer features, edit more explicit IOS/script surfaces, and report donor-backed readiness for narrow paths, while still refusing broad unsupported generation.
+The current line is `packet-tracer-skill@0.3.0`, and it is the first release
+where generation is the headline rather than a deferred promise. `0.2.3`, the
+previous published line, was a capability proof and readiness release that
+deliberately refused broad generation.
 
-The next candidate line is `0.2.4`. Its purpose is not another random capability wave. It is a product-hardening patch for Examples Truth 2.0, proof-card discoverability, local sample evidence presentation, and proof-readiness promotion planning.
+What changed is measurable and was measured against live Packet Tracer: the
+corpus generates 32 of 33 scenarios and Packet Tracer opens 32 of 32, 657 tests
+pass, and connectivity is confirmed with real pings rather than file inspection.
+Three defects that had made generated WAN labs unopenable were found and fixed —
+a rejected donor rewriting the request, interface names invented from an assumed
+switch model, and serial cables with no clocking end declared — along with the
+open check itself, which had been giving false verdicts often enough to send
+investigations after defects that were not there.
+
+The candidate line after this one is `0.2.4`'s remaining product-hardening work:
+Examples Truth 2.0, proof-card discoverability, local sample evidence
+presentation, and proof-readiness promotion planning.
 
 So the current state is no longer "preparing an experiment." The `0.2.3` package line is public, and the `0.2.4` candidate is about making the public proof surface operationally complete:
 

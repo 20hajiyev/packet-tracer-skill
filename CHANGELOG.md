@@ -4,7 +4,7 @@ All notable changes to this project should be recorded in this file.
 
 The format is intentionally simple and release-oriented.
 
-## [0.3.0] - Unreleased candidate
+## [0.3.0] - 2026-08-06
 
 ### First verified generation
 
@@ -289,12 +289,50 @@ whole `0.2.x` line. See `docs/improvement-plan-0.3.0.md` for the audit.
 - eligible donors from a stock Packet Tracer 9.0.0 install go from **0 to 48**
   under the default policy (270 under `upgradeable`); none of the 292 bundled
   samples carry the previously-required exact build `9.0.0.0810`
-- one test profile, zero skips: 306 passed without a bridge, 307 with one
-  (previously 230 passed / 37 skipped, hiding one real failure)
-- `generate_ready` is still `0`. The remaining blocker is now the donor
-  graph-fit filter, which is reached and reports per-candidate rejection
-  reasons instead of being skipped
-- `package.json` stays at `0.2.3` until a publish decision is made
+- one test profile, zero skips: **657 passed, 1 skipped**
+- generation works: the corpus generates **32 of 33** scenarios and Packet
+  Tracer opens **32 of 32**, with 0 unexpected outcomes
+- `package.json` moves to `0.3.0` for this release
+
+### Generation, measured against live Packet Tracer
+
+Everything below was confirmed by opening the file in Packet Tracer, and the
+connectivity claims by running real pings from the devices.
+
+- **A rejected donor can no longer rewrite the request.** Donor adaptation
+  edited the caller's blueprint, so the first donor tried -- one that could not
+  serve a WAN -- turned `R1 Serial0/0/0 <-> R2 Serial0/0/0 (serial)` into
+  `GigabitEthernet0/0 <-> GigabitEthernet0/1 (eCrossOver)`, and nothing after it
+  could tell serial had been asked for. Each candidate now adapts a copy; only
+  the donor committed to writes back.
+- **Interface names come from the device, not from an assumed model.** A switch
+  numbering its ports `FastEthernet0/1, 1/1 ... 9/1` was asked for
+  `FastEthernet0/2`, and `port_exists` agreed the name was fine because it only
+  compared slot depth. The same lab with the uplink on `FastEthernet2/1` opens.
+  The same blindness applied to serial: owning two serial ports made
+  `Serial0/0/0` acceptable on a router whose interfaces are `Serial2/0` and
+  `Serial3/0`.
+- **Serial cables now declare their clocking end.** `DCEDEV`/`DCEPORT` were
+  never written, and a lab with any serial cable was refused. Isolated with a
+  six-variant experiment: the same topology opens over copper and is refused
+  over serial on every valid port pair.
+- **A serial WAN is built end to end from a prompt.** `iki noqte arasinda
+  leased line ile 2 router 4 komputer qur` produces two routers over
+  `Serial0/1/1 <-> Serial0/1/0`, the file opens, and `PC1 -> 10.1.1.2` crosses
+  the WAN 4/4.
+- **DHCP verified live:** four PCs obtained leases from the router pool and ping
+  each other and their gateway 4/4.
+
+### Fixed in the tooling that measures all of this
+
+- `open_check` gave false verdicts: one lab checked five times answered
+  `opened, timeout, timeout, opened, opened`, and a bisect named a culprit that
+  a hand-built copy of the same operations opened fine. Each check now opens a
+  uniquely named copy, and a negative verdict must reproduce before it is
+  reported. Two of the three defects above were invisible until this was fixed.
+- `--doctor` reported `RUNTIME_GRADE ready` with every capability ready and then
+  exited 1 with "Runtime is not fully ready", because an optional checksum line
+  printed `MISSING`. The verdict now follows the blocking checks.
 
 ## [0.2.4] - Unreleased candidate
 

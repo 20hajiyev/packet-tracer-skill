@@ -115,7 +115,7 @@ def test_readme_highlights_release_and_runtime_contracts() -> None:
     assert "output/local-sample-audit.json" in readme
     assert "Bu repo Cisco Packet Tracer 9.x `.pkt` faylları" in readme
     assert "generate_ready=0" in readme
-    assert "The next candidate line is `0.2.4`" in readme
+    assert "packet-tracer-skill@0.3.0" in readme
     assert "user_summary" in readme
     assert "next_best_action" in readme
     assert "proof_card_refs" in readme
@@ -127,7 +127,7 @@ def test_package_metadata_is_publish_ready() -> None:
     files = set(payload["files"])
     scripts = payload["scripts"]
 
-    assert payload["version"] == "0.2.3"
+    assert payload["version"] == "0.3.0"
     assert {"packet-tracer", "network-lab", "natural-language", "codex", "cursor", "claude"} <= keywords
     assert {
         "CONTRIBUTING.md",
