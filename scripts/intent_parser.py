@@ -182,7 +182,11 @@ NATURAL_DEVICE_ALIASES = {
     "PC": ["pc", "pcs", "computer", "computers", "komputer", "komputerler", "kompyuter", "kompyuterler"],
     "Server": ["server", "serverler"],
     "WirelessRouter": ["wireless router", "wireless-router", "wirelessrouter", "home router", "home-router", "wrt"],
-    "Tablet": ["tablet", "tabletler", "pda", "handheld"],
+    # `smartphone` belongs here rather than under a key of its own. Packet
+    # Tracer's palette lists SMARTPHONE-PT separately, but a lab saves it as
+    # `Pda`, which normalises to `Tablet` -- so a `Smartphone` key would be one
+    # the planner never produces, the same mistake `Cable Modem` made.
+    "Tablet": ["tablet", "tabletler", "pda", "handheld", "smartphone", "smartfon", "smart phone"],
     "Laptop": ["laptop", "laptoplar"],
     "Printer": ["printer", "printerler"],
     "LightWeightAccessPoint": ["ap", "aps", "accesspoint", "access-point", "access point", "apler"],
@@ -253,6 +257,21 @@ NATURAL_DEVICE_ALIASES = {
     "Power Distribution Device": [
         "power distribution device", "power distribution", "guc paylayici",
     ],
+    # Added after building a donor that carries them, and checking what Packet
+    # Tracer actually writes for each. The palette lists more than these, and
+    # the saved types do not line up with it one for one:
+    #
+    #   SMARTPHONE-PT        saves as `Pda`          -> folded into Tablet above
+    #   Fiber Patch Panel    saves as `Patch Panel`  -> same kind as the copper one
+    #   Copper Wall Mount    saves as `Wall Mount`   -> so does the fiber one
+    #   Embedded-Server-PT   Packet Tracer refused to create it at all
+    #
+    # So a palette of 74 entries is not 74 askable kinds. These four are the
+    # ones that survive as distinct types in a saved lab.
+    "SBC": ["sbc", "single board computer", "raspberry", "raspberry pi"],
+    "WiredEndDevice": ["wired end device", "simli son cihaz"],
+    "WirelessEndDevice": ["wireless end device", "simsiz son cihaz"],
+    "Wall Mount": ["wall mount", "wall-mount", "divar montaji"],
 }
 
 NETWORK_STYLE_PATTERNS = {

@@ -343,6 +343,14 @@ def test_a_donor_device_type_normalises_to_a_kind_a_prompt_can_name() -> None:
         "MCUComponent": "IoT",
         "Pda": "Tablet",
         "AccessPoint": "LightWeightAccessPoint",
+        # Read off a donor built through the bridge to carry them. The palette
+        # names more devices than a saved lab distinguishes: SMARTPHONE-PT is
+        # written as `Pda`, and the fiber and copper patch panels and wall
+        # mounts each collapse to one type, so those are not separate kinds.
+        "SBC": "SBC",
+        "WiredEndDevice": "WiredEndDevice",
+        "WirelessEndDevice": "WirelessEndDevice",
+        "Wall Mount": "Wall Mount",
     }
     for donor_type, expected_kind in donor_spellings.items():
         kind = normalize_device_type(donor_type)
