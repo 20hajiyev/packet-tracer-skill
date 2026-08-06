@@ -2108,3 +2108,35 @@ What remains is a usability question rather than a capability one. This works
 only when `--donor-root` is passed. Whether the local donor folder should be
 searched by default is a behaviour change for every prompt, not just WAN ones,
 so it wants its own measurement.
+
+### Three ways to make the serial donor automatic, all measured, none shipped
+
+The serial WAN works when the user passes `--donor-root`: the link comes out as
+`R1:Serial0/2/0 <-> R2:Serial0/3/0`, the lab opens, and a host pings the far
+router 4/4. The obvious next step is to stop requiring the flag. Three ways were
+tried and each was measured rather than argued about.
+
+**Search the local roots by default.** 19.6 seconds becomes 32.9 on every
+prompt, and it does not warm up -- the curated catalogue cache lives for a
+single process. A 65% tax on every request to serve one kind of request.
+
+**Search them only when the prompt wants a WAN and the catalogue has nothing
+serial.** Ordinary prompts stay at 19.5s, so the condition works. The WAN prompt
+took **700 seconds**, because the local roots include Packet Tracer's own saves
+and it decoded all 292 of them a second time, having already read them from the
+catalogue.
+
+**Read the donor index instead, which caches per file.** 21.6 seconds, and the
+serial link is correct: `R1:Serial3/0 <-> R2:Serial2/0` over `eSerial`. The lab
+is refused. Ordering the candidates by how many hosts and switches they carry --
+the quality the `--donor-root` run had and this one lacked -- picks a different
+donor, which opens and has no serial link at all.
+
+So: fast and wrong, slow and right, or fast and right-but-refused. None is
+better than what is already there, and each would replace a lab that opens with
+one that does not, or with a twelve-minute wait. The flag stays explicit.
+
+What this does establish is that the capability is real and the remaining
+problem is donor quality, not donor absence. A single purpose-built donor
+carrying two serial routers *and* a switch with hosts would settle it, the way
+the device palette settled the patch panel.
