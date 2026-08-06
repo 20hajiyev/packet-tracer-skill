@@ -2241,6 +2241,8 @@ def _write_pkt_root(root: ET.Element, pkt_path: Path, xml_path: Path | None = No
     _trunk_uplinks_in_file(root)
     _align_router_access_vlan(root)
     _align_router_gateway(root)
+    _align_dhcp_pools_with_interfaces(root)
+    _group_hosts_under_their_switch(root)
     _separate_overlapping_devices(root)
     _save_running_config_to_startup(root)
     prune_unused_images(root)
@@ -3155,35 +3157,51 @@ def _annotate_generated_lab(
 def _draw_lab_annotations(root, blueprint, plan, add_note, add_rectangle, clear_annotations) -> None:
     clear_annotations(root)
 
-    placed = {
-        str(device.get("name")): (float(device.get("x", 0)), float(device.get("y", 0)))
-        for device in blueprint.get("devices", [])
-        if device.get("x") is not None and device.get("y") is not None
-    }
+    # Both the positions and the membership are read from the assembled file,
+    # not from the blueprint. The blueprint's coordinates are what was planned,
+    # and later passes move devices -- overlap separation among them -- so a box
+    # drawn from them frames where things were going to be. Membership was
+    # worse: hosts were dealt to switches round-robin, on the assumption that
+    # the layout had put each host under its own switch. Measured on
+    # `four_switch`, one box held SW2 and MultiLayerSwitch1 with hosts belonging
+    # to SW1 and SW2, and the other held hosts from all three switches.
+    #
+    # The cables say who belongs to whom, and the device nodes say where they
+    # are. Both are in the file.
+    placed: dict[str, tuple[float, float]] = {}
+    kinds: dict[str, str] = {}
+    for device in root.findall(".//DEVICES/DEVICE"):
+        name = (device.findtext("./ENGINE/NAME") or "").strip()
+        if not name:
+            continue
+        try:
+            x = float((device.findtext("./WORKSPACE/LOGICAL/X") or "").strip())
+            y = float((device.findtext("./WORKSPACE/LOGICAL/Y") or "").strip())
+        except ValueError:
+            continue
+        if x >= PARKED_LOGICAL_X:
+            continue
+        placed[name] = (x, y)
+        kinds[name] = (device.findtext("./ENGINE/TYPE") or "").strip()
     if not placed:
         return
 
-    # Group each access switch with the hosts sharing its block, which the
-    # layout put directly beneath it.
-    switches = [
-        str(device["name"])
-        for device in blueprint.get("devices", [])
-        if _device_kind(device) == "Switch"
-    ]
-    hosts = [
-        str(device["name"])
-        for device in blueprint.get("devices", [])
-        if _is_host_device(device)
-    ]
-    access = switches[1:] or switches
+    host_kinds = {"PC", "Pc", "PcPT", "Server", "ServerPT", "Printer", "Laptop", "IpPhone", "HomeVoip"}
+    switch_kinds = {"Switch", "MultiLayerSwitch"}
+    blocks: dict[str, list[str]] = {
+        name: [] for name, kind in kinds.items() if kind in switch_kinds
+    }
+    for left, right in _link_device_pairs(root):
+        for host, switch in ((left, right), (right, left)):
+            if kinds.get(host) in host_kinds and switch in blocks:
+                blocks[switch].append(host)
+                break
 
-    # A home or wireless lab has no switch at all, and dividing by that emptiness
-    # crashed generation outright -- annotation is decoration and must never be
-    # what stops a lab being produced.
-    blocks: dict[str, list[str]] = {name: [] for name in access}
-    if access:
-        for index, host in enumerate(hosts):
-            blocks[access[index % len(access)]].append(host)
+    # A switch with nothing on it is not a block worth framing, and a home or
+    # wireless lab has no switch at all -- dividing by that emptiness once
+    # crashed generation outright, and annotation is decoration that must never
+    # be what stops a lab being produced.
+    blocks = {name: members for name, members in blocks.items() if members}
 
     vlan_ids = list(plan.vlan_ids)
     for index, (switch_name, members) in enumerate(blocks.items()):
@@ -4516,6 +4534,162 @@ def _align_router_gateway(root: ET.Element) -> list[str]:
 _SVI_ADDRESS_PATTERN = re.compile(r"^ip address (\d+\.\d+\.\d+\.\d+) (\d+\.\d+\.\d+\.\d+)$")
 
 
+def _address_to_int(address: str) -> int | None:
+    parts = address.split(".")
+    if len(parts) != 4:
+        return None
+    value = 0
+    for part in parts:
+        if not part.isdigit() or not 0 <= int(part) <= 255:
+            return None
+        value = (value << 8) | int(part)
+    return value
+
+
+def _same_subnet(left: str, right: str, mask: str) -> bool:
+    left_value = _address_to_int(left)
+    right_value = _address_to_int(right)
+    mask_value = _address_to_int(mask)
+    if left_value is None or right_value is None or mask_value is None:
+        return False
+    return left_value & mask_value == right_value & mask_value
+
+
+def _align_dhcp_pools_with_interfaces(root: ET.Element) -> list[str]:
+    """Point a DHCP pool at a network the router is actually on.
+
+    The pool was emitted with a hardcoded 192.168.1.0/24 whatever the lab's
+    addressing turned out to be. Measured on `router_dhcp`: the router's LAN
+    interface is 1.1.1.1/24, the hosts sit on 1.1.1.0/24 with DHCP enabled, and
+    the pool served 192.168.1.0/24 -- a network that exists nowhere in the lab.
+    A request arriving on the LAN interface matches no pool, so nothing is ever
+    handed out. The lab has DHCP configured and DHCP does not work.
+
+    The same shape as the rest of this file's repairs: the host segment and the
+    pool's network were computed independently and disagreed.
+
+    Only pools that serve none of their own router's interfaces are touched. A
+    donor's own pool, matching a donor interface, is left exactly as it was.
+    """
+    repaired: list[str] = []
+    for device in root.findall(".//DEVICES/DEVICE"):
+        if (device.findtext("./ENGINE/TYPE") or "").strip() != "Router":
+            continue
+        config = device.find("./ENGINE/RUNNINGCONFIG")
+        if config is None:
+            continue
+        lines = config.findall("LINE")
+
+        interfaces: list[tuple[str, str]] = []
+        current_header = ""
+        for line in lines:
+            text = (line.text or "").rstrip()
+            stripped = text.strip()
+            if not text.startswith((" ", "\t")):
+                current_header = stripped
+                continue
+            if current_header.startswith("interface ") and stripped.startswith("ip address "):
+                parts = stripped.split()
+                if len(parts) == 4:
+                    interfaces.append((parts[2], parts[3]))
+        if not interfaces:
+            continue
+
+        pools: list[tuple[str, ET.Element, ET.Element | None]] = []
+        pool_name = ""
+        network_node: ET.Element | None = None
+        gateway_node: ET.Element | None = None
+        for line in lines:
+            text = (line.text or "").rstrip()
+            stripped = text.strip()
+            if not text.startswith((" ", "\t")):
+                if pool_name and network_node is not None:
+                    pools.append((pool_name, network_node, gateway_node))
+                pool_name = stripped[len("ip dhcp pool ") :] if stripped.startswith("ip dhcp pool ") else ""
+                network_node = None
+                gateway_node = None
+                continue
+            if not pool_name:
+                continue
+            if stripped.startswith("network "):
+                network_node = line
+            elif stripped.startswith("default-router "):
+                gateway_node = line
+        if pool_name and network_node is not None:
+            pools.append((pool_name, network_node, gateway_node))
+
+        for name, network_line, gateway_line in pools:
+            parts = (network_line.text or "").split()
+            if len(parts) != 3:
+                continue
+            network, mask = parts[1], parts[2]
+            if any(_same_subnet(address, network, mask) for address, _ in interfaces):
+                continue
+            served = {
+                (address, interface_mask)
+                for other_name, other_network, _ in pools
+                if other_name != name
+                for address, interface_mask in interfaces
+                if _same_subnet(address, (other_network.text or "").split()[1], interface_mask)
+            }
+            replacement = next(
+                (pair for pair in interfaces if pair not in served),
+                interfaces[0],
+            )
+            address, interface_mask = replacement
+            address_value = _address_to_int(address)
+            mask_value = _address_to_int(interface_mask)
+            if address_value is None or mask_value is None:
+                continue
+            base = address_value & mask_value
+            base_text = ".".join(str((base >> shift) & 0xFF) for shift in (24, 16, 8, 0))
+            network_line.text = f" network {base_text} {interface_mask}"
+            if gateway_line is not None:
+                gateway_line.text = f" default-router {address}"
+            repaired.append(
+                f"{device.findtext('./ENGINE/NAME') or ''}: pool {name} {network} -> {base_text}"
+            )
+    return repaired
+
+
+def _link_device_pairs(root: ET.Element) -> list[tuple[str, str]]:
+    """Every cable in the file, as the two device names it joins.
+
+    Endpoints come in two spellings. Most donors give devices a `SAVE_REF_ID`
+    and links refer to that; some do not, and then a link addresses its
+    endpoints by position in the DEVICES list. Anything reading the wiring has
+    to handle both, which is why this is shared rather than written out again at
+    each call site.
+    """
+    order: list[str] = []
+    by_ref: dict[str, str] = {}
+    for device in root.findall(".//DEVICES/DEVICE"):
+        name = (device.findtext("./ENGINE/NAME") or "").strip()
+        order.append(name)
+        ref = (device.findtext("./ENGINE/SAVE_REF_ID") or "").strip()
+        if ref:
+            by_ref[ref] = name
+
+    def resolve(value: str) -> str:
+        value = value.strip()
+        if value in by_ref:
+            return by_ref[value]
+        if value.isdigit() and int(value) < len(order):
+            return order[int(value)]
+        return ""
+
+    pairs: list[tuple[str, str]] = []
+    for link in root.findall(".//LINKS/LINK"):
+        cable = link.find("./CABLE")
+        if cable is None:
+            continue
+        left = resolve(cable.findtext("FROM", default=""))
+        right = resolve(cable.findtext("TO", default=""))
+        if left and right:
+            pairs.append((left, right))
+    return pairs
+
+
 def _save_running_config_to_startup(root: ET.Element) -> list[str]:
     """Save each device's configuration, the way `write memory` would.
 
@@ -4619,6 +4793,86 @@ def _assign_unique_interface_addresses(root: ET.Element) -> list[str]:
 LOGICAL_ICON_SPACING = 110
 # Spare donor devices are deliberately parked far off-canvas, in their own grid.
 PARKED_LOGICAL_X = 9000
+
+
+def _group_hosts_under_their_switch(root: ET.Element) -> list[str]:
+    """Lay each switch's hosts out beneath it, one block per switch.
+
+    Hosts were placed in a single row across the lab regardless of which switch
+    they were cabled to. Measured on `four_switch`: SW1's three hosts sat at x
+    180, 570 and 950 with other blocks' hosts between them, so no rectangle
+    could frame a block without swallowing its neighbours -- one box held two
+    switches and hosts belonging to both.
+
+    A reader follows the cables with their eyes, and crossing them for no reason
+    is what makes a generated lab look like a tangle. Blocks are laid out left
+    to right in the order the switches already appear, so the shape the topology
+    chose is kept; only the hosts move.
+
+    Routers, the core, and anything not cabled to an access switch are left
+    where they are: they sit above this row and the reader expects them there.
+    """
+    kinds: dict[str, str] = {}
+    nodes: dict[str, tuple[ET.Element, ET.Element]] = {}
+    position: dict[str, tuple[float, float]] = {}
+    for device in root.findall(".//DEVICES/DEVICE"):
+        name = (device.findtext("./ENGINE/NAME") or "").strip()
+        x_node = device.find("./WORKSPACE/LOGICAL/X")
+        y_node = device.find("./WORKSPACE/LOGICAL/Y")
+        if not name or x_node is None or y_node is None:
+            continue
+        try:
+            x = float((x_node.text or "").strip())
+            y = float((y_node.text or "").strip())
+        except ValueError:
+            continue
+        if x >= PARKED_LOGICAL_X:
+            continue
+        kinds[name] = (device.findtext("./ENGINE/TYPE") or "").strip()
+        nodes[name] = (x_node, y_node)
+        position[name] = (x, y)
+
+    host_kinds = {"PC", "Pc", "PcPT", "Server", "ServerPT", "Printer", "Laptop", "IpPhone", "HomeVoip"}
+    switch_kinds = {"Switch", "MultiLayerSwitch"}
+    blocks: dict[str, list[str]] = {}
+    for left, right in _link_device_pairs(root):
+        for host, switch in ((left, right), (right, left)):
+            if kinds.get(host) in host_kinds and kinds.get(switch) in switch_kinds:
+                blocks.setdefault(switch, [])
+                if host not in blocks[switch]:
+                    blocks[switch].append(host)
+                break
+
+    blocks = {name: members for name, members in blocks.items() if members}
+    if len(blocks) < 2:
+        return []
+
+    ordered = sorted(blocks, key=lambda name: position[name][0])
+    host_row = max(position[host][1] for members in blocks.values() for host in members)
+    moved: list[str] = []
+    cursor = min(position[name][0] for name in ordered) - LOGICAL_ICON_SPACING
+
+    for switch_name in ordered:
+        members = sorted(blocks[switch_name], key=lambda name: _name_sort_key(name))
+        width = max(len(members) - 1, 0) * LOGICAL_ICON_SPACING
+        start = cursor + LOGICAL_ICON_SPACING
+        for index, host in enumerate(members):
+            target = (start + index * LOGICAL_ICON_SPACING, host_row)
+            if position[host] == target:
+                continue
+            x_node, y_node = nodes[host]
+            x_node.text = str(int(target[0]))
+            y_node.text = str(int(target[1]))
+            moved.append(f"{host}: -> {switch_name} block")
+            position[host] = target
+        # The switch sits centred over the hosts it serves, so the block reads
+        # as one shape rather than a row with a label somewhere off to the side.
+        centre = start + width / 2
+        x_node, y_node = nodes[switch_name]
+        x_node.text = str(int(centre))
+        position[switch_name] = (centre, position[switch_name][1])
+        cursor = start + width + LOGICAL_ICON_SPACING
+    return moved
 
 
 def _separate_overlapping_devices(root: ET.Element) -> list[str]:
@@ -7054,6 +7308,8 @@ def generate_from_prompt(
     if unexpected_workspace_issues:
         raise ValueError("; ".join(unexpected_workspace_issues))
     validate_donor_coherence(donor_root, root)
+    _align_dhcp_pools_with_interfaces(root)
+    _group_hosts_under_their_switch(root)
     _separate_overlapping_devices(root)
     _save_running_config_to_startup(root)
     _annotate_generated_lab(root, blueprint, prepared_plan)
