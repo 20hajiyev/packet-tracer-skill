@@ -2793,6 +2793,19 @@ def _synthesize_links(plan: IntentPlan, devices: list[dict[str, object]]) -> lis
     switches.sort(key=lambda device: _device_kind(device) != "MultiLayerSwitch")
     hosts = [device for device in devices if _is_host_device(device)]
     if not switches:
+        # A home-router lab has no switch, so nothing is cabled here and both
+        # `wireless_home` and `wireless_ssid` ship as devices with no path
+        # between them: two laptops on 1.1.10.20 and .21, a router on
+        # 192.168.0.1, 0/4 twice over. Cabling them live in Packet Tracer --
+        # laptops to `GigabitEthernet 1` and `2` -- takes Laptop1 to Laptop2 to
+        # 3/4, so the topology is right and only the file is missing it.
+        #
+        # Writing those same two links from here produces a lab Packet Tracer
+        # refuses to open, with both port names verified against the device.
+        # The one difference from a donor's own cable is that a newly created
+        # link carries no `*_MEM_ADDR` fields, and the link that did inherit
+        # them from a donor cable is the one PT accepts. Left uncabled rather
+        # than unopenable until that is understood.
         return []
 
     if archetype == "chain":

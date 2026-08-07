@@ -718,6 +718,14 @@ UNSLOTTED_MULTIPORT_TYPES = {
     "MerakiServer",
 }
 
+# A home router numbers its LAN ports from one and gives the WAN socket a name
+# of its own. Counting the sockets and numbering them all is how a cable landed
+# on `GigabitEthernet 5` of a router with four LAN ports: five copper gigabit
+# PORT nodes, and the fifth is `Internet`. Packet Tracer refused the file, and
+# every check before it passed -- the device lists no interfaces in its
+# configuration, so nothing else could contradict the count.
+WIRELESS_ROUTER_TYPES = {"WirelessRouter", "WirelessRouterNewGeneration"}
+
 
 def donor_interface_names(device: ET.Element) -> list[str]:
     """The interfaces a donor device really has, in the order it lists them.
@@ -897,6 +905,14 @@ def port_exists(device: ET.Element, port_name: str) -> bool:
         if device_type in HOST_DEVICE_TYPES:
             # `FastEthernet0` and, for tolerance, a bare `FastEthernet`.
             return count > 0 and canonical in {kind, f"{kind}0"}
+        if device_type in WIRELESS_ROUTER_TYPES:
+            # One socket of this kind is the WAN port, named `Internet`; the
+            # rest are the LAN ports, numbered from one. Measured across 348
+            # saved labs: twenty cables on `GigabitEthernet 1` .. `4` of the
+            # new-generation model, two on `Ethernet 1` .. `4` of the older
+            # one, and fourteen on `Internet` -- every one of those an uplink.
+            index = _parse_port_index(canonical)
+            return index is not None and 1 <= index <= max(count - 1, 0)
         if device_type in UNSLOTTED_MULTIPORT_TYPES:
             # A hub numbers its ports `FastEthernet0`, `FastEthernet1`, ... --
             # unslotted like a host but many of them.
