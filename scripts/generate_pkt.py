@@ -5211,6 +5211,54 @@ def _adopt_planned_names(root: ET.Element, blueprint: dict[str, object]) -> list
     return adopted
 
 
+def _report_unwired_devices(root: ET.Element, blueprint: dict[str, object]) -> list[str]:
+    """Name any requested device that arrived with no cable on it.
+
+    `1 router 1 switch 3 komputer ve 1 firewall qur` produces a lab holding an
+    ASA, and Packet Tracer opens it, and the ASA is connected to nothing. The
+    same is true of a requested patch panel. The device count is right, the file
+    is valid, and the thing the prompt asked for does not participate in the
+    network.
+
+    The link synthesiser cables the kinds in `HOST_DEVICE_KINDS`, each with a
+    port name measured off real donor cables rather than taken from the device
+    palette. Extending it to these kinds needs the same evidence, and the
+    measurement says it is not there yet: across 150 labs, ASA cables use
+    `Ethernet0/0` on a 5505 while the palette reports `GigabitEthernet1/1` for
+    the 5506-X, and patch panels, bridges, repeaters and wired end devices carry
+    no cable at all in any of them. Guessing one constant per kind is how a
+    hardcoded port name gets into the file, which is the defect this project
+    spent a long time removing.
+
+    So the gap is reported rather than papered over. A lab whose firewall is
+    unplugged should say so.
+    """
+    requested = {
+        str(device.get("name") or "").strip(): str(device.get("type") or "").strip()
+        for device in blueprint.get("devices", [])
+        if str(device.get("name") or "").strip()
+    }
+    if not requested:
+        return []
+    present = {
+        (device.findtext("./ENGINE/NAME") or "").strip()
+        for device in root.findall(".//DEVICES/DEVICE")
+    }
+    cabled = {name for pair in _link_device_pairs(root) for name in pair}
+    # A lab with no cables at all is a wireless scenario, not a wiring failure.
+    if not cabled:
+        return []
+    stranded = sorted(
+        name for name in requested if name in present and name not in cabled
+    )
+    if not stranded:
+        return []
+    described = ", ".join(f"{name} ({requested[name]})" if requested[name] else name for name in stranded[:6])
+    if len(stranded) > 6:
+        described += f", and {len(stranded) - 6} more"
+    return [f"WARNING: {len(stranded)} requested device(s) have no cable: {described}"]
+
+
 def _report_undelivered_devices(root: ET.Element, blueprint: dict[str, object]) -> list[str]:
     """Name any device the plan asked for that is not in the written file.
 
@@ -7988,6 +8036,8 @@ def generate_from_prompt(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_bytes(pkt_bytes)
     for note in _report_undelivered_devices(root, requested_devices):
+        print(note)
+    for note in _report_unwired_devices(root, requested_devices):
         print(note)
     print(f"Selected donor: {donor_archetype.compat_donor}")
     compat_donor, compat_donor_version = _compat_donor_details()
