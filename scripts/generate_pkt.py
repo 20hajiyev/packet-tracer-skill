@@ -2802,10 +2802,14 @@ def _synthesize_links(plan: IntentPlan, devices: list[dict[str, object]]) -> lis
         #
         # Writing those same two links from here produces a lab Packet Tracer
         # refuses to open, with both port names verified against the device.
-        # The one difference from a donor's own cable is that a newly created
-        # link carries no `*_MEM_ADDR` fields, and the link that did inherit
-        # them from a donor cable is the one PT accepts. Left uncabled rather
-        # than unopenable until that is understood.
+        # Left uncabled rather than unopenable until that is understood.
+        #
+        # Two explanations have been ruled out. Missing `*_MEM_ADDR` fields are
+        # not it: `four_switch` opens with nine of its twelve cables carrying
+        # none. And a bisect that added a single hand-built LINK element to the
+        # opening lab proved nothing -- the same element added to `minimal`,
+        # which opens, refuses too, so that method only measured its own XML.
+        # Whatever comes next has to build the link the way generation does.
         return []
 
     if archetype == "chain":
