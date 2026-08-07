@@ -41,7 +41,7 @@ from packet_tracer_env import (
 )
 from pkt_builder import build_packet_tracer_xml
 from pkt_codec import decode_pkt_file, decode_pkt_modern, encode_pkt_modern, serialize_pkt_xml
-from pkt_editor import _set_config_block, apply_plan_operations, decode_pkt_to_root, edit_pkt_file, inventory_devices, inventory_links, inventory_root
+from pkt_editor import _align_hostname_with_name, _set_config_block, apply_plan_operations, decode_pkt_to_root, edit_pkt_file, inventory_devices, inventory_links, inventory_root
 from pkt_transformer import donor_interface_names, port_capacity, port_exists, transform_from_blueprint
 import pkt_verify
 import usage_ledger
@@ -1739,6 +1739,9 @@ def _default_name_for_type(device_type: str, index: int) -> str:
     return {
         "Router": f"R{index}",
         "Switch": f"SW{index}",
+        # Named in the switch series on purpose: it is one of the switches the
+        # prompt counted, promoted to a multilayer model to fit the donors.
+        "MultiLayerSwitch": f"SW{index}",
         "PC": f"PC{index}",
         "Server": f"Server{index}",
         "LightWeightAccessPoint": f"AP{index}",
@@ -2500,8 +2503,25 @@ def _seed_devices_from_plan(plan: IntentPlan) -> list[dict[str, object]]:
     for device_type, count in plan.device_requirements.items():
         existing = current_counts.get(device_type, 0)
         for next_index in range(existing + 1, count + 1):
+            # A multilayer switch is still one of the switches the prompt asked
+            # for, so it is numbered in the same series. `3 switch 1 router ve 4
+            # komputer qur` is promoted to two switches plus one multilayer
+            # switch to fit the donor pool, and the third one used to arrive
+            # called `MultiLayerSwitch1`: the prompt asked for `SW3`, the lab
+            # shipped without one, and the shortfall check reported a device
+            # missing that was standing there under another name.
+            name_index = next_index
+            if device_type == "MultiLayerSwitch":
+                # Counted once, not summed: whether the plain switches were
+                # seeded before or after this loop reaches the multilayer one
+                # depends on requirement ordering, and adding both counts gave
+                # `SW5` for the third switch of three.
+                name_index += max(
+                    current_counts.get("Switch", 0),
+                    plan.device_requirements.get("Switch", 0),
+                )
             device: dict[str, object] = {
-                "name": _default_name_for_type(device_type, next_index),
+                "name": _default_name_for_type(device_type, name_index),
                 "type": device_type,
             }
             if device_type == "Switch":
@@ -5066,6 +5086,88 @@ def _group_hosts_under_their_switch(root: ET.Element) -> list[str]:
 # How far a cable-less leftover may sit outside the wired lab before it is
 # pulled in. Wide enough that a device merely sitting at the edge is left alone.
 STRAY_DEVICE_MARGIN = 400
+
+
+def _adopt_planned_names(root: ET.Element, blueprint: dict[str, object]) -> list[str]:
+    """Give a device the plan's name when it is doing the plan's job.
+
+    Four corpus labs came out one device short of their blueprint, always the
+    last switch. The device was never missing. `hosts_across_switches` planned
+    `SW1, SW2, SW3` and the file held `SW1`, `SW2` and `MultiLayerSwitch1` --
+    and that third switch is the core of the topology: the router connects to
+    it, and it connects to the other two. It had simply kept the donor's name.
+
+    Whether the rename lands depends on the donor. Applying the same plan
+    against `Senan_K231.pkt` by hand produced `SW3` correctly; the donor the
+    corpus picked has its own `MultiLayerSwitch` devices, and one of them was
+    reused without being renamed.
+
+    So rather than chase the donor-specific path, the name is adopted here: a
+    device the plan did not name, of the kind the plan is missing, and already
+    cabled into the lab, takes the missing name. Cabled matters -- an idle
+    spare parked off to the side is not doing the job the plan described, and
+    handing it the name would produce a lab whose `SW3` connects to nothing.
+    """
+    planned_names: list[str] = []
+    for device in blueprint.get("devices", []):
+        name = str(device.get("name") or "").strip()
+        if name:
+            planned_names.append(name)
+    if not planned_names:
+        return []
+
+    by_name: dict[str, ET.Element] = {}
+    for device in root.findall(".//DEVICES/DEVICE"):
+        name = (device.findtext("./ENGINE/NAME") or "").strip()
+        if name:
+            by_name[name] = device
+
+    missing = [name for name in planned_names if name not in by_name]
+    if not missing:
+        return []
+
+    cabled = {name for pair in _link_device_pairs(root) for name in pair}
+    spare = [
+        name
+        for name in by_name
+        if name not in planned_names and name in cabled
+    ]
+    if not spare:
+        return []
+
+    def family(kind: str) -> str:
+        lowered = kind.lower()
+        if "switch" in lowered:
+            return "switch"
+        if "router" in lowered:
+            return "router"
+        return lowered
+
+    adopted: list[str] = []
+    for wanted in missing:
+        wanted_family = family(_device_kind_of_blueprint(blueprint, wanted))
+        if not wanted_family:
+            continue
+        match = next(
+            (
+                name
+                for name in spare
+                if family((by_name[name].findtext("./ENGINE/TYPE") or "").strip()) == wanted_family
+            ),
+            None,
+        )
+        if match is None:
+            continue
+        spare.remove(match)
+        device = by_name.pop(match)
+        name_node = device.find("./ENGINE/NAME")
+        if name_node is None:
+            continue
+        name_node.text = wanted
+        by_name[wanted] = device
+        _align_hostname_with_name(device, wanted)
+        adopted.append(f"{match} answers to {wanted}, the name the plan gave its job")
+    return adopted
 
 
 def _report_undelivered_devices(root: ET.Element, blueprint: dict[str, object]) -> list[str]:
@@ -7763,6 +7865,15 @@ def generate_from_prompt(
             blueprint_out_path.parent.mkdir(parents=True, exist_ok=True)
             blueprint_out_path.write_text(json.dumps(blueprint_plan, indent=2, ensure_ascii=False), encoding="utf-8")
         raise PlanningError("Scenario is not generate-ready in safe-open mode; generation was skipped.", prepared_plan)
+    # What the prompt asked things to be called, kept before donor adaptation
+    # gets to rewrite it. The chosen donor substitutes its own device names into
+    # the blueprint -- `SW3` became `MultiLayerSwitch1` -- and the file then
+    # honours the rewritten plan, so a lab asked for `SW3` ships without one.
+    # Both checks below measure against the request, not against what the donor
+    # turned it into.
+    requested_devices = {
+        "devices": [dict(device) for device in blueprint.get("devices", [])]
+    }
     try:
         adapted_plan, donor_archetype = _build_donor_prune_plan(prepared_plan, blueprint, resolved_donor_roots)
     except PlanningError as exc:
@@ -7813,6 +7924,11 @@ def generate_from_prompt(
     # After the separation pass, so a leftover nudged sideways is still pulled in.
     _compact_stray_devices(root)
     _save_running_config_to_startup(root)
+    # Before the annotation and the serialisation: the annotation names the
+    # devices, and a rename after `serialize_pkt_xml` would change nothing
+    # in the file that was written.
+    for _note in _adopt_planned_names(root, requested_devices):
+        print(_note)
     _annotate_generated_lab(root, blueprint, prepared_plan)
     prune_unused_images(root)
     xml_bytes = serialize_pkt_xml(root)
@@ -7822,7 +7938,7 @@ def generate_from_prompt(
     pkt_bytes = encode_pkt_modern(xml_bytes)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_bytes(pkt_bytes)
-    for note in _report_undelivered_devices(root, blueprint):
+    for note in _report_undelivered_devices(root, requested_devices):
         print(note)
     print(f"Selected donor: {donor_archetype.compat_donor}")
     compat_donor, compat_donor_version = _compat_donor_details()

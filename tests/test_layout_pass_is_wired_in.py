@@ -39,8 +39,31 @@ def test_every_layout_finish_compacts_strays() -> None:
 
 
 def test_the_shortfall_report_runs_before_the_donor_line() -> None:
-    """The warning has to reach the same output a user reads for the donor."""
-    assert "_report_undelivered_devices(root, blueprint)" in SOURCE
-    report_at = SOURCE.index("_report_undelivered_devices(root, blueprint)")
+    """The warning has to reach the same output a user reads for the donor.
+
+    Written first as `"_report_undelivered_devices(root, blueprint)" in SOURCE`,
+    which pinned the argument's spelling rather than the property. Changing the
+    check to measure against the pre-adaptation request renamed that argument
+    and the test failed while the behaviour was correct. It now matches the
+    call however it is spelled.
+    """
+    call = re.search(r"_report_undelivered_devices\(root, \w+\)", SOURCE)
+    assert call, "generation never reports a shortfall"
     donor_at = SOURCE.index('print(f"Selected donor:')
-    assert report_at < donor_at
+    assert call.start() < donor_at
+
+
+def test_both_checks_measure_against_the_request_not_the_donor_rewrite() -> None:
+    """Donor adaptation rewrites blueprint names, so neither check may read it.
+
+    `SW3` became `MultiLayerSwitch1` in the blueprint during donor adaptation,
+    and a check reading that blueprint saw nothing missing while the lab really
+    was short of the `SW3` the prompt asked for.
+    """
+    for function in ("_adopt_planned_names", "_report_undelivered_devices"):
+        call = re.search(rf"{function}\(root, (\w+)\)", SOURCE)
+        assert call, f"{function} is never called"
+        assert call.group(1) != "blueprint", (
+            f"{function} reads the donor-adapted blueprint; it must read the "
+            "device list captured before donor adaptation"
+        )
