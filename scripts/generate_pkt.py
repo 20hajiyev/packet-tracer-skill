@@ -1302,6 +1302,42 @@ def _record_generation_outcome(
         return
 
 
+def _switch_model_affinity(sample: object, blueprint: dict[str, object]) -> int:
+    """How many of this donor's switches are the model the plan asked for.
+
+    Donor-prune reuses the donor's devices, so the model in the blueprint is
+    advisory: `_choose_switch_model` returns `2960-24TT` and the lab ships
+    whatever the donor happened to hold. Measured across the corpus, 43 of 53
+    switches came out on a different model than planned, and 42 of them were
+    `IE-9320` -- an industrial switch, in labs asked for as plain campus
+    networks.
+
+    The material is there: of 70 bundled labs, 27 hold a `2960-24TT` and 36
+    such switches exist in total. So this is a selection problem, not a
+    scarcity one, and the donor that already owns the right model is the one to
+    prefer.
+
+    Counted rather than scored as a fraction: a donor with four matching
+    switches serves a four-switch prompt better than one with a single match,
+    and the count says so directly.
+    """
+    wanted = {
+        str(device.get("model") or "").strip()
+        for device in blueprint.get("devices", [])
+        if str(device.get("type", "")).endswith("Switch")
+    }
+    wanted.discard("")
+    if not wanted:
+        return 0
+    devices = getattr(sample, "devices", None) or []
+    return sum(
+        1
+        for device in devices
+        if str(device.get("type", "")).endswith("Switch")
+        and str(device.get("model") or "").strip() in wanted
+    )
+
+
 def _rerank_candidates_for_blueprint(
     candidates: list[SampleCandidate],
     blueprint: dict[str, object],
@@ -1312,7 +1348,7 @@ def _rerank_candidates_for_blueprint(
     # bet than one that merely scores well on paper.
     learned = learned_scores or {}
 
-    def _sort_key(candidate: SampleCandidate) -> tuple[int, int, int, int, int, int, int]:
+    def _sort_key(candidate: SampleCandidate) -> tuple[int, int, int, int, int, int, int, int]:
         fit = build_donor_graph_fit(candidate.sample, blueprint)
         acceptance_penalty, _ = _candidate_acceptance_penalty(candidate, blueprint)
         adjusted_score = candidate.total_score - acceptance_penalty
@@ -1325,6 +1361,11 @@ def _rerank_candidates_for_blueprint(
             fit.fit_score - acceptance_penalty,
             -len(fit.port_media_conflicts),
             -len(fit.missing_pairs),
+            # Below the fit signals on purpose: a donor that wires up correctly
+            # matters more than one holding the right switch model, and a lab
+            # that opens beats a lab with prettier hardware. This decides
+            # between donors the checks above rate the same.
+            _switch_model_affinity(candidate.sample, blueprint),
             adjusted_score,
         )
 
@@ -5974,6 +6015,14 @@ def _align_donor_groups_to_targets(
             ),
         )
     ]
+    # Preferring the switch model the plan named was tried here, between hop
+    # distance and name, so it could only choose between switches the same
+    # distance from the router. It did what it was meant to -- `voice_devices`
+    # came out on the `2960-24TT` the plan asked for instead of an `IE-9320` --
+    # and Packet Tracer then refused that lab, taking the corpus from 32 open
+    # to 31. The whole gain across the corpus was one switch, 10 matching to
+    # 11 of 53. A case that opens outranks a case that merely carries the right
+    # model, so it is not here.
     ranked_donors = sorted(
         donor_groups,
         key=lambda group: (
