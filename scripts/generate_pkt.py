@@ -2040,6 +2040,13 @@ def _operation_category(bucket_name: str, operation: dict[str, object]) -> str:
             # `port_reassignment` put it on the blocked list and made donor-prune
             # generation forbid its own core operation.
             return "link_prune"
+        if op_name == "apply_cli":
+            # `cli R1: ...` writes IOS text into a device's configuration and
+            # touches nothing else -- the same class as the switch and router
+            # operations below. Falling through to the default named it a
+            # physical workspace change, which is blocked in open-first mode, so
+            # the first prompt that carried arbitrary CLI refused to generate.
+            return "config_mutation"
         return "workspace_physical_mutation"
     if bucket_name in {"switch_ops", "router_ops", "management_ops"}:
         return "config_mutation"
@@ -6155,6 +6162,17 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
     donor_groups = _collect_donor_groups(donor_root)
     target_groups = _target_groups_from_blueprint(plan, blueprint)
     adapted_plan = copy.deepcopy(plan)
+    # The donor-shaping operations are rebuilt from scratch below, so the
+    # list is cleared -- but it also holds what the *user* asked for, and
+    # `cli R1: ...` was being thrown away with it. The parser produced the
+    # operation correctly and the plan reaching the file contained none, so
+    # arbitrary IOS never arrived. Held aside here and appended after the
+    # renames, since it addresses devices by their final name.
+    carried_operations = [
+        operation
+        for operation in adapted_plan.edit_operations
+        if operation.get("op") == "apply_cli"
+    ]
     adapted_plan.edit_operations = []
     donor_devices = inventory_devices(donor_root)
     donor_links = inventory_links(donor_root)
@@ -7112,6 +7130,9 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
         mutation_groups=mutation_groups,
         layout_strategy="donor_park_clean",
     )
+    # Last, so every rename the plan makes has already happened and the
+    # device the user named exists under that name.
+    adapted_plan.edit_operations.extend(carried_operations)
     return adapted_plan, archetype_plan
 
 
