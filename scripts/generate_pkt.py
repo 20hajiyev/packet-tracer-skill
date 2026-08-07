@@ -1840,6 +1840,16 @@ HOST_DEVICE_KINDS = {
     "NetworkController",
     "LightWeightAccessPoint",
     "MerakiServer",
+    # Each of these arrived in the file with no cable on it. The port each
+    # one uses is measured off real cables in 200 saved labs, below in
+    # `_host_port`; `Wall Mount` is left out because not one lab cables it,
+    # and guessing is what puts hardcoded port names back into the file.
+    "Hub",
+    "WiredEndDevice",
+    "Patch Panel",
+    "Bridge",
+    "Repeater",
+    "TV",
     # A firewall the prompt asked for used to arrive cabled to nothing:
     # present in the file, valid, and not part of the network. It is an
     # end device as far as the link synthesiser is concerned -- one cable,
@@ -1943,6 +1953,18 @@ def _host_port(device: dict[str, object]) -> str:
     # are already corrected per model.
     if kind == "ASA":
         return "Ethernet0/0"
+    # Read off the cables in 200 saved labs, the same way as the kinds
+    # above. A hub is the strongest of them, cabled in six labs on
+    # `FastEthernet0`; the rest appear once each, and the port repair
+    # corrects any that do not fit the device that is finally chosen.
+    if kind == "Patch Panel":
+        return "PunchDown1"
+    if kind == "Bridge":
+        return "Ethernet0/1"
+    if kind == "Repeater":
+        return "Ethernet0"
+    if kind == "TV":
+        return "Port 0"
     return "FastEthernet0"
 
 
