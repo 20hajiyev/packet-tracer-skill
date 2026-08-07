@@ -2504,10 +2504,6 @@ def _write_pkt_root(root: ET.Element, pkt_path: Path, xml_path: Path | None = No
     _reconcile_cable_media(root)
     _trunk_uplinks_in_file(root)
     _align_router_access_vlan(root)
-    # Last of the VLAN passes, because it has to see the assignments the two
-    # above settle: a port assigned to a VLAN the switch never created is
-    # inactive, and the lab opens looking perfectly correct.
-    _declare_referenced_vlans(root)
     _align_router_gateway(root)
     _align_dhcp_pools_with_interfaces(root)
     _group_hosts_under_their_switch(root)
@@ -4732,111 +4728,6 @@ def _align_router_access_vlan(root: ET.Element) -> list[str]:
         notes.append(
             f"{switch.findtext('./ENGINE/NAME') or ''}:{port} moved to VLAN {wanted} (the hosts' VLAN)"
         )
-    return notes
-
-
-def _referenced_vlan_ids(lines: list[str]) -> list[str]:
-    """The VLAN numbers a switch configuration mentions, lowest first.
-
-    Numeric order rather than the order they are met, so the result does not
-    depend on which port happened to be cabled first -- and so it reads the way
-    a switch's own configuration does.
-    """
-    seen: list[str] = []
-    for raw in lines:
-        line = raw.strip()
-        match = re.match(r"^switchport (?:access|voice) vlan (\d+)$", line)
-        if match is None:
-            match = re.match(r"^interface Vlan\s*(\d+)$", line, re.IGNORECASE)
-        if match is None:
-            continue
-        vlan = match.group(1)
-        if vlan not in seen:
-            seen.append(vlan)
-    return sorted(seen, key=int)
-
-
-def _declared_vlan_ids(lines: list[str]) -> set[str]:
-    """The VLAN numbers the configuration actually creates.
-
-    A declaration sits at global level, so the leading space that marks an
-    interface body disqualifies a line: ` vlan 20` inside `interface Vlan20`
-    is not a declaration.
-    """
-    return {
-        match.group(1)
-        for raw in lines
-        if not raw.startswith(" ")
-        for match in [re.match(r"^vlan (\d+)$", raw.strip())]
-        if match
-    }
-
-
-def _declare_referenced_vlans(root: ET.Element) -> list[str]:
-    """Create the VLANs the ports are assigned to.
-
-    Packet Tracer does not create a VLAN because a port asks for it. Real IOS
-    is more forgiving; here the VLAN has to exist in the switch's own database
-    or every port assigned to it stays inactive, and an inactive access port
-    forwards nothing.
-
-    Nothing about the file betrays this. It opens, Packet Tracer loads the
-    topology that was written, the links come up green, `show running-config`
-    reads exactly as intended -- and no host can reach any other. Measured on
-    `corpus_server_lan`: four ports all correctly in VLAN 20, no `vlan 20`
-    anywhere in the switch, PC1 to PC2 0/4 and PC1 to its gateway 0/4. With the
-    two referenced VLANs declared and nothing else touched, both went to 4/4.
-
-    So this is the fourth step of a lesson this project keeps relearning:
-    passing the static checks is not opening, opening is not Packet Tracer
-    having loaded what was written, and that is still not the network working.
-
-    VLAN 1 is left alone -- it always exists, and declaring it is a no-op that
-    only adds noise to the configuration a student reads.
-    """
-    notes: list[str] = []
-    for device in root.findall(".//DEVICES/DEVICE"):
-        if (device.findtext("./ENGINE/TYPE") or "") not in {"Switch", "MultiLayerSwitch"}:
-            continue
-        name = (device.findtext("./ENGINE/NAME") or "").strip()
-        for section in ("RUNNINGCONFIG", "STARTUPCONFIG"):
-            config = device.find(f"./ENGINE/{section}")
-            if config is None:
-                continue
-            lines = [(line.text or "") for line in config.findall("LINE")]
-            missing = [
-                vlan
-                for vlan in _referenced_vlan_ids(lines)
-                if vlan != "1" and vlan not in _declared_vlan_ids(lines)
-            ]
-            if not missing:
-                continue
-            # Before the first interface, where a switch's own configuration
-            # carries them, so the ports are assigned to a VLAN that is by then
-            # already in the database.
-            nodes = list(config.findall("LINE"))
-            first_interface = next(
-                (
-                    index
-                    for index, line in enumerate(lines)
-                    if line.strip().startswith("interface ")
-                ),
-                None,
-            )
-            children = list(config)
-            at = (
-                children.index(nodes[first_interface])
-                if first_interface is not None
-                else len(children)
-            )
-            # Inserted in reverse at one fixed position, so they come out in
-            # the order they were met.
-            for vlan in reversed(missing):
-                node = ET.Element("LINE")
-                node.text = f"vlan {vlan}"
-                config.insert(at, node)
-            if section == "RUNNINGCONFIG":
-                notes.append(f"{name}: declared VLAN {', '.join(missing)}")
     return notes
 
 
@@ -8297,10 +8188,6 @@ def generate_from_prompt(
     _declare_serial_dce_ends(root)
     trunk_notes = _trunk_uplinks_in_file(root)
     vlan_notes = _align_router_access_vlan(root)
-    # Last of the VLAN passes, because it has to see the assignments the two
-    # above settle: a port assigned to a VLAN the switch never created is
-    # inactive, and the lab opens looking perfectly correct.
-    vlan_notes += _declare_referenced_vlans(root)
     gateway_repairs = _align_router_gateway(root)
     _stamp_target_version(root)
     unexpected_workspace_issues = _unexpected_workspace_issues(donor_root, root)
