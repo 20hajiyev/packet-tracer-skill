@@ -2495,6 +2495,10 @@ def _write_pkt_root(root: ET.Element, pkt_path: Path, xml_path: Path | None = No
     _repair_invalid_link_ports(root)
     _assign_unique_macs(root)
     _match_link_port_families(root)
+    # After the families agree and before the addresses are handed out: a
+    # copper cable in a fibre socket is dropped by Packet Tracer on load,
+    # silently, in a file that still opens.
+    _move_copper_cables_off_fibre_ports(root)
     _assign_unique_interface_addresses(root)
     _assign_unique_switch_management_ips(root)
     _reconcile_cable_media(root)
@@ -5617,6 +5621,121 @@ def _match_link_port_families(root: ET.Element) -> list[str]:
     return changed
 
 
+def _ordered_port_media(device: ET.Element) -> dict[str, list[str]]:
+    """This device's sockets, in Packet Tracer's own order, grouped by kind.
+
+    The PORT nodes carry a media type and no name, and the document order is
+    the order Packet Tracer numbers them in: an IE-9320's twenty-eight nodes are
+    `GigabitEthernet1/0/1` .. `1/0/28`, a 2960's twenty-six are
+    `FastEthernet0/1` .. `0/24` followed by `GigabitEthernet0/1` .. `0/2`.
+    Verified against the live device listing for both.
+
+    Zipping the nodes against `donor_interface_names` looks like the obvious
+    way to get names and does not work: that returns 29 entries for a
+    twenty-eight port switch, because a configuration also mentions interfaces
+    the hardware does not have, and the pairing silently slips. Grouping by kind
+    and counting within the kind survives that.
+    """
+    grouped: dict[str, list[str]] = {}
+    for port in device.findall(".//PORT"):
+        media = (port.findtext("./TYPE") or "").strip()
+        if "FastEthernet" in media:
+            grouped.setdefault("FastEthernet", []).append(media)
+        elif "GigabitEthernet" in media:
+            grouped.setdefault("GigabitEthernet", []).append(media)
+    return grouped
+
+
+def _port_is_fiber(device: ET.Element, port_name: str) -> bool:
+    """Whether that named socket takes fibre rather than copper."""
+    name = (port_name or "").strip()
+    for kind in ("GigabitEthernet", "FastEthernet"):
+        if not name.startswith(kind):
+            continue
+        tail = name[len(kind):].strip()
+        if "/" not in tail:
+            return False
+        try:
+            index = int(tail.rsplit("/", 1)[-1])
+        except ValueError:
+            return False
+        media = _ordered_port_media(device).get(kind, [])
+        if 1 <= index <= len(media):
+            return "Fiber" in media[index - 1]
+        return False
+    return False
+
+
+def _move_copper_cables_off_fibre_ports(root: ET.Element) -> list[str]:
+    """Keep a copper cable out of a socket that only takes fibre.
+
+    Packet Tracer does not refuse such a file. It opens it and silently drops
+    the cable. Measured on a three-switch lab: sixteen links in the file,
+    thirteen in the running topology, and the three missing ones all landed on
+    `GigabitEthernet1/0/1` or `1/0/2` of an IE-9320 -- that switch's only two
+    fibre ports. One of them was the router uplink, so nothing could reach the
+    DHCP pool and every host fell back to an APIPA address. The open check
+    reported `opened` throughout.
+
+    That is worth stating plainly: a lab opening is not the same as Packet
+    Tracer having loaded the topology that was written.
+
+    The cable is moved rather than the media changed. A copper cable between
+    two switches is what the topology asked for; the fibre socket is an
+    accident of which port was free first.
+    """
+    device_order = list(root.findall(".//DEVICES/DEVICE"))
+    device_by_ref: dict[str, ET.Element] = {}
+    for index, device in enumerate(device_order):
+        ref = (device.findtext("./ENGINE/SAVE_REF_ID") or "").strip()
+        if ref:
+            device_by_ref[ref] = device
+        device_by_ref.setdefault(str(index), device)
+
+    taken: set[tuple[str, str]] = set()
+    for link in root.findall(".//LINKS/LINK"):
+        cable = link.find("./CABLE")
+        if cable is None:
+            continue
+        refs = [(cable.findtext("FROM") or "").strip(), (cable.findtext("TO") or "").strip()]
+        for ref, node in zip(refs, cable.findall("PORT")):
+            taken.add((ref, (node.text or "").strip()))
+
+    moved: list[str] = []
+    for link in root.findall(".//LINKS/LINK"):
+        cable = link.find("./CABLE")
+        if cable is None or (link.findtext("TYPE") or "").strip() != "eCopper":
+            continue
+        refs = [(cable.findtext("FROM") or "").strip(), (cable.findtext("TO") or "").strip()]
+        nodes = cable.findall("PORT")
+        if len(nodes) < 2:
+            continue
+        for ref, node in zip(refs, nodes):
+            device = device_by_ref.get(ref)
+            name = (node.text or "").strip()
+            if device is None or not name or not _port_is_fiber(device, name):
+                continue
+            kind = "GigabitEthernet" if name.startswith("GigabitEthernet") else "FastEthernet"
+            replacement = ""
+            for candidate in donor_interface_names(device):
+                # Same kind of interface, so a gigabit uplink stays gigabit.
+                if not candidate.startswith(kind) or candidate == name:
+                    continue
+                if (ref, candidate) in taken:
+                    continue
+                if not port_exists(device, candidate) or _port_is_fiber(device, candidate):
+                    continue
+                replacement = candidate
+                break
+            if not replacement:
+                continue
+            taken.discard((ref, name))
+            taken.add((ref, replacement))
+            node.text = replacement
+            moved.append(f"{name} -> {replacement} (copper cable off a fibre socket)")
+    return moved
+
+
 def _reconcile_cable_media(root: ET.Element) -> list[str]:
     """Make each cable's family agree with the interfaces it ends on.
 
@@ -8056,6 +8175,10 @@ def generate_from_prompt(
     port_repairs = _repair_invalid_link_ports(root)
     mac_repairs = _assign_unique_macs(root)
     _match_link_port_families(root)
+    # After the families agree and before the addresses are handed out: a
+    # copper cable in a fibre socket is dropped by Packet Tracer on load,
+    # silently, in a file that still opens.
+    _move_copper_cables_off_fibre_ports(root)
     _assign_unique_interface_addresses(root)
     _assign_unique_switch_management_ips(root)
     media_notes = _reconcile_cable_media(root)
