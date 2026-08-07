@@ -52,7 +52,7 @@ from remote_search import (
     search_remote_candidates,
     write_remote_sample_audit,
 )
-from sample_catalog import ReferencePattern, SampleCandidate, SampleDescriptor, load_catalog, load_curated_donor_catalog, load_reference_catalog, summarize_pkt_descriptor
+from sample_catalog import ReferencePattern, SampleCandidate, SampleDescriptor, load_catalog, load_curated_donor_catalog, load_reference_catalog, normalize_device_type as _normalize_device_type, summarize_pkt_descriptor
 from sample_selector import rank_curated_donor_samples, rank_reference_samples, rank_samples, select_best_sample
 from workspace_repair import inspect_donor_coherence, inspect_workspace_integrity, validate_donor_coherence, validate_workspace_integrity
 
@@ -1884,12 +1884,32 @@ def _wireless_router_lan_port(index: int) -> str:
     return f"GigabitEthernet {index}"
 
 
+# Router interface naming, read off Packet Tracer's own device list rather
+# than guessed from a prefix. The table used to know `2901` and `ISR` and fell
+# back to FastEthernet for everything else, which is wrong for most of the
+# modern models: a 2911 has `GigabitEthernet0/0` .. `0/2` and no FastEthernet
+# at all.
+#
+# The cost of getting it wrong is not a rejected file. `FastEthernet0/0` on a
+# 2911 is invalid, so the port repair relocates the cable to the first free
+# valid interface -- `GigabitEthernet0/0`, the one addressing had already made
+# the WAN uplink. The lab then carried its router-on-a-stick subinterfaces on
+# `GigabitEthernet0/1`, which no cable reached: ten subinterfaces
+# protocol-down, no gateway for any VLAN, and a lab that opened and read
+# correctly throughout.
+ROUTER_PORT_SHAPES = {
+    "GigabitEthernet0/{n}": ("1941", "2901", "2911", "CGR1240"),
+    "GigabitEthernet0/0/{n}": ("ISR4321", "ISR4331", "ISR"),
+    "GigabitEthernet{n}": ("819HG", "819HGW", "829"),
+}
+
+
 def _router_port(device: dict[str, object], index: int = 1) -> str:
     model = str(device.get("model") or "")
-    if model.startswith("2901"):
-        return f"GigabitEthernet0/{index - 1}"
-    if model.startswith("ISR"):
-        return f"GigabitEthernet0/0/{index - 1}"
+    for shape, models in ROUTER_PORT_SHAPES.items():
+        if any(model.startswith(prefix) for prefix in models):
+            return shape.format(n=index - 1)
+    # 1841, 2620XM, 2621XM, 2811 and the generic Router-PT.
     return f"FastEthernet0/{index - 1}"
 
 
@@ -2521,7 +2541,16 @@ def _write_pkt_root(root: ET.Element, pkt_path: Path, xml_path: Path | None = No
     _assign_unique_switch_management_ips(root)
     _reconcile_cable_media(root)
     _trunk_uplinks_in_file(root)
+    # Before the access-VLAN pass, which would otherwise strip the tagging:
+    # a switch port facing router subinterfaces has to be a trunk. The
+    # subinterfaces move to the cabled port first, or there is nothing there
+    # for the trunk to carry.
+    _move_subinterfaces_to_the_cabled_port(root)
+    _trunk_router_on_a_stick(root)
     _align_router_access_vlan(root)
+    # After the router's own port is settled: a host whose address belongs to
+    # one VLAN and whose port sits in another cannot reach its own subnet.
+    _align_host_vlans_to_addresses(root)
     _align_router_gateway(root)
     _align_dhcp_pools_with_interfaces(root)
     _group_hosts_under_their_switch(root)
@@ -4255,6 +4284,18 @@ def _collect_donor_groups(
                 "members_by_type": members_by_type,
             }
         )
+    # Prefix grouping only means anything when the prefixes actually gather
+    # hosts. A donor whose switches are `SW-IDR`, `SW-MUH`, ... collapses into
+    # one group named `SW` holding nothing, because its hosts are `PC-IDR1` and
+    # `SRV-IDR` -- different prefixes. Those empty groups then suppressed the
+    # link-based fallback below, which groups that donor correctly, and every
+    # request for five switch groups was refused against a donor that had five.
+    if groups and not any(
+        any(_fallback_group_member_type(str(member["type"])) for member in group["members"])
+        for group in groups
+    ):
+        groups = []
+
     if groups:
         groups.sort(key=lambda item: _name_sort_key(str(item["group_name"])))
         return groups
@@ -4747,6 +4788,11 @@ def _align_router_access_vlan(root: ET.Element) -> list[str]:
             if kind(refs[near]) in host_types:
                 host_vlans[access_vlan(devices[refs[far]], ports[far])] += 1
             elif kind(refs[near]) == "Router":
+                # A router-on-a-stick end is a trunk, not an access port;
+                # forcing it into the hosts' VLAN would strip the tagging every
+                # other VLAN depends on.
+                if _router_subinterface_vlans(devices[refs[near]], ports[near]):
+                    continue
                 router_ends.append((devices[refs[far]], ports[far]))
 
     if not host_vlans or not router_ends:
@@ -4767,6 +4813,376 @@ def _align_router_access_vlan(root: ET.Element) -> list[str]:
         )
         notes.append(
             f"{switch.findtext('./ENGINE/NAME') or ''}:{port} moved to VLAN {wanted} (the hosts' VLAN)"
+        )
+    return notes
+
+
+def _router_subinterface_vlans(device: ET.Element, physical_port: str) -> list[str]:
+    """VLANs the router carries as subinterfaces of `physical_port`."""
+    vlans: list[str] = []
+    on_port = False
+    for node in device.findall("./ENGINE/RUNNINGCONFIG/LINE"):
+        line = (node.text or "").strip()
+        if line.startswith("interface "):
+            name = line.split(None, 1)[1]
+            on_port = name.startswith(f"{physical_port}.")
+            continue
+        if not on_port:
+            continue
+        match = re.match(r"^encapsulation dot1Q (\d+)", line)
+        if match and match.group(1) not in vlans:
+            vlans.append(match.group(1))
+    return sorted(vlans, key=int)
+
+
+def _move_subinterfaces_to_the_cabled_port(root: ET.Element) -> list[str]:
+    """Put the router's dot1Q subinterfaces on the port the switch cable uses.
+
+    Addressing writes the subinterfaces onto one interface while the link
+    synthesiser and port reconciliation settle the cable onto another. Measured
+    on a five-switch lab the skill generated: R1 carried
+    `GigabitEthernet0/1.10` .. `.99` and its only cable ran from
+    `GigabitEthernet0/0`. Packet Tracer showed one linked port and ten
+    subinterfaces protocol-down, so every VLAN except the one the access port
+    happened to be in was unreachable.
+
+    The cable is the harder fact -- it exists in the topology and in Packet
+    Tracer's own model -- so the configuration moves to meet it.
+    """
+    devices = {
+        (device.findtext("./ENGINE/SAVE_REF_ID") or "").strip(): device
+        for device in root.findall(".//DEVICES/DEVICE")
+    }
+    switch_types = {"Switch", "MultiLayerSwitch"}
+    cabled_to_switch: dict[str, str] = {}
+    for link in root.findall(".//LINKS/LINK"):
+        cable = link.find("./CABLE")
+        if cable is None:
+            continue
+        refs = [(cable.findtext(tag) or "").strip() for tag in ("FROM", "TO")]
+        ports = [node.text or "" for node in cable.findall("PORT")]
+        if len(ports) < 2:
+            continue
+        for near, far in ((0, 1), (1, 0)):
+            router = devices.get(refs[near])
+            switch = devices.get(refs[far])
+            if router is None or switch is None:
+                continue
+            if (router.findtext("./ENGINE/TYPE") or "") != "Router":
+                continue
+            if (switch.findtext("./ENGINE/TYPE") or "") in switch_types:
+                cabled_to_switch.setdefault(refs[near], ports[near])
+
+    notes: list[str] = []
+    for ref, cabled_port in cabled_to_switch.items():
+        router = devices[ref]
+        configured = ""
+        for node in router.findall("./ENGINE/RUNNINGCONFIG/LINE"):
+            line = (node.text or "").strip()
+            if not line.startswith("interface ") or "." not in line:
+                continue
+            parent = line.split(None, 1)[1].split(".", 1)[0]
+            if parent != cabled_port and port_exists(router, parent):
+                configured = parent
+                break
+        if not configured or not _router_subinterface_vlans(router, configured):
+            continue
+        for node in router.findall("./ENGINE/RUNNINGCONFIG/LINE"):
+            line = (node.text or "")
+            stripped = line.strip()
+            if stripped.startswith(f"interface {configured}."):
+                node.text = line.replace(f"interface {configured}.", f"interface {cabled_port}.", 1)
+        notes.append(
+            f"{router.findtext('./ENGINE/NAME') or ''}: subinterfaces moved from "
+            f"{configured} to {cabled_port} (where the switch cable is)"
+        )
+
+    # Once the link is a trunk, an address on the physical port is unreachable:
+    # every frame arrives tagged. Measured on the same lab -- VLAN 10's
+    # subinterface carried `encapsulation dot1Q 10` and no address at all,
+    # while `GigabitEthernet0/0` held 10.10.10.1, so VLAN 10 had no gateway.
+    # Moved only when the pairing is unambiguous: one addressless subinterface
+    # and one address stranded on its parent.
+    for ref, cabled_port in cabled_to_switch.items():
+        router = devices[ref]
+        lines = list(router.findall("./ENGINE/RUNNINGCONFIG/LINE"))
+        blocks: dict[str, list[ET.Element]] = {}
+        current = ""
+        for node in lines:
+            text = (node.text or "").strip()
+            if text.startswith("interface "):
+                current = text.split(None, 1)[1]
+                blocks.setdefault(current, [])
+            elif current:
+                blocks.setdefault(current, []).append(node)
+
+        def address_node(name: str) -> ET.Element | None:
+            for node in blocks.get(name, []):
+                if (node.text or "").strip().startswith("ip address "):
+                    return node
+            return None
+
+        parent_address = address_node(cabled_port)
+        if parent_address is None:
+            continue
+        orphans = [
+            name
+            for name in blocks
+            if name.startswith(f"{cabled_port}.") and address_node(name) is None
+        ]
+        if len(orphans) != 1:
+            continue
+        moved_text = (parent_address.text or "").strip()
+        blocks[orphans[0]].append(parent_address)
+        config = router.find("./ENGINE/RUNNINGCONFIG")
+        if config is None:
+            continue
+        index = list(config).index(parent_address)
+        config.remove(parent_address)
+        anchor = next(
+            (
+                node
+                for node in config.findall("LINE")
+                if (node.text or "").strip() == f"interface {orphans[0]}"
+            ),
+            None,
+        )
+        if anchor is None:
+            config.insert(index, parent_address)
+            continue
+        config.insert(list(config).index(anchor) + 1, parent_address)
+        notes.append(
+            f"{router.findtext('./ENGINE/NAME') or ''}: '{moved_text}' moved from "
+            f"{cabled_port} to {orphans[0]}, which had none"
+        )
+
+    # A trunk parent cannot also be the WAN uplink. Pruning leaves the donor's
+    # `ip nat outside` and its address on the physical interface, and once the
+    # subinterfaces live there the same port is described as both sides of the
+    # network at once: measured on the company lab, every subinterface came up
+    # and no host could still reach its gateway.
+    for ref, cabled_port in cabled_to_switch.items():
+        router = devices[ref]
+        if not _router_subinterface_vlans(router, cabled_port):
+            continue
+        config = router.find("./ENGINE/RUNNINGCONFIG")
+        if config is None:
+            continue
+        inside = False
+        for node in list(config.findall("LINE")):
+            text = (node.text or "").strip()
+            if text.startswith("interface "):
+                inside = text == f"interface {cabled_port}"
+                continue
+            if not inside:
+                continue
+            if text in {"ip nat outside", "ip nat inside"} or text.startswith("ip address "):
+                config.remove(node)
+                notes.append(
+                    f"{router.findtext('./ENGINE/NAME') or ''}: '{text}' removed from "
+                    f"{cabled_port}, which is the trunk parent"
+                )
+    return notes
+
+
+def _trunk_router_on_a_stick(root: ET.Element) -> list[str]:
+    """A switch port facing router subinterfaces has to be a trunk.
+
+    Measured on a five-switch lab the skill generated: R1 carried eight dot1Q
+    subinterfaces for VLANs 10 to 99, and its single cable landed on an access
+    port in VLAN 10. Packet Tracer reported one linked port on the router and
+    every subinterface protocol-down, so no host could reach its gateway and
+    nothing crossed a VLAN boundary -- while the lab opened and read correctly.
+
+    The router's configuration is the statement of intent here: subinterfaces
+    with `encapsulation dot1Q` mean the link is a trunk.
+    """
+    devices = {
+        (device.findtext("./ENGINE/SAVE_REF_ID") or "").strip(): device
+        for device in root.findall(".//DEVICES/DEVICE")
+    }
+    switch_types = {"Switch", "MultiLayerSwitch"}
+    notes: list[str] = []
+    for link in root.findall(".//LINKS/LINK"):
+        cable = link.find("./CABLE")
+        if cable is None:
+            continue
+        refs = [(cable.findtext(tag) or "").strip() for tag in ("FROM", "TO")]
+        ports = [node.text or "" for node in cable.findall("PORT")]
+        if len(ports) < 2:
+            continue
+        for near, far in ((0, 1), (1, 0)):
+            router = devices.get(refs[near])
+            switch = devices.get(refs[far])
+            if router is None or switch is None:
+                continue
+            if (router.findtext("./ENGINE/TYPE") or "") != "Router":
+                continue
+            if (switch.findtext("./ENGINE/TYPE") or "") not in switch_types:
+                continue
+            vlans = _router_subinterface_vlans(router, ports[near])
+            if not vlans:
+                continue
+            config = switch.find("./ENGINE/RUNNINGCONFIG")
+            if config is None:
+                continue
+            body = [" switchport mode trunk", f" switchport trunk allowed vlan {','.join(vlans)}"]
+            if (switch.findtext("./ENGINE/TYPE") or "") == "MultiLayerSwitch":
+                body.insert(0, " switchport trunk encapsulation dot1q")
+            _set_config_block(config, f"interface {ports[far]}", body)
+            notes.append(
+                f"{switch.findtext('./ENGINE/NAME') or ''}:{ports[far]} -> trunk for VLAN "
+                f"{','.join(vlans)} ({router.findtext('./ENGINE/NAME') or ''})"
+            )
+    return notes
+
+
+def _vlan_subnets_from_router(root: ET.Element) -> dict[str, str]:
+    """VLAN number -> the /24 its gateway sits in, read off the subinterfaces.
+
+    A router-on-a-stick writes the mapping down: `encapsulation dot1Q 20`
+    followed by `ip address 10.10.20.1` says VLAN 20 is 10.10.20.0. Nothing
+    else in the file states it, and guessing it from the third octet only works
+    for labs that happen to number that way.
+
+    A router keeps subinterfaces the pruning left behind, so the same VLAN can
+    appear twice with different addresses: one lab carried
+    `GigabitEthernet0/0/0.20` on 192.168.20.1 from its donor alongside the live
+    `GigabitEthernet0/1.20` on 10.10.20.1 -- and the stale one named an
+    interface a 2911 does not even have. Only subinterfaces whose parent the
+    device really owns are read.
+    """
+    subnets: dict[str, str] = {}
+    for device in root.findall(".//DEVICES/DEVICE"):
+        if (device.findtext("./ENGINE/TYPE") or "") != "Router":
+            continue
+        vlan = ""
+        parent_is_real = False
+        for node in device.findall("./ENGINE/RUNNINGCONFIG/LINE"):
+            line = (node.text or "").strip()
+            if line.startswith("interface "):
+                name = line.split(None, 1)[1]
+                parent_is_real = port_exists(device, name.split(".", 1)[0])
+                vlan = ""
+                continue
+            if not parent_is_real:
+                continue
+            match = re.match(r"^encapsulation dot1Q (\d+)", line)
+            if match:
+                vlan = match.group(1)
+                continue
+            address = re.match(r"^ip address (\d+\.\d+\.\d+)\.\d+ ", line)
+            if address and vlan:
+                subnets[vlan] = address.group(1)
+                vlan = ""
+    return subnets
+
+
+def _align_host_vlans_to_addresses(root: ET.Element) -> list[str]:
+    """Put each host's access port in the VLAN its address belongs to.
+
+    Addressing and VLAN assignment are decided by different passes, and nothing
+    made them agree. Measured on a five-switch lab the skill generated: PC5 on
+    10.10.10.12 sat in VLAN 30 while PC1 on 10.10.10.11 sat in VLAN 10 -- same
+    subnet, different broadcast domains -- and PC2 on 10.10.20.11 sat in VLAN
+    10. Six of twelve hosts were in the wrong VLAN for their address. The lab
+    opened, every static check passed, and PC1 could not reach PC5.
+
+    The same shape as every other defect here: two independent models of one
+    concept that disagree where nothing looks.
+
+    The address wins, because it is what the router's subinterfaces already
+    agree with -- a host moved to another VLAN would need a new address, a new
+    gateway, and a DHCP pool to match.
+    """
+    by_subnet = {subnet: vlan for vlan, subnet in _vlan_subnets_from_router(root).items()}
+
+    devices = {
+        (device.findtext("./ENGINE/SAVE_REF_ID") or "").strip(): device
+        for device in root.findall(".//DEVICES/DEVICE")
+    }
+    switch_types = {"Switch", "MultiLayerSwitch"}
+
+    def host_subnet(device: ET.Element) -> str:
+        for node in device.iter():
+            text = (node.text or "").strip()
+            if node.tag.upper() in {"IP", "IPADDRESS", "ADDRESS"} and re.fullmatch(
+                r"\d+\.\d+\.\d+\.\d+", text
+            ):
+                return text.rsplit(".", 1)[0]
+        return ""
+
+    def current_vlan(switch: ET.Element, port: str) -> str:
+        inside = False
+        for node in switch.findall("./ENGINE/RUNNINGCONFIG/LINE"):
+            line = (node.text or "").strip()
+            if line.startswith("interface "):
+                inside = line == f"interface {port}"
+            elif inside and line.startswith("switchport access vlan "):
+                return line.split()[-1]
+        return ""
+
+    attachments: list[tuple[ET.Element, str, ET.Element, str]] = []
+    for link in root.findall(".//LINKS/LINK"):
+        cable = link.find("./CABLE")
+        if cable is None:
+            continue
+        refs = [(cable.findtext(tag) or "").strip() for tag in ("FROM", "TO")]
+        ports = [node.text or "" for node in cable.findall("PORT")]
+        if len(ports) < 2:
+            continue
+        for near, far in ((0, 1), (1, 0)):
+            host = devices.get(refs[near])
+            switch = devices.get(refs[far])
+            if host is None or switch is None:
+                continue
+            if (switch.findtext("./ENGINE/TYPE") or "") not in switch_types:
+                continue
+            # Saved files spell it `Pc`; `HOST_DEVICE_KINDS` holds `PC`. Asking
+            # without normalising skipped every PC in the lab and left eight of
+            # fourteen hosts unexamined.
+            if not _is_host_device(
+                {"type": _normalize_device_type(host.findtext("./ENGINE/TYPE") or "")}
+            ):
+                continue
+            subnet = host_subnet(host)
+            if subnet:
+                attachments.append((host, subnet, switch, ports[far]))
+
+    # A subnet the router does not map still has to end up in one VLAN, or its
+    # hosts cannot reach each other. The VLAN most of them already sit in is
+    # the one that needs the fewest ports moved.
+    votes: dict[str, Counter[str]] = {}
+    for _host, subnet, switch, port in attachments:
+        vlan = current_vlan(switch, port)
+        if vlan:
+            votes.setdefault(subnet, Counter())[vlan] += 1
+    wanted_for: dict[str, str] = {}
+    for _host, subnet, _switch, _port in attachments:
+        if subnet in wanted_for:
+            continue
+        chosen = by_subnet.get(subnet)
+        if not chosen and subnet in votes:
+            chosen = votes[subnet].most_common(1)[0][0]
+        if chosen:
+            wanted_for[subnet] = chosen
+
+    notes: list[str] = []
+    for host, subnet, switch, port in attachments:
+        wanted = wanted_for.get(subnet)
+        if not wanted or current_vlan(switch, port) == wanted:
+            continue
+        config = switch.find("./ENGINE/RUNNINGCONFIG")
+        if config is None:
+            continue
+        _set_config_block(
+            config,
+            f"interface {port}",
+            [" switchport mode access", f" switchport access vlan {wanted}"],
+        )
+        notes.append(
+            f"{switch.findtext('./ENGINE/NAME') or ''}:{port} -> VLAN {wanted} "
+            f"({host.findtext('./ENGINE/NAME') or ''})"
         )
     return notes
 
@@ -8227,7 +8643,16 @@ def generate_from_prompt(
     # promoted to serial must gain one.
     _declare_serial_dce_ends(root)
     trunk_notes = _trunk_uplinks_in_file(root)
+    # Before the access-VLAN pass, which would otherwise strip the tagging:
+    # a switch port facing router subinterfaces has to be a trunk. The
+    # subinterfaces move to the cabled port first, or there is nothing there
+    # for the trunk to carry.
+    trunk_notes += _move_subinterfaces_to_the_cabled_port(root)
+    trunk_notes += _trunk_router_on_a_stick(root)
     vlan_notes = _align_router_access_vlan(root)
+    # After the router's own port is settled: a host whose address belongs to
+    # one VLAN and whose port sits in another cannot reach its own subnet.
+    vlan_notes += _align_host_vlans_to_addresses(root)
     gateway_repairs = _align_router_gateway(root)
     _stamp_target_version(root)
     unexpected_workspace_issues = _unexpected_workspace_issues(donor_root, root)

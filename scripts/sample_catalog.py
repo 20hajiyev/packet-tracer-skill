@@ -1112,18 +1112,36 @@ def enrich_catalog_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return enriched
 
 
+def _catalog_item_path(item: dict, saves_root: Path | None) -> str:
+    """Where a catalogued lab actually lives.
+
+    Entries from the Packet Tracer installation are stored relative to its
+    saves root and joined back to it here. A lab the user saved somewhere else
+    carries its own absolute path, and joining that to the saves root produced
+    a path no file was at -- so a donor built for this skill could be
+    catalogued and still never be read.
+
+    The committed catalogue drops `path` on purpose, to stay independent of
+    whose machine wrote it. `source_path` survives instead, and only entries
+    outside the installation carry one: those are machine-specific by nature.
+    """
+    for key in ("path", "source_path"):
+        own_path = str(item.get(key) or "")
+        if own_path and Path(own_path).is_absolute():
+            return own_path
+    relative_path = item["relative_path"]
+    if saves_root is None:
+        return own_path or relative_path
+    return str(saves_root / relative_path)
+
+
 @lru_cache(maxsize=8)
 def _load_catalog_cached(path_str: str) -> tuple[SampleDescriptor, ...]:
     raw_items = json.loads(Path(path_str).read_text(encoding="utf-8"))
     items = enrich_catalog_items(raw_items)
     saves_root = get_packet_tracer_saves_root()
     return tuple(
-        _descriptor_from_item(
-            {
-                **item,
-                "path": str((saves_root / item["relative_path"]) if saves_root is not None else item.get("path", item["relative_path"])),
-            }
-        )
+        _descriptor_from_item({**item, "path": _catalog_item_path(item, saves_root)})
         for item in items
         if "error" not in item
     )
