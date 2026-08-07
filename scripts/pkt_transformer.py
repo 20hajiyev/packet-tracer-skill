@@ -845,7 +845,19 @@ def port_exists(device: ET.Element, port_name: str) -> bool:
     # point, `RS 232` on a laptop, the `Switch` pass-through on an IP phone.
     # Reporting those as missing made real links look invalid, which is the
     # damaging direction: a legitimate link gets dropped.
+    #
+    # Permissive, but not blind. A device that lists its own interfaces has told
+    # us what it has, and a name absent from that list is not one of them. An
+    # ASA 5506-X whose interfaces are `GigabitEthernet1/1` .. `1/8` answered yes
+    # to `Ethernet0/0` -- the name fits neither modelled prefix, so it fell
+    # straight through to this branch, the port repair saw nothing to fix, and
+    # Packet Tracer refused the lab. Devices with no interfaces in their
+    # configuration keep the benefit of the doubt, which is what leaves access
+    # points, phones and laptops working.
     if not canonical.startswith(("FastEthernet", "GigabitEthernet")):
+        named = donor_interface_names(device)
+        if named and canonical not in named:
+            return False
         return True
 
     for kind, count in port_capacity(device).items():

@@ -103,3 +103,29 @@ def test_serial_hardware_is_not_the_same_as_that_serial_interface() -> None:
 def test_a_router_with_no_serial_card_still_has_no_serial_port() -> None:
     router = _device("Router", ["eCopperFastEthernet"], ["FastEthernet0/0"])
     assert port_exists(router, "Serial0/0/0") is False
+
+
+def test_a_name_absent_from_the_device_own_interfaces_is_rejected() -> None:
+    """The branch for names this module does not model is permissive, not blind.
+
+    An ASA 5506-X whose interfaces are `GigabitEthernet1/1` .. `1/8` answered
+    yes to `Ethernet0/0`: the name starts with neither modelled prefix, so it
+    fell through to "outside this module, assume it is real". The port repair
+    then saw nothing to fix and Packet Tracer refused the lab. With the name
+    checked against the device's own list, the repair moves the cable to
+    `GigabitEthernet1/2` and the lab opens.
+    """
+    asa = _device(
+        "SecurityAppliance",
+        ["eCopperGigabitEthernet"] * 8,
+        [f"GigabitEthernet1/{index}" for index in range(1, 9)],
+    )
+    assert port_exists(asa, "GigabitEthernet1/2") is True
+    assert port_exists(asa, "Ethernet0/0") is False
+
+
+def test_a_device_that_lists_no_interfaces_keeps_the_benefit_of_the_doubt() -> None:
+    """Access points, phones and laptops carry no interface lines at all."""
+    access_point = _device("LightWeightAccessPoint", ["eCopperGigabitEthernet"], [])
+    assert port_exists(access_point, "Port 0") is True
+    assert port_exists(access_point, "GigabitEthernet0") is True

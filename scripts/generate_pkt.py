@@ -1840,6 +1840,11 @@ HOST_DEVICE_KINDS = {
     "NetworkController",
     "LightWeightAccessPoint",
     "MerakiServer",
+    # A firewall the prompt asked for used to arrive cabled to nothing:
+    # present in the file, valid, and not part of the network. It is an
+    # end device as far as the link synthesiser is concerned -- one cable,
+    # to the switch.
+    "ASA",
 }
 
 
@@ -1930,6 +1935,14 @@ def _host_port(device: dict[str, object]) -> str:
         return "GigabitEthernet0"
     if kind == "WirelessLanController":
         return "GigabitEthernet1"
+    # Measured the same way, off the cables in 150 saved labs: every ASA
+    # link uses `Ethernet0/N`, while the live device palette reports
+    # `GigabitEthernet1/1` for a 5506-X. The models differ, so this is the
+    # starting name and `_repair_invalid_link_ports` moves it to whatever
+    # the chosen device really has -- the same way router and switch ports
+    # are already corrected per model.
+    if kind == "ASA":
+        return "Ethernet0/0"
     return "FastEthernet0"
 
 
