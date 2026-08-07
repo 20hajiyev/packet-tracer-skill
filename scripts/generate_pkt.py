@@ -1866,6 +1866,24 @@ def _is_wireless_client_device(device: dict[str, object]) -> bool:
     return _device_kind(device) in {"Tablet", "Smartphone"}
 
 
+WIRELESS_ROUTER_KINDS = {"WirelessRouter", "WirelessRouterNewGeneration"}
+
+
+def _wireless_router_lan_port(index: int) -> str:
+    """A home router's LAN port, counting from 1.
+
+    Measured across 348 saved labs: the new-generation home router's cables sit
+    on `GigabitEthernet 1` .. `GigabitEthernet 4`, twenty of them, and the older
+    Linksys model's on `Ethernet 1` .. `Ethernet 4`, two. The space is part of
+    the name. Both count from one, which is why the index is not offset.
+
+    `Internet` is deliberately not reachable from here. Fourteen cables in those
+    labs use it and every one is an uplink -- it is the WAN port, and a host
+    plugged into it is on the wrong side of the router.
+    """
+    return f"GigabitEthernet {index}"
+
+
 def _router_port(device: dict[str, object], index: int = 1) -> str:
     model = str(device.get("model") or "")
     if model.startswith("2901"):
@@ -2793,24 +2811,29 @@ def _synthesize_links(plan: IntentPlan, devices: list[dict[str, object]]) -> lis
     switches.sort(key=lambda device: _device_kind(device) != "MultiLayerSwitch")
     hosts = [device for device in devices if _is_host_device(device)]
     if not switches:
-        # A home-router lab has no switch, so nothing is cabled here and both
-        # `wireless_home` and `wireless_ssid` ship as devices with no path
-        # between them: two laptops on 1.1.10.20 and .21, a router on
-        # 192.168.0.1, 0/4 twice over. Cabling them live in Packet Tracer --
-        # laptops to `GigabitEthernet 1` and `2` -- takes Laptop1 to Laptop2 to
-        # 3/4, so the topology is right and only the file is missing it.
+        # A home-router lab has no switch, and returning nothing here left both
+        # `wireless_home` and `wireless_ssid` as devices with no path between
+        # them: two laptops on 1.1.10.20 and .21, a router on 192.168.0.1, 0/4
+        # twice over while the labs opened and every static check passed.
         #
-        # Writing those same two links from here produces a lab Packet Tracer
-        # refuses to open, with both port names verified against the device.
-        # Left uncabled rather than unopenable until that is understood.
-        #
-        # Two explanations have been ruled out. Missing `*_MEM_ADDR` fields are
-        # not it: `four_switch` opens with nine of its twelve cables carrying
-        # none. And a bisect that added a single hand-built LINK element to the
-        # opening lab proved nothing -- the same element added to `minimal`,
-        # which opens, refuses too, so that method only measured its own XML.
-        # Whatever comes next has to build the link the way generation does.
-        return []
+        # The laptops are wired on purpose: a Laptop-PT arrives with a copper
+        # port and no wireless card, so the cable is the only path it has.
+        # Tablets and phones are skipped -- they associate instead.
+        routers_wireless = [
+            device for device in devices if _device_kind(device) in WIRELESS_ROUTER_KINDS
+        ]
+        if not routers_wireless:
+            return []
+        access_point = routers_wireless[0]
+        wired_hosts = [device for device in hosts if not _is_wireless_client_device(device)]
+        return [
+            {
+                "a": {"dev": device["name"], "port": _host_port(device)},
+                "b": {"dev": access_point["name"], "port": _wireless_router_lan_port(index)},
+                "media": "straight-through",
+            }
+            for index, device in enumerate(wired_hosts, start=1)
+        ]
 
     if archetype == "chain":
         links: list[dict[str, object]] = []

@@ -880,6 +880,49 @@ def _find_link_by_devices(root: ET.Element, left_name: str, right_name: str) -> 
     return None
 
 
+@lru_cache(maxsize=1)
+def _modern_link_prototype_xml() -> str | None:
+    """A cable copied from a lab the installed Packet Tracer wrote itself.
+
+    A new link is cloned from one the file already has. When the file has none,
+    the fallback was a cable from the bundled `FTP.pkt`, and that sample is old
+    enough to predate the fields a 9.x cable carries: it refers to its devices
+    by index rather than by `save-ref-id`, and has no `FUNCTIONAL`,
+    `GEO_VIEW_COLOR` or `IS_MANAGED_IN_RACK_VIEW` at all.
+
+    Measured: adding one link to `minimal`, which has cables to copy, takes it
+    from four links to five and it opens. Adding one link to `wireless_home`,
+    which has none, produces a file Packet Tracer refuses -- and that is why
+    both wireless labs ship uncabled. Same writer, same ports, same devices;
+    the only difference is which cable was cloned.
+
+    The compatibility donor is the right source because it is already the file
+    this skill trusts for the installed version, so its cables are the shape
+    this Packet Tracer writes.
+    """
+    from packet_tracer_env import get_packet_tracer_compatibility_donor
+
+    donor = get_packet_tracer_compatibility_donor()
+    if donor is None:
+        return None
+    try:
+        root = decode_pkt_to_root(donor)
+    except Exception:  # pragma: no cover - a donor that no longer decodes
+        return None
+    prototype = _first_link_prototype(root)
+    if prototype is None:
+        return None
+    return ET.tostring(prototype, encoding="unicode")
+
+
+def _fallback_link_prototype() -> ET.Element | None:
+    xml = _modern_link_prototype_xml()
+    if xml is not None:
+        return ET.fromstring(xml)
+    prototype_root = load_sample_root(resolve_sample_path(FTP_SAMPLE))
+    return prototype_root.find(".//LINKS/LINK")
+
+
 def _first_link_prototype(root: ET.Element) -> ET.Element | None:
     for link in root.findall(".//LINKS/LINK"):
         cable = link.find("./CABLE")
@@ -1387,8 +1430,7 @@ def _ensure_link(
         if prototype is None:
             prototype = _first_link_prototype(root)
         if prototype is None:
-            prototype_root = load_sample_root(resolve_sample_path(FTP_SAMPLE))
-            prototype = prototype_root.find(".//LINKS/LINK")
+            prototype = _fallback_link_prototype()
         link = copy.deepcopy(prototype)
         if link is None:
             return
