@@ -2418,6 +2418,8 @@ def _write_pkt_root(root: ET.Element, pkt_path: Path, xml_path: Path | None = No
     _align_dhcp_pools_with_interfaces(root)
     _group_hosts_under_their_switch(root)
     _separate_overlapping_devices(root)
+    # After the separation pass, so a leftover nudged sideways is still pulled in.
+    _compact_stray_devices(root)
     _save_running_config_to_startup(root)
     prune_unused_images(root)
     xml_bytes = serialize_pkt_xml(root)
@@ -5058,6 +5060,110 @@ def _group_hosts_under_their_switch(root: ET.Element) -> list[str]:
         x_node.text = str(int(centre))
         position[switch_name] = (centre, position[switch_name][1])
         cursor = start + width + LOGICAL_ICON_SPACING
+    return moved
+
+
+# How far a cable-less leftover may sit outside the wired lab before it is
+# pulled in. Wide enough that a device merely sitting at the edge is left alone.
+STRAY_DEVICE_MARGIN = 400
+
+
+def _report_undelivered_devices(root: ET.Element, blueprint: dict[str, object]) -> list[str]:
+    """Name any device the plan asked for that is not in the written file.
+
+    Generation reported success for `2 router serial WAN, 2 switch, 8 komputer,
+    1 server`: the blueprint held thirteen devices and the file held three, with
+    the eight PCs and the server simply absent. Nothing said so. Silence is the
+    worst of the three outcomes here -- a refusal explains itself, a working lab
+    needs no explanation, and a lab quietly missing most of what was asked for
+    looks like the tool worked.
+
+    Auditing the corpus found four labs short by one device each, always a
+    switch, and always one that kept its donor name instead of being renamed.
+    That number moves with donor selection, so this reports rather than refuses:
+    failing labs that open and mostly serve the prompt would cost more than it
+    saves. The point is that the gap is now visible on every run.
+    """
+    planned = {
+        str(device.get("name")).strip()
+        for device in blueprint.get("devices", [])
+        if str(device.get("name") or "").strip()
+    }
+    if not planned:
+        return []
+    present = {
+        (device.findtext("./ENGINE/NAME") or "").strip()
+        for device in root.findall(".//DEVICES/DEVICE")
+    }
+    missing = sorted(planned - present)
+    if not missing:
+        return []
+    shown = ", ".join(missing[:8])
+    if len(missing) > 8:
+        shown += f", and {len(missing) - 8} more"
+    return [
+        f"WARNING: {len(missing)} of {len(planned)} planned device(s) are not in the file: {shown}"
+    ]
+
+
+def _compact_stray_devices(root: ET.Element) -> list[str]:
+    """Pull cable-less donor leftovers back beside the lab that was asked for.
+
+    Every corpus lab measured between 2440 and 2550 units wide, including
+    `minimal`, which is one router, one switch and three PCs. Those five sit in
+    340 units; the width came from two `Power Distribution Device` nodes still
+    at their donor coordinates, x=2620 and x=2730, roughly 2100 units to the
+    right of anything cabled. Packet Tracer shows about 1500 units at the
+    default zoom, so the lab opened on an empty patch of canvas with the real
+    topology off to the left.
+
+    They are not pruned here. They came with the donor, nothing is wired to
+    them, and removing devices is the kind of change that has broken donor
+    coherence before. Moving them is enough: the canvas shrinks to the lab.
+
+    A lab with fewer than two cabled devices has no bounding box worth
+    speaking of -- the wireless scenarios have no cables at all -- so those are
+    left exactly as they are.
+    """
+    positions: dict[str, tuple[ET.Element, ET.Element, float, float]] = {}
+    for device in root.findall(".//DEVICES/DEVICE"):
+        name = (device.findtext("./ENGINE/NAME") or "").strip()
+        x_node = device.find("./WORKSPACE/LOGICAL/X")
+        y_node = device.find("./WORKSPACE/LOGICAL/Y")
+        if not name or x_node is None or y_node is None:
+            continue
+        try:
+            x = float((x_node.text or "").strip())
+            y = float((y_node.text or "").strip())
+        except ValueError:
+            continue
+        if x >= PARKED_LOGICAL_X:
+            continue
+        positions[name] = (x_node, y_node, x, y)
+
+    cabled = {name for pair in _link_device_pairs(root) for name in pair}
+    anchored = [positions[name] for name in cabled if name in positions]
+    if len(anchored) < 2:
+        return []
+
+    right = max(entry[2] for entry in anchored)
+    top = min(entry[3] for entry in anchored)
+    bottom = max(entry[3] for entry in anchored)
+
+    strays = sorted(
+        (name for name, entry in positions.items() if name not in cabled and entry[2] > right + STRAY_DEVICE_MARGIN),
+        key=lambda name: positions[name][2],
+    )
+    moved: list[str] = []
+    for index, name in enumerate(strays):
+        x_node, y_node, _, _ = positions[name]
+        x = int(right + 140 + (index % 2) * 120)
+        y = int(top + (index // 2) * 110)
+        if y > bottom:
+            y = int(bottom)
+        x_node.text = str(x)
+        y_node.text = str(y)
+        moved.append(f"{name}: pulled beside the lab at {x},{y}")
     return moved
 
 
@@ -7714,6 +7820,8 @@ def generate_from_prompt(
     pkt_bytes = encode_pkt_modern(xml_bytes)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_bytes(pkt_bytes)
+    for note in _report_undelivered_devices(root, blueprint):
+        print(note)
     print(f"Selected donor: {donor_archetype.compat_donor}")
     compat_donor, compat_donor_version = _compat_donor_details()
     if compat_donor is not None:
