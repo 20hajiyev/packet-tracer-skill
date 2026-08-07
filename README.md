@@ -10,39 +10,38 @@ This repository is built for one job: take a natural-language network request, b
 
 It is intended for networking labs where correctness matters more than producing a pretty but unverifiable diagram. The skill can plan, inspect, edit, compare, and explain Packet Tracer scenarios, but it deliberately separates "recognized by the parser", "visible in inventory", "edit-proven", "donor-backed ready", and "generate-ready" support.
 
-## `0.3.0`: generation that was actually opened
+## What `0.3.0` does
 
-This is the first release where a prompt produces a lab Packet Tracer opens.
+In this release a prompt produces a lab Packet Tracer opens.
 
 ```bash
 npx packet-tracer-skill --doctor        # is this machine ready?
 python scripts/generate_pkt.py --prompt "1 router 1 switch 4 komputer, DHCP ile avtomatik IP payla" --output lab.pkt
 ```
 
-Every number below was measured, and the connectivity ones by running real pings
-from the devices rather than by reading the file:
+The connectivity numbers below come from running `ping` on the devices, not from
+inspecting the file.
 
-| | |
+| measurement | result |
 | --- | --- |
 | corpus scenarios generated | 32 of 33 |
-| of those, opened by Packet Tracer | **32 of 32** |
+| of those, opened by Packet Tracer | 32 of 32 |
 | tests | 657 passed, 1 skipped |
-| generated DHCP lab | four PCs took leases from the router pool and pinged their gateway and each other **4/4** |
-| generated leased line | traffic crossed `Serial0/1/1 <-> Serial0/1/0` **4/4** |
+| generated DHCP lab | four PCs took leases from the router pool and pinged their gateway and each other 4/4 |
+| generated leased line | traffic crossed `Serial0/1/1 <-> Serial0/1/0` 4/4 |
 
-Three defects had made every generated WAN lab unopenable, each hiding the next:
-a donor that was *rejected* still rewrote the request, so a planned serial link
-became copper before any other donor could serve it; interface names were
-invented from an assumed switch model instead of read from the device; and
-serial cables carried no clocking end. Two of the three were invisible until the
-open check itself was fixed — it had been returning false verdicts often enough
-to send investigations after defects that were not there.
+Three defects had made every generated WAN lab unopenable, each hiding the next.
+A donor the selector had *rejected* still rewrote the request, so a planned
+serial link became copper before any other donor could serve it. Interface names
+were invented from an assumed switch model instead of read from the device. And
+serial cables carried no clocking end. Two of the three stayed invisible until
+the open check itself was fixed, since it had been returning false verdicts often
+enough to send investigations after defects that were not there.
 
-Two numbers in this README mean different things and are easy to confuse. The
-generation above is donor-prune generation: a real lab is pruned and rewired to
-match the request. The atlas `generate_ready` count, discussed further down, is a
-stricter per-feature acceptance gate and is still `0` by design — it is not a
-statement that generation does not work.
+Two different numbers in this README both describe generation. The one above is
+donor-prune generation: a real lab is pruned and rewired to match the request.
+The atlas `generate_ready` count further down is a stricter per-feature
+acceptance gate, still `0` by design.
 
 The previous line, the `0.2.3` capability release, was focused on:
 
@@ -640,10 +639,9 @@ Launch ops references:
 ## Azərbaycanca
 
 Bu repo Cisco Packet Tracer 9.x `.pkt` faylları üçün təbii dildən laboratoriya
-quran, mövcud faylı redaktə edən və hər iddiasını ölçü ilə əsaslandıran bir
-skilldir. Məqsəd promptdan gözəl şəkil çıxarmaq deyil — Packet Tracer-in
-həqiqətən **açdığı**, cihazlarının bir-birini **ping etdiyi** fayl vermək,
-alınmayanda isə səbəbini açıq demək.
+qurur, mövcud faylı redaktə edir və hər iddiasını ölçü ilə əsaslandırır. Verdiyi
+fayl Packet Tracer-də açılır və cihazları bir-birini ping edir; alınmayanda
+səbəbini açıq deyir.
 
 ### `0.3.0` nə dəyişdi
 
@@ -652,14 +650,13 @@ Bu, promptun Packet Tracer-in açdığı fayla çevrildiyi ilk buraxılışdır.
 | Ölçü | Nəticə |
 | --- | --- |
 | korpusda qurulan ssenari | 33-dən 32 |
-| onlardan Packet Tracer-in açdığı | **32-dən 32** |
+| onlardan Packet Tracer-in açdığı | 32-dən 32 |
 | testlər | 657 keçdi, 1 ötürüldü |
-| DHCP laboratoriyası | 4 kompüter routerin hovuzundan ünvan aldı, şlüzə və bir-birinə **4/4** ping |
-| icarə xətti (leased line) | trafik `Serial0/1/1 <-> Serial0/1/0` üzərindən **4/4** keçdi |
+| DHCP laboratoriyası | 4 kompüter routerin hovuzundan ünvan aldı, şlüzə və bir-birinə 4/4 ping |
+| icarə xətti (leased line) | trafik `Serial0/1/1 <-> Serial0/1/0` üzərindən 4/4 keçdi |
 
-Ping rəqəmləri faylı oxumaqla deyil, cihazların özündən `ping` işlədilməklə
-alınıb. Bu fərq vacibdir: bu layihədə bütün statik yoxlamaları keçən, amma heç
-nəyin ping etmədiyi laboratoriyalar olub.
+Ping rəqəmləri cihazların özündə `ping` işlədilməklə alınıb. Bu layihədə bütün
+statik yoxlamaları keçən, amma heç nəyin ping etmədiyi laboratoriyalar olub.
 
 ### Nə düzəldildi
 
@@ -668,15 +665,16 @@ gizlədən üç defekt vardı:
 
 1. **Seçilməyən donor tələbi yenidən yazırdı.** Sınanan ilk donor WAN-ı daşıya
    bilmirdisə, planlanmış `R1 Serial0/0/0 <-> R2 Serial0/0/0` xəttini misə
-   çevirirdi — və bundan sonra heç bir mərhələ serial istənildiyini bilmirdi.
-   Yəni topologiya tələbdən yox, donorun formasından çıxırdı.
-2. **Port adları cihazdan alınmırdı, güman edilən modeldən uydurulurdu.** Portlarını
-   `FastEthernet0/1, 1/1 … 9/1` kimi nömrələyən switch-dən `FastEthernet0/2`
-   istənilirdi. Eyni fayl uplink `FastEthernet2/1`-ə keçəndə açılır.
+   çevirirdi, və bundan sonra heç bir mərhələ serial istənildiyini bilmirdi.
+   Topologiya tələbdən yox, donorun formasından çıxırdı.
+2. **Port adları cihazdan alınmırdı, güman edilən modeldən uydurulurdu.**
+   Portlarını `FastEthernet0/1, 1/1 … 9/1` kimi nömrələyən switch-dən
+   `FastEthernet0/2` istənilirdi. Eyni fayl uplink `FastEthernet2/1`-ə keçəndə
+   açılır.
 3. **Serial kabelin clock ucu (DCE) elan olunmurdu.** Donorların hər serial
    xəttində var idi, bizimkilərin heç birində yox.
 
-Bunlardan ikisi yalnız **ölçü aləti düzəldiləndən sonra** görünə bildi: açılış
+Bunlardan ikisi yalnız ölçü aləti düzəldiləndən sonra görünə bildi. Açılış
 yoxlaması eyni fayla beş sınaqdan ikisində yalan cavab verirdi.
 
 ### Necə işləyir
@@ -684,7 +682,7 @@ yoxlaması eyni fayla beş sınaqdan ikisində yalan cavab verirdi.
 Skill promptu ssenari ailəsinə və tələb olunan imkanlara ayırır, uyğun donor
 laboratoriya seçir, onu tələbə uyğun budayıb yenidən kabelləyir, sonra nəticəni
 yoxlayır. Donor, runtime və ya sübut zəifdirsə, yarımçıq fayl vermək əvəzinə
-səbəbli imtina qaytarır — faylı korlamaqdansa nəyin çatışmadığını demək daha
+səbəbli imtina qaytarır. Faylı korlamaqdansa nəyin çatışmadığını demək daha
 təhlükəsizdir.
 
 ### Başlamaq üçün
