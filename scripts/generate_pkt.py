@@ -7810,6 +7810,8 @@ def generate_from_prompt(
     _align_dhcp_pools_with_interfaces(root)
     _group_hosts_under_their_switch(root)
     _separate_overlapping_devices(root)
+    # After the separation pass, so a leftover nudged sideways is still pulled in.
+    _compact_stray_devices(root)
     _save_running_config_to_startup(root)
     _annotate_generated_lab(root, blueprint, prepared_plan)
     prune_unused_images(root)
