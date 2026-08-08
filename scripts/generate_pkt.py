@@ -2581,6 +2581,10 @@ def _write_pkt_root(root: ET.Element, pkt_path: Path, xml_path: Path | None = No
     # gateway, so the host on it is isolated whatever else is right.
     _place_hosts_in_a_vlan(root)
     _serve_every_populated_vlan(root)
+    # Again, now that new VLANs exist: the router-facing trunk lists the
+    # VLANs it may carry, and it was written before those VLANs were
+    # created -- so their hosts had a gateway the trunk would not pass.
+    _trunk_router_on_a_stick(root)
     _put_workstations_on_dhcp(root)
     # Snooping without a trusted uplink eats every offer the router sends.
     _trust_uplinks_for_dhcp_snooping(root)
@@ -9358,6 +9362,10 @@ def generate_from_prompt(
     # gateway, so the host on it is isolated whatever else is right.
     _place_hosts_in_a_vlan(root)
     _serve_every_populated_vlan(root)
+    # Again, now that new VLANs exist: the router-facing trunk lists the
+    # VLANs it may carry, and it was written before those VLANs were
+    # created -- so their hosts had a gateway the trunk would not pass.
+    _trunk_router_on_a_stick(root)
     _put_workstations_on_dhcp(root)
     # Snooping without a trusted uplink eats every offer the router sends.
     _trust_uplinks_for_dhcp_snooping(root)
