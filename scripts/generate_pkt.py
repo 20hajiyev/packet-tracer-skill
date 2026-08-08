@@ -2588,6 +2588,9 @@ def _write_pkt_root(root: ET.Element, pkt_path: Path, xml_path: Path | None = No
     _put_workstations_on_dhcp(root)
     # Snooping without a trusted uplink eats every offer the router sends.
     _trust_uplinks_for_dhcp_snooping(root)
+    # Last: the standby gateway takes the address the hosts already use,
+    # so nothing written before it has to change.
+    _add_hsrp_gateway_redundancy(root)
     _group_hosts_under_their_switch(root)
     _separate_overlapping_devices(root)
     # After the separation pass, so a leftover nudged sideways is still pulled in.
@@ -4850,6 +4853,147 @@ def _align_router_access_vlan(root: ET.Element) -> list[str]:
             f"{switch.findtext('./ENGINE/NAME') or ''}:{port} moved to VLAN {wanted} (the hosts' VLAN)"
         )
     return notes
+
+
+def _add_hsrp_gateway_redundancy(root: ET.Element) -> list[str]:
+    """Give the VLAN gateways a standby router.
+
+    `hsrp olsun` parsed, and nothing came of it: the only implementation here
+    is `set_hsrp_ipv6`, so an IPv4 lab asked for HSRP and got a configuration
+    with no `standby` line anywhere. Measured on the 140-device enterprise
+    lab -- eight routers, five of them with no cable at all.
+
+    The arrangement is the one the specification asks for and the one every
+    textbook uses: the address the hosts already point at becomes the virtual
+    one, and the two routers move aside to .2 and .3. Nothing the hosts or the
+    DHCP pools say has to change, which is what makes it safe to add last.
+
+        10.10.30.1   virtual, what the hosts use
+        10.10.30.2   primary, priority 110, preempt
+        10.10.30.3   standby
+
+    The second router is one the topology already contains and left uncabled,
+    trunked to the same switch as the first: a standby gateway on a different
+    switch would be a different lab.
+    """
+    from pkt_editor import _ensure_link
+
+    devices = {
+        (device.findtext("./ENGINE/SAVE_REF_ID") or "").strip(): device
+        for device in root.findall(".//DEVICES/DEVICE")
+    }
+    switch_types = {"Switch", "MultiLayerSwitch"}
+    cabled: set[str] = set()
+    used_ports: set[tuple[str, str]] = set()
+    primary: tuple[ET.Element, str, ET.Element, str] | None = None
+    for link in root.findall(".//LINKS/LINK"):
+        cable = link.find("./CABLE")
+        if cable is None:
+            continue
+        refs = [(cable.findtext(tag) or "").strip() for tag in ("FROM", "TO")]
+        ports = [node.text or "" for node in cable.findall("PORT")]
+        if len(ports) < 2:
+            continue
+        for index, ref in enumerate(refs):
+            device = devices.get(ref)
+            if device is not None:
+                cabled.add((device.findtext("./ENGINE/NAME") or "").strip())
+                used_ports.add(((device.findtext("./ENGINE/NAME") or "").strip(), ports[index]))
+        for near, far in ((0, 1), (1, 0)):
+            router = devices.get(refs[near])
+            switch = devices.get(refs[far])
+            if router is None or switch is None or primary is not None:
+                continue
+            if (router.findtext("./ENGINE/TYPE") or "") != "Router":
+                continue
+            if (switch.findtext("./ENGINE/TYPE") or "") not in switch_types:
+                continue
+            if _router_subinterface_vlans(router, ports[near]):
+                primary = (router, ports[near], switch, ports[far])
+
+    if primary is None:
+        return []
+    router, router_port, switch, switch_port = primary
+    spare = next(
+        (
+            device
+            for device in root.findall(".//DEVICES/DEVICE")
+            if (device.findtext("./ENGINE/TYPE") or "") == "Router"
+            and (device.findtext("./ENGINE/NAME") or "").strip() not in cabled
+            and port_exists(device, router_port)
+        ),
+        None,
+    )
+    if spare is None:
+        return []
+
+    vlans = _router_subinterface_vlans(router, router_port)
+    subnets = _vlan_subnets_from_router(root)
+    shared = [vlan for vlan in vlans if subnets.get(vlan)]
+    if not shared:
+        return []
+
+    switch_name = (switch.findtext("./ENGINE/NAME") or "").strip()
+    free = next(
+        (
+            f"FastEthernet0/{index}"
+            for index in range(1, 25)
+            if (switch_name, f"FastEthernet0/{index}") not in used_ports
+            and port_exists(switch, f"FastEthernet0/{index}")
+        ),
+        "",
+    )
+    if not free:
+        return []
+
+    spare_name = (spare.findtext("./ENGINE/NAME") or "").strip()
+    _ensure_link(root, spare_name, router_port, switch_name, free, "copper")
+
+    allowed = ",".join(shared)
+    body = [" switchport mode trunk", f" switchport trunk allowed vlan {allowed}"]
+    if (switch.findtext("./ENGINE/TYPE") or "") == "MultiLayerSwitch":
+        body.insert(0, " switchport trunk encapsulation dot1q")
+    switch_config = switch.find("./ENGINE/RUNNINGCONFIG")
+    if switch_config is not None:
+        _set_config_block(switch_config, f"interface {free}", body)
+
+    def standby_block(subnet: str, vlan: str, address: str, priority: int | None) -> list[str]:
+        lines = [
+            f" ip address {address} 255.255.255.0",
+            f" standby {vlan} ip {subnet}.1",
+        ]
+        if priority is not None:
+            lines.append(f" standby {vlan} priority {priority}")
+            lines.append(f" standby {vlan} preempt")
+        return lines
+
+    config = router.find("./ENGINE/RUNNINGCONFIG")
+    spare_config = spare.find("./ENGINE/RUNNINGCONFIG")
+    if config is None or spare_config is None:
+        return []
+    for vlan in shared:
+        subnet = subnets[vlan]
+        _set_config_block(
+            config, f"interface {router_port}.{vlan}", standby_block(subnet, vlan, f"{subnet}.2", 110)
+        )
+        for text in (
+            f"interface {router_port}.{vlan}",
+            f" description VLAN{vlan} standby",
+            f" encapsulation dot1Q {vlan}",
+            *standby_block(subnet, vlan, f"{subnet}.3", None),
+            "!",
+        ):
+            node = ET.SubElement(spare_config, "LINE")
+            node.text = text
+    for text in (f"interface {router_port}", " no shutdown", "!"):
+        node = ET.SubElement(spare_config, "LINE")
+        node.text = text
+
+    name = (router.findtext("./ENGINE/NAME") or "").strip()
+    return [
+        f"HSRP on {len(shared)} VLAN(s): {name} .2 priority 110, {spare_name} .3, "
+        f"virtual .1 -- the address the hosts already use"
+    ]
 
 
 def _trust_uplinks_for_dhcp_snooping(root: ET.Element) -> list[str]:
@@ -7461,6 +7605,14 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
                     for member in seed_members
                     if _device_kind(member) == kind
                 ]
+                # Truncated on purpose. A seed group with three PCs cannot fill
+                # a target that wants eight, and cloning the same member twice
+                # to make up the difference was measured and reverted: it took
+                # the 100-PC lab from 140 devices to 65 and from 13 undelivered
+                # devices to 88. Whatever consumes these names downstream
+                # cannot have one source duplicated twice in a batch, so the
+                # shortfall belongs in the donor -- a group with more hosts --
+                # rather than here.
                 seed_hosts.extend(matching[:count])
             # Emitted after the rename/prune pass, not here. The verified
             # experiment duplicated a group *after* all other mutations, from a
@@ -7485,7 +7637,11 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
             # which was read before duplication. Register them so the rename and
             # link-reuse logic downstream sees the copies as donor-provided —
             # otherwise it asks to *create* a host link, which is refused.
-            for host in seed_hosts:
+            # `enumerate`, not `.index`: a seed member cloned twice appears
+            # twice in `seed_hosts`, and looking the name up returns the first
+            # position both times -- so the second clone would be registered
+            # under the first one's name and arrive with no cable.
+            for position, host in enumerate(seed_hosts):
                 original = next(
                     (
                         link
@@ -7498,7 +7654,7 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
                     continue
                 cloned = dict(original)
                 cloned["from"] = duplicate_name
-                cloned["to"] = f"{duplicate_name}-H{seed_hosts.index(host) + 1}"
+                cloned["to"] = f"{duplicate_name}-H{position + 1}"
                 donor_links.append(cloned)
             members_by_type: dict[str, list[dict[str, object]]] = {}
             for member in cloned_members:
@@ -9369,6 +9525,9 @@ def generate_from_prompt(
     _put_workstations_on_dhcp(root)
     # Snooping without a trusted uplink eats every offer the router sends.
     _trust_uplinks_for_dhcp_snooping(root)
+    # Last: the standby gateway takes the address the hosts already use,
+    # so nothing written before it has to change.
+    _add_hsrp_gateway_redundancy(root)
     _group_hosts_under_their_switch(root)
     _separate_overlapping_devices(root)
     # After the separation pass, so a leftover nudged sideways is still pulled in.
