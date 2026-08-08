@@ -2540,6 +2540,10 @@ def _write_pkt_root(root: ET.Element, pkt_path: Path, xml_path: Path | None = No
     _assign_unique_interface_addresses(root)
     _assign_unique_switch_management_ips(root)
     _reconcile_cable_media(root)
+    # First of the configuration repairs: a block for hardware the device does
+    # not have carries the donor's whole address plan into every pass that
+    # reads the router's networks.
+    _drop_config_for_absent_interfaces(root)
     _trunk_uplinks_in_file(root)
     # Before the access-VLAN pass, which would otherwise strip the tagging:
     # a switch port facing router subinterfaces has to be a trunk. The
@@ -2562,6 +2566,9 @@ def _write_pkt_root(root: ET.Element, pkt_path: Path, xml_path: Path | None = No
     # A learned sticky MAC belongs to the donor's device, not to the one now
     # plugged in, and `restrict` drops every frame that does not match it.
     _drop_inherited_sticky_macs(root)
+    # Both ends of every trunk must name the same native VLAN, or spanning
+    # tree blocks the port and the cable carries nothing.
+    _match_trunk_native_vlans(root)
     _align_dhcp_pools_with_interfaces(root)
     _group_hosts_under_their_switch(root)
     _separate_overlapping_devices(root)
@@ -4824,6 +4831,133 @@ def _align_router_access_vlan(root: ET.Element) -> list[str]:
         notes.append(
             f"{switch.findtext('./ENGINE/NAME') or ''}:{port} moved to VLAN {wanted} (the hosts' VLAN)"
         )
+    return notes
+
+
+def _drop_config_for_absent_interfaces(root: ET.Element) -> list[str]:
+    """Delete configuration for interfaces the device does not have.
+
+    Pruning a donor leaves whole interface blocks behind for hardware that is
+    no longer there. On the generated company lab R1 was a 2911 -- ports
+    `GigabitEthernet0/0` .. `0/2` -- and still carried
+    `GigabitEthernet0/0/0.10` through `.50`, an ISR's naming, each with a
+    192.168.x address.
+
+    They are not merely untidy. They are read as real interfaces by everything
+    that reasons about the router's networks, and they carry the donor's whole
+    address plan: `_align_dhcp_pools_with_interfaces` saw pools serving
+    192.168.30.0 "matching an interface" and left them pointing at a network
+    no cable reaches, so the lab had DHCP configured and handed out nothing.
+
+    A block is removed only when the device's own port list says the parent
+    does not exist, so a subinterface of a real port is never touched.
+    """
+    dropped: list[str] = []
+    for device in root.findall(".//DEVICES/DEVICE"):
+        for section in ("RUNNINGCONFIG", "STARTUPCONFIG"):
+            config = device.find(f"./ENGINE/{section}")
+            if config is None:
+                continue
+            removing = False
+            removed_here: list[str] = []
+            for node in list(config.findall("LINE")):
+                text = (node.text or "")
+                stripped = text.strip()
+                if stripped.startswith("interface "):
+                    name = stripped.split(None, 1)[1]
+                    parent = name.split(".", 1)[0]
+                    removing = not port_exists(device, parent)
+                    if removing:
+                        removed_here.append(name)
+                        config.remove(node)
+                    continue
+                if removing and (text.startswith((" ", "\t")) or stripped == "!"):
+                    config.remove(node)
+                    continue
+                removing = False
+            if removed_here and section == "RUNNINGCONFIG":
+                dropped.append(
+                    f"{device.findtext('./ENGINE/NAME') or ''}: dropped {len(removed_here)} "
+                    f"block(s) for absent interfaces ({', '.join(removed_here[:3])})"
+                )
+    return dropped
+
+
+def _match_trunk_native_vlans(root: ET.Element) -> list[str]:
+    """Both ends of a trunk have to agree on the native VLAN.
+
+    One end saying `switchport trunk native vlan 99` while the other says
+    nothing -- which means VLAN 1 -- is a mismatch, and Packet Tracer does not
+    let it pass quietly. Measured on the generated company lab, in SW2's own
+    log:
+
+        %CDP-4-NATIVE_VLAN_MISMATCH: ... Gi0/1 (99), with SW5 Fa0/2 (1)
+        %SPANTREE-2-BLOCK_PVID_LOCAL: Blocking Gi0/1 on VLAN0099
+
+    Spanning tree blocks the port, so the switch is cabled, configured, shown
+    as up, and carrying nothing. Three of the four inter-switch trunks were
+    like that: the access switches took `native vlan 99` from the plan and the
+    core's side of the same cable was written by the uplink pass, which never
+    mentioned a native VLAN.
+
+    The end that names one wins, because that is the deliberate choice; VLAN 1
+    is only ever the default nobody asked for.
+    """
+    devices = {
+        (device.findtext("./ENGINE/SAVE_REF_ID") or "").strip(): device
+        for device in root.findall(".//DEVICES/DEVICE")
+    }
+    switch_types = {"Switch", "MultiLayerSwitch"}
+
+    def native_of(device: ET.Element, port: str) -> str:
+        inside = False
+        for node in device.findall("./ENGINE/RUNNINGCONFIG/LINE"):
+            line = (node.text or "").strip()
+            if line.startswith("interface "):
+                inside = line == f"interface {port}"
+            elif inside:
+                match = re.match(r"^switchport trunk native vlan (\d+)$", line)
+                if match:
+                    return match.group(1)
+        return ""
+
+    notes: list[str] = []
+    for link in root.findall(".//LINKS/LINK"):
+        cable = link.find("./CABLE")
+        if cable is None:
+            continue
+        refs = [(cable.findtext(tag) or "").strip() for tag in ("FROM", "TO")]
+        ports = [node.text or "" for node in cable.findall("PORT")]
+        if len(ports) < 2:
+            continue
+        left, right = devices.get(refs[0]), devices.get(refs[1])
+        if left is None or right is None:
+            continue
+        if (left.findtext("./ENGINE/TYPE") or "") not in switch_types:
+            continue
+        if (right.findtext("./ENGINE/TYPE") or "") not in switch_types:
+            continue
+        natives = [native_of(left, ports[0]), native_of(right, ports[1])]
+        if natives[0] == natives[1]:
+            continue
+        wanted = natives[0] or natives[1]
+        if not wanted:
+            continue
+        for device, port, current in ((left, ports[0], natives[0]), (right, ports[1], natives[1])):
+            if current == wanted:
+                continue
+            config = device.find("./ENGINE/RUNNINGCONFIG")
+            if config is None:
+                continue
+            _set_config_block(
+                config,
+                f"interface {port}",
+                [" switchport mode trunk", f" switchport trunk native vlan {wanted}"],
+            )
+            notes.append(
+                f"{device.findtext('./ENGINE/NAME') or ''}:{port} native VLAN "
+                f"{current or '1'} -> {wanted}"
+            )
     return notes
 
 
@@ -8711,7 +8845,12 @@ def generate_from_prompt(
     # serial: a cable demoted to copper must lose its clocking end, and one
     # promoted to serial must gain one.
     _declare_serial_dce_ends(root)
+    # First of the configuration repairs: a block for hardware the device does
+    # not have carries the donor's whole address plan into every pass that
+    # reads the router's networks.
+    absent_notes = _drop_config_for_absent_interfaces(root)
     trunk_notes = _trunk_uplinks_in_file(root)
+    trunk_notes += absent_notes
     # Before the access-VLAN pass, which would otherwise strip the tagging:
     # a switch port facing router subinterfaces has to be a trunk. The
     # subinterfaces move to the cabled port first, or there is nothing there
@@ -8730,6 +8869,9 @@ def generate_from_prompt(
     # A learned sticky MAC belongs to the donor's device, not to the one now
     # plugged in, and `restrict` drops every frame that does not match it.
     trunk_notes += _drop_inherited_sticky_macs(root)
+    # Both ends of every trunk must name the same native VLAN, or spanning
+    # tree blocks the port and the cable carries nothing.
+    trunk_notes += _match_trunk_native_vlans(root)
     _stamp_target_version(root)
     unexpected_workspace_issues = _unexpected_workspace_issues(donor_root, root)
     if unexpected_workspace_issues:
