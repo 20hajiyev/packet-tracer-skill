@@ -2591,6 +2591,8 @@ def _write_pkt_root(root: ET.Element, pkt_path: Path, xml_path: Path | None = No
     # Last: the standby gateway takes the address the hosts already use,
     # so nothing written before it has to change.
     _add_hsrp_gateway_redundancy(root)
+    # A router with no path to another router carries none of its routes.
+    _mesh_routers_with_point_to_point_links(root)
     _group_hosts_under_their_switch(root)
     _separate_overlapping_devices(root)
     # After the separation pass, so a leftover nudged sideways is still pulled in.
@@ -5130,6 +5132,145 @@ def _place_hosts_in_a_vlan(root: ET.Element) -> list[str]:
     return placed
 
 
+def _mesh_routers_with_point_to_point_links(root: ET.Element) -> list[str]:
+    """Join the routers to each other on /30 links.
+
+    A campus drawing is mostly routers wired to each other -- `10.10.10.0/30`,
+    `10.10.10.4/30`, `10.10.10.8/30` and so on -- and the generated labs had
+    routers standing alone: eight of them in the enterprise lab, five with no
+    cable at all. A router with no path to another router cannot carry a route
+    from it, so OSPF had nothing to exchange.
+
+    Each pair takes the next /30 and both ends are advertised, which is what
+    makes the mesh do something rather than merely exist. Only interfaces the
+    device really has are used, and a router already carrying the VLAN trunk
+    keeps it -- the trunk is its job, and a second address on the same port
+    would take it away.
+    """
+    from pkt_editor import _ensure_link
+
+    routers = [
+        device
+        for device in root.findall(".//DEVICES/DEVICE")
+        if (device.findtext("./ENGINE/TYPE") or "") == "Router"
+    ]
+    if len(routers) < 2:
+        return []
+
+    busy: set[tuple[str, str]] = set()
+    devices_by_ref = {
+        (device.findtext("./ENGINE/SAVE_REF_ID") or "").strip(): device
+        for device in root.findall(".//DEVICES/DEVICE")
+    }
+    for link in root.findall(".//LINKS/LINK"):
+        cable = link.find("./CABLE")
+        if cable is None:
+            continue
+        refs = [(cable.findtext(tag) or "").strip() for tag in ("FROM", "TO")]
+        ports = [node.text or "" for node in cable.findall("PORT")]
+        for index, ref in enumerate(refs):
+            device = devices_by_ref.get(ref)
+            if device is not None and index < len(ports):
+                busy.add(((device.findtext("./ENGINE/NAME") or "").strip(), ports[index]))
+
+    def free_port(router: ET.Element) -> str:
+        name = (router.findtext("./ENGINE/NAME") or "").strip()
+        for candidate in donor_interface_names(router) or []:
+            if candidate.startswith(("GigabitEthernet", "FastEthernet")) and "." not in candidate:
+                if (name, candidate) not in busy and port_exists(router, candidate):
+                    return candidate
+        for shape in ("GigabitEthernet0/{n}", "FastEthernet0/{n}"):
+            for index in range(0, 4):
+                candidate = shape.format(n=index)
+                if (name, candidate) not in busy and port_exists(router, candidate):
+                    return candidate
+        return ""
+
+    def octets(value: int) -> str:
+        return ".".join(str((value >> shift) & 0xFF) for shift in (24, 16, 8, 0))
+
+    base = _address_to_int("10.255.0.0") or 0
+    notes: list[str] = []
+    made = 0
+    for position, left in enumerate(routers):
+        for right in routers[position + 1 :]:
+            left_port, right_port = free_port(left), free_port(right)
+            if not left_port or not right_port:
+                continue
+            left_name = (left.findtext("./ENGINE/NAME") or "").strip()
+            right_name = (right.findtext("./ENGINE/NAME") or "").strip()
+            network = base + made * 4
+            _ensure_link(root, left_name, left_port, right_name, right_port, "copper")
+            busy.add((left_name, left_port))
+            busy.add((right_name, right_port))
+            for device, port, address in (
+                (left, left_port, network + 1),
+                (right, right_port, network + 2),
+            ):
+                config = device.find("./ENGINE/RUNNINGCONFIG")
+                if config is None:
+                    continue
+                _set_config_block(
+                    config,
+                    f"interface {port}",
+                    [
+                        f" description point-to-point to {right_name if device is left else left_name}",
+                        f" ip address {octets(address)} 255.255.255.252",
+                        " ip ospf network point-to-point",
+                        " no shutdown",
+                    ],
+                )
+                if any(
+                    (node.text or "").strip().startswith("router ospf")
+                    for node in config.findall("LINE")
+                ):
+                    _set_config_block(
+                        config,
+                        "router ospf 1",
+                        [f" network {octets(network)} 0.0.0.3 area 0"],
+                    )
+            notes.append(f"{left_name}:{left_port} <-> {right_name}:{right_port} {octets(network)}/30")
+            made += 1
+    if not notes:
+        return []
+    return [f"{made} point-to-point link(s): " + "; ".join(notes[:5])]
+
+
+def _host_mask_on_port(device: ET.Element) -> str:
+    """The mask a host is actually using, or an empty string."""
+    for port in device.findall(".//PORT"):
+        mask = (port.findtext("SUBNET") or "").strip()
+        if re.fullmatch(r"\d+\.\d+\.\d+\.\d+", mask) and mask != "0.0.0.0":
+            return mask
+    return ""
+
+
+def _pool_window(network: str, mask: str) -> tuple[str, str, str]:
+    """Where a pool's reserved range ends and its handout range begins.
+
+    Half the subnet is kept back for the gateway, the servers and the printers
+    that are addressed by hand, and the rest is handed out. On a /24 that is
+    the familiar .1 to .99 reserved and .100 upwards served; on a /26 it is .1
+    to .30 and .31 upwards, which is the point of doing the arithmetic rather
+    than writing .99 everywhere -- a /26 has no .99, so the excluded range
+    covered the whole subnet and the pool had nothing left to give.
+    """
+    base = _address_to_int(network + ".0") if network.count(".") == 2 else _address_to_int(network)
+    mask_value = _address_to_int(mask)
+    if base is None or mask_value is None:
+        return "", "", ""
+    size = (~mask_value) & 0xFFFFFFFF
+    if size < 3:
+        return "", "", ""
+    start = (base & mask_value) + 1
+    half = (base & mask_value) + max(2, size // 2)
+
+    def text(value: int) -> str:
+        return ".".join(str((value >> shift) & 0xFF) for shift in (24, 16, 8, 0))
+
+    return text(start), text(half - 1), text(half)
+
+
 def _serve_every_populated_vlan(root: ET.Element) -> list[str]:
     """Give every VLAN that carries hosts a gateway and a pool.
 
@@ -5159,6 +5300,10 @@ def _serve_every_populated_vlan(root: ET.Element) -> list[str]:
     # them were on. The hosts decide; 10.10.<vlan> is only the fallback for a
     # VLAN whose hosts carry no address yet.
     host_subnets: dict[str, Counter[str]] = {}
+    # And with what mask. A VLAN plan that uses /26 or /27 -- as a real one
+    # does -- gets a gateway and a pool of that size rather than a /24 nobody
+    # asked for.
+    host_masks: dict[str, Counter[str]] = {}
     router_trunk: tuple[ET.Element, str] | None = None
     for link in root.findall(".//LINKS/LINK"):
         cable = link.find("./CABLE")
@@ -5199,6 +5344,9 @@ def _serve_every_populated_vlan(root: ET.Element) -> list[str]:
                             host_subnets.setdefault(vlan, Counter())[
                                 text.rsplit(".", 1)[0]
                             ] += 1
+                            mask = _host_mask_on_port(near_device)
+                            if mask:
+                                host_masks.setdefault(vlan, Counter())[mask] += 1
                             break
                     break
     if router_trunk is None:
@@ -5212,7 +5360,11 @@ def _serve_every_populated_vlan(root: ET.Element) -> list[str]:
     # A subinterface without a pool is half the job: the VLAN routes but hands
     # out no addresses, and its workstations stay on whatever the donor gave
     # them. Both halves are counted separately for that reason.
-    pooled: set[str] = set()
+    # Keyed by network, not by VLAN number: a pool's network says nothing about
+    # which VLAN it serves unless the lab happens to number them alike, and
+    # matching on `10.10.<vlan>` missed every 192.168 pool the addressing pass
+    # had made.
+    pooled_networks: set[str] = set()
     in_pool = False
     for node in config.findall("LINE"):
         text = (node.text or "").strip()
@@ -5220,9 +5372,9 @@ def _serve_every_populated_vlan(root: ET.Element) -> list[str]:
             in_pool = True
             continue
         if in_pool:
-            match = re.match(r"^network 10\.10\.(\d+)\.0 ", text)
+            match = re.match(r"^network (\d+\.\d+\.\d+)\.\d+ ", text)
             if match:
-                pooled.add(match.group(1))
+                pooled_networks.add(match.group(1))
                 in_pool = False
             elif text.startswith(("interface ", "ip dhcp pool", "router ")):
                 in_pool = False
@@ -5232,29 +5384,40 @@ def _serve_every_populated_vlan(root: ET.Element) -> list[str]:
     wanted = sorted(
         (vlan for vlan in populated if vlan != "1" and int(vlan) <= 254), key=int
     )
-    if not any(vlan not in known or vlan not in pooled for vlan in wanted):
+    def already_pooled(vlan: str) -> bool:
+        votes = host_subnets.get(vlan)
+        network = votes.most_common(1)[0][0] if votes else f"10.10.{vlan}"
+        return network in pooled_networks
+
+    if not any(vlan not in known or not already_pooled(vlan) for vlan in wanted):
         return []
 
     added: list[str] = []
     for vlan in wanted:
         votes = host_subnets.get(vlan)
         network = votes.most_common(1)[0][0] if votes else f"10.10.{vlan}"
+        masks = host_masks.get(vlan)
+        mask = masks.most_common(1)[0][0] if masks else "255.255.255.0"
+        first, last_reserved, first_served = _pool_window(network, mask)
+        if not first:
+            mask, = ("255.255.255.0",)
+            first, last_reserved, first_served = _pool_window(network, mask)
         lines: list[str] = []
         if vlan not in known:
             lines += [
                 f"interface {parent}.{vlan}",
                 f" description VLAN{vlan}",
                 f" encapsulation dot1Q {vlan}",
-                f" ip address {network}.1 255.255.255.0",
+                f" ip address {first} {mask}",
                 " ip nat inside",
                 "!",
             ]
-        if vlan not in pooled:
+        if not already_pooled(vlan):
             lines += [
-                f"ip dhcp excluded-address {network}.1 {network}.99",
+                f"ip dhcp excluded-address {first} {last_reserved}",
                 f"ip dhcp pool VLAN{vlan}",
-                f" network {network}.0 255.255.255.0",
-                f" default-router {network}.1",
+                f" network {network}.0 {mask}",
+                f" default-router {first}",
             ]
         if not lines:
             continue
@@ -5264,7 +5427,7 @@ def _serve_every_populated_vlan(root: ET.Element) -> list[str]:
         added.append(
             f"VLAN {vlan}"
             + (" gateway" if vlan not in known else "")
-            + (" pool" if vlan not in pooled else "")
+            + (" pool" if not already_pooled(vlan) else "")
         )
     name = router.findtext("./ENGINE/NAME") or ""
     return [f"{name}: served {len(added)} VLAN(s) that had hosts and no gateway: " + "; ".join(added)]
@@ -5313,7 +5476,8 @@ def _put_workstations_on_dhcp(root: ET.Element) -> list[str]:
         config = device.find("./ENGINE/RUNNINGCONFIG")
         if config is None:
             continue
-        wanted = f"ip dhcp excluded-address {subnet}.1 {subnet}.99"
+        first, last_reserved, _first_served = _pool_window(subnet, "255.255.255.0")
+        wanted = f"ip dhcp excluded-address {first} {last_reserved}"
         if any((node.text or "").strip() == wanted for node in config.findall("LINE")):
             continue
         node = ET.Element("LINE")
@@ -9556,6 +9720,8 @@ def generate_from_prompt(
     # Last: the standby gateway takes the address the hosts already use,
     # so nothing written before it has to change.
     _add_hsrp_gateway_redundancy(root)
+    # A router with no path to another router carries none of its routes.
+    _mesh_routers_with_point_to_point_links(root)
     _group_hosts_under_their_switch(root)
     _separate_overlapping_devices(root)
     # After the separation pass, so a leftover nudged sideways is still pulled in.
