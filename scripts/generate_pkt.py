@@ -41,7 +41,7 @@ from packet_tracer_env import (
 )
 from pkt_builder import build_packet_tracer_xml
 from pkt_codec import decode_pkt_file, decode_pkt_modern, encode_pkt_modern, serialize_pkt_xml
-from pkt_editor import _align_hostname_with_name, _set_config_block, apply_plan_operations, decode_pkt_to_root, edit_pkt_file, inventory_devices, inventory_links, inventory_root
+from pkt_editor import _align_hostname_with_name, _ensure_text, _profile_nodes, _set_config_block, apply_plan_operations, decode_pkt_to_root, edit_pkt_file, inventory_devices, inventory_links, inventory_root
 from pkt_transformer import donor_interface_names, port_capacity, port_exists, transform_from_blueprint
 import pkt_verify
 import usage_ledger
@@ -2570,6 +2570,9 @@ def _write_pkt_root(root: ET.Element, pkt_path: Path, xml_path: Path | None = No
     # tree blocks the port and the cable carries nothing.
     _match_trunk_native_vlans(root)
     _align_dhcp_pools_with_interfaces(root)
+    # After the pools point at real networks: a pool with no client is not
+    # DHCP, and the segmented path never emitted the client half.
+    _put_workstations_on_dhcp(root)
     _group_hosts_under_their_switch(root)
     _separate_overlapping_devices(root)
     # After the separation pass, so a leftover nudged sideways is still pulled in.
@@ -4832,6 +4835,89 @@ def _align_router_access_vlan(root: ET.Element) -> list[str]:
             f"{switch.findtext('./ENGINE/NAME') or ''}:{port} moved to VLAN {wanted} (the hosts' VLAN)"
         )
     return notes
+
+
+def _put_workstations_on_dhcp(root: ET.Element) -> list[str]:
+    """Let the pools actually serve someone.
+
+    A DHCP pool and a DHCP client are two halves of one feature, and only the
+    first half was ever emitted for a segmented lab: `_synthesize_service_ops`
+    puts hosts on DHCP only when the prompt names no VLAN, so every VLAN lab
+    shipped one pool per VLAN with not a single device asking for an address.
+    The prompt said `dhcp olsun`, the configuration showed the pools, and every
+    workstation sat on a static address typed by the generator.
+
+    Workstations move; servers and printers do not. A real network gives the
+    first group addresses and pins the second, so only PCs and laptops are
+    switched over, and the pool is told to keep the low addresses free -- the
+    gateway, the servers on .50, the printers on .60 -- and hand out from .100.
+    """
+    pools: list[tuple[ET.Element, str]] = []
+    for device in root.findall(".//DEVICES/DEVICE"):
+        if (device.findtext("./ENGINE/TYPE") or "") != "Router":
+            continue
+        config = device.find("./ENGINE/RUNNINGCONFIG")
+        if config is None:
+            continue
+        in_pool = False
+        for node in config.findall("LINE"):
+            text = (node.text or "").strip()
+            if text.startswith("ip dhcp pool"):
+                in_pool = True
+                continue
+            if in_pool:
+                match = re.match(r"^network (\d+\.\d+\.\d+)\.\d+ 255\.255\.255\.0$", text)
+                if match:
+                    pools.append((device, match.group(1)))
+                    in_pool = False
+                elif text.startswith(("interface ", "ip dhcp pool", "router ")):
+                    in_pool = False
+    if not pools:
+        return []
+
+    served = {subnet for _device, subnet in pools}
+    for device, subnet in pools:
+        config = device.find("./ENGINE/RUNNINGCONFIG")
+        if config is None:
+            continue
+        wanted = f"ip dhcp excluded-address {subnet}.1 {subnet}.99"
+        if any((node.text or "").strip() == wanted for node in config.findall("LINE")):
+            continue
+        node = ET.Element("LINE")
+        node.text = wanted
+        children = list(config)
+        first_pool = next(
+            (
+                child
+                for child in children
+                if (child.text or "").strip().startswith("ip dhcp pool")
+            ),
+            None,
+        )
+        config.insert(children.index(first_pool) if first_pool is not None else len(children), node)
+
+    moved: list[str] = []
+    for device in root.findall(".//DEVICES/DEVICE"):
+        kind = _normalize_device_type(device.findtext("./ENGINE/TYPE") or "")
+        if kind not in {"PC", "Laptop"}:
+            continue
+        address = ""
+        for node in device.iter():
+            text = (node.text or "").strip()
+            if node.tag.upper() == "IP" and re.fullmatch(r"\d+\.\d+\.\d+\.\d+", text):
+                address = text
+                break
+        if not address or address.rsplit(".", 1)[0] not in served:
+            continue
+        for port in device.findall(".//PORT"):
+            if port.find("PORT_DHCP_ENABLE") is not None:
+                _ensure_text(port, "PORT_DHCP_ENABLE", "true")
+        engine = device.find("./ENGINE")
+        if engine is not None:
+            for profile in _profile_nodes(engine):
+                _ensure_text(profile, "DHCP_ENABLED", "1")
+        moved.append(f"{device.findtext('./ENGINE/NAME') or ''}: {address} -> DHCP")
+    return moved
 
 
 def _drop_config_for_absent_interfaces(root: ET.Element) -> list[str]:
@@ -8878,6 +8964,9 @@ def generate_from_prompt(
         raise ValueError("; ".join(unexpected_workspace_issues))
     validate_donor_coherence(donor_root, root)
     _align_dhcp_pools_with_interfaces(root)
+    # After the pools point at real networks: a pool with no client is not
+    # DHCP, and the segmented path never emitted the client half.
+    _put_workstations_on_dhcp(root)
     _group_hosts_under_their_switch(root)
     _separate_overlapping_devices(root)
     # After the separation pass, so a leftover nudged sideways is still pulled in.
