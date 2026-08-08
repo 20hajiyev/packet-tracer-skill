@@ -99,3 +99,21 @@ independently in more than one place, and nothing compares the derivations.**
   three different things, and none of them is a working network.
 - Two repairs deep without the measured outcome moving is the signal to go
   upstream, not the signal to write a third repair.
+
+## Addendum — the same lesson, a third time
+
+DHCP looked broken twice and was not. Reading a client's address immediately
+after opening a lab shows `0.0.0.0`, because the lease has not completed yet;
+reading it again a few seconds later shows the address. The control settled
+it: `corpus_router_dhcp`, which is known to work, reads `0.0.0.0` on the first
+look too.
+
+That is the same shape as the cold-ARP ping and the stuck bridge: **the first
+observation after opening a document is not a measurement.** The protocol now
+has three parts, not two — verify the document, discard the first reading,
+then measure — and it applies to every property, not only to pings.
+
+Measured on the generated company lab once the leases completed: PC9, PC5 and
+PC1 on 10.10.10.100/.101/.102, PC10, PC6 and PC2 on 10.10.20.100/.101/.102,
+PC8 and PC4 on 10.10.50.100/.101 -- all from the pools, with the servers still
+on .50 and the printers on .60 where the exclusions keep them.
