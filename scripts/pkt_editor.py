@@ -1592,13 +1592,13 @@ def _apply_switch_op(device: ET.Element, operation: dict[str, object]) -> None:
         for target in _config_targets(device):
             _append_unique_config_lines(target, ["ip dhcp snooping", f"ip dhcp snooping vlan {operation['vlan']}"])
             if operation.get("trust_port"):
-                _append_config_block(target, f"interface {operation['trust_port']}", [" ip dhcp snooping trust"])
+                _set_config_block(target, f"interface {operation['trust_port']}", [" ip dhcp snooping trust"])
         return
     elif operation["op"] == "set_dai":
         for target in _config_targets(device):
             _append_unique_config_lines(target, ["ip dhcp snooping", f"ip dhcp snooping vlan {operation['vlan']}", f"ip arp inspection vlan {operation['vlan']}"])
             if operation.get("trust_port"):
-                _append_config_block(target, f"interface {operation['trust_port']}", [" ip arp inspection trust", " ip dhcp snooping trust"])
+                _set_config_block(target, f"interface {operation['trust_port']}", [" ip arp inspection trust", " ip dhcp snooping trust"])
         return
     elif operation["op"] == "set_port_security":
         body = [" switchport mode access", " switchport port-security"]
@@ -1607,7 +1607,7 @@ def _apply_switch_op(device: ET.Element, operation: dict[str, object]) -> None:
         if operation.get("violation"):
             body.append(f" switchport port-security violation {operation['violation']}")
         for target in _config_targets(device):
-            _append_config_block(target, f"interface {operation['port']}", body)
+            _set_config_block(target, f"interface {operation['port']}", body)
         return
     elif operation["op"] == "set_lldp":
         for target in _config_targets(device):
@@ -1615,7 +1615,7 @@ def _apply_switch_op(device: ET.Element, operation: dict[str, object]) -> None:
         return
     elif operation["op"] == "set_rep":
         for target in _config_targets(device):
-            _append_config_block(target, f"interface {operation['interface']}", [f" rep segment {operation['segment']}"])
+            _set_config_block(target, f"interface {operation['interface']}", [f" rep segment {operation['segment']}"])
         return
     elif operation["op"] == "set_span":
         for target in _config_targets(device):
@@ -1634,7 +1634,7 @@ def _apply_switch_op(device: ET.Element, operation: dict[str, object]) -> None:
         mode = str(operation.get("mode") or "auto")
         for target in _config_targets(device):
             _append_unique_config_lines(target, global_lines)
-            _append_config_block(
+            _set_config_block(
                 target,
                 f"interface {operation['interface']}",
                 [f" authentication port-control {mode}", " dot1x pae authenticator"],
@@ -1654,7 +1654,7 @@ def _apply_switch_op(device: ET.Element, operation: dict[str, object]) -> None:
                 f"policy-map {operation['policy_map']}",
                 [f" class {operation['class_map']}", f"  {action}"],
             )
-            _append_config_block(
+            _set_config_block(
                 target,
                 f"interface {operation['interface']}",
                 [f" service-policy {operation['direction']} {operation['policy_map']}"],
@@ -1673,8 +1673,8 @@ def _apply_switch_op(device: ET.Element, operation: dict[str, object]) -> None:
         interfaces = [str(interface) for interface in operation.get("interfaces", []) if str(interface).strip()]
         for target in _config_targets(device):
             for interface_name in interfaces:
-                _append_config_block(target, f"interface {interface_name}", [f" channel-group {channel} mode {mode}"])
-            _append_config_block(target, f"interface Port-channel{channel}", [" no shutdown"])
+                _set_config_block(target, f"interface {interface_name}", [f" channel-group {channel} mode {mode}"])
+            _set_config_block(target, f"interface Port-channel{channel}", [" no shutdown"])
         return
     elif operation["op"] == "set_vtp":
         lines = [f"vtp domain {operation['domain']}", f"vtp mode {operation['mode']}"]
@@ -1685,7 +1685,7 @@ def _apply_switch_op(device: ET.Element, operation: dict[str, object]) -> None:
         return
     elif operation["op"] == "set_dtp":
         for target in _config_targets(device):
-            _append_config_block(target, f"interface {operation['interface']}", [f" switchport mode {operation['mode']}"])
+            _set_config_block(target, f"interface {operation['interface']}", [f" switchport mode {operation['mode']}"])
         return
     else:
         return
@@ -1710,7 +1710,7 @@ def _apply_router_op(device: ET.Element, operation: dict[str, object]) -> None:
 def _apply_router_op_inner(device: ET.Element, operation: dict[str, object]) -> None:
     if operation["op"] == "set_subinterface":
         for target in _config_targets(device):
-            _append_config_block(
+            _set_config_block(
                 target,
                 f"interface {operation['subinterface']}",
                 [
@@ -1741,7 +1741,7 @@ def _apply_router_op_inner(device: ET.Element, operation: dict[str, object]) -> 
         return
     elif operation["op"] == "apply_acl":
         for target in _config_targets(device):
-            _append_config_block(target, f"interface {operation['interface']}", [f" ip access-group {operation['acl_name']} {operation['direction']}"])
+            _set_config_block(target, f"interface {operation['interface']}", [f" ip access-group {operation['acl_name']} {operation['direction']}"])
         return
     elif operation["op"] == "enable_ipv6_unicast_routing":
         for target in _config_targets(device):
@@ -1750,7 +1750,7 @@ def _apply_router_op_inner(device: ET.Element, operation: dict[str, object]) -> 
     elif operation["op"] == "set_ipv6_address":
         for target in _config_targets(device):
             _append_unique_config_lines(target, ["ipv6 unicast-routing"])
-            _append_config_block(
+            _set_config_block(
                 target,
                 f"interface {operation['interface']}",
                 [f" ipv6 address {operation['address']}/{operation['prefix']}", " no shutdown"],
@@ -1762,7 +1762,7 @@ def _apply_router_op_inner(device: ET.Element, operation: dict[str, object]) -> 
             body.insert(1, f" ipv6 nd prefix {operation['prefix']}/{operation['prefix_len']}")
         for target in _config_targets(device):
             _append_unique_config_lines(target, ["ipv6 unicast-routing"])
-            _append_config_block(target, f"interface {operation['interface']}", body)
+            _set_config_block(target, f"interface {operation['interface']}", body)
         return
     elif operation["op"] == "set_dhcpv6_pool":
         pool_body = [f" address prefix {operation['prefix']}/{operation['prefix_len']}"]
@@ -1774,26 +1774,26 @@ def _apply_router_op_inner(device: ET.Element, operation: dict[str, object]) -> 
         for target in _config_targets(device):
             _append_unique_config_lines(target, ["ipv6 unicast-routing"])
             _append_config_block(target, f"ipv6 dhcp pool {operation['name']}", pool_body)
-            _append_config_block(target, f"interface {operation['interface']}", interface_body)
+            _set_config_block(target, f"interface {operation['interface']}", interface_body)
         return
     elif operation["op"] == "set_ospfv3_interface":
         process_id = operation["process_id"]
         for target in _config_targets(device):
             _append_unique_config_lines(target, ["ipv6 unicast-routing"])
-            _append_config_block(target, f"interface {operation['interface']}", [f" ipv6 ospf {process_id} area {operation['area']}", " no shutdown"])
+            _set_config_block(target, f"interface {operation['interface']}", [f" ipv6 ospf {process_id} area {operation['area']}", " no shutdown"])
             _append_config_block(target, f"ipv6 router ospf {process_id}", [])
         return
     elif operation["op"] == "set_eigrp_ipv6_interface":
         asn = operation["asn"]
         for target in _config_targets(device):
             _append_unique_config_lines(target, ["ipv6 unicast-routing", "no ipv6 cef"])
-            _append_config_block(target, f"interface {operation['interface']}", [f" ipv6 eigrp {asn}", " no shutdown"])
+            _set_config_block(target, f"interface {operation['interface']}", [f" ipv6 eigrp {asn}", " no shutdown"])
             _append_config_block(target, f"ipv6 router eigrp {asn}", [" no shutdown"])
         return
     elif operation["op"] == "set_ripng_interface":
         for target in _config_targets(device):
             _append_unique_config_lines(target, ["ipv6 unicast-routing"])
-            _append_config_block(target, f"interface {operation['interface']}", [f" ipv6 rip {operation['process_name']} enable", " no shutdown"])
+            _set_config_block(target, f"interface {operation['interface']}", [f" ipv6 rip {operation['process_name']} enable", " no shutdown"])
         return
     elif operation["op"] == "set_hsrp_ipv6":
         # A standby group with no virtual address configures nothing, and the
@@ -1809,7 +1809,7 @@ def _apply_router_op_inner(device: ET.Element, operation: dict[str, object]) -> 
             body.append(f" standby {operation['group']} preempt")
         for target in _config_targets(device):
             _append_unique_config_lines(target, ["ipv6 unicast-routing"])
-            _append_config_block(target, f"interface {operation['interface']}", body)
+            _set_config_block(target, f"interface {operation['interface']}", body)
         return
     elif operation["op"] == "set_ospfv2_network":
         for target in _config_targets(device):
@@ -1839,11 +1839,11 @@ def _apply_router_op_inner(device: ET.Element, operation: dict[str, object]) -> 
         return
     elif operation["op"] == "set_dhcp_relay":
         for target in _config_targets(device):
-            _append_config_block(target, f"interface {operation['interface']}", [f" ip helper-address {operation['helper']}"])
+            _set_config_block(target, f"interface {operation['interface']}", [f" ip helper-address {operation['helper']}"])
         return
     elif operation["op"] == "set_nat_interface":
         for target in _config_targets(device):
-            _append_config_block(target, f"interface {operation['interface']}", [f" ip nat {operation['role']}"])
+            _set_config_block(target, f"interface {operation['interface']}", [f" ip nat {operation['role']}"])
         return
     elif operation["op"] == "set_nat_static":
         for target in _config_targets(device):
@@ -1891,7 +1891,7 @@ def _apply_router_op_inner(device: ET.Element, operation: dict[str, object]) -> 
         for target in _config_targets(device):
             _append_unique_config_lines(target, global_lines)
             if operation.get("interface") and operation.get("direction"):
-                _append_config_block(target, f"interface {operation['interface']}", [f" ip flow {operation['direction']}"])
+                _set_config_block(target, f"interface {operation['interface']}", [f" ip flow {operation['direction']}"])
         return
     elif operation["op"] == "set_gre_tunnel":
         body = []
@@ -1906,7 +1906,7 @@ def _apply_router_op_inner(device: ET.Element, operation: dict[str, object]) -> 
             ]
         )
         for target in _config_targets(device):
-            _append_config_block(target, f"interface {operation['interface']}", body)
+            _set_config_block(target, f"interface {operation['interface']}", body)
         return
     elif operation["op"] == "set_ppp_interface":
         body = [" encapsulation ppp"]
@@ -1914,7 +1914,7 @@ def _apply_router_op_inner(device: ET.Element, operation: dict[str, object]) -> 
             body.append(f" ppp authentication {operation['authentication']}")
         body.append(" no shutdown")
         for target in _config_targets(device):
-            _append_config_block(target, f"interface {operation['interface']}", body)
+            _set_config_block(target, f"interface {operation['interface']}", body)
         return
     elif operation["op"] == "set_ipsec_transform_set":
         for target in _config_targets(device):
@@ -1935,17 +1935,17 @@ def _apply_router_op_inner(device: ET.Element, operation: dict[str, object]) -> 
                 ],
             )
             if operation.get("interface"):
-                _append_config_block(target, f"interface {operation['interface']}", [f" crypto map {operation['map_name']}"])
+                _set_config_block(target, f"interface {operation['interface']}", [f" crypto map {operation['map_name']}"])
         return
     elif operation["op"] == "set_cbac_inspect":
         for target in _config_targets(device):
             _append_unique_config_lines(target, [f"ip inspect name {operation['name']} {operation['protocol']}"])
-            _append_config_block(target, f"interface {operation['interface']}", [f" ip inspect {operation['name']} {operation['direction']}"])
+            _set_config_block(target, f"interface {operation['interface']}", [f" ip inspect {operation['name']} {operation['direction']}"])
         return
     elif operation["op"] == "set_zfw_zone_interface":
         for target in _config_targets(device):
             _append_config_block(target, f"zone security {operation['zone']}", [])
-            _append_config_block(target, f"interface {operation['interface']}", [f" zone-member security {operation['zone']}"])
+            _set_config_block(target, f"interface {operation['interface']}", [f" zone-member security {operation['zone']}"])
         return
     elif operation["op"] == "set_zfw_zone_pair":
         for target in _config_targets(device):
@@ -2010,7 +2010,7 @@ def _apply_router_op_inner(device: ET.Element, operation: dict[str, object]) -> 
 def _apply_management_op(device: ET.Element, operation: dict[str, object]) -> None:
     if operation["op"] == "set_management_vlan":
         for target in _config_targets(device):
-            _append_config_block(
+            _set_config_block(
                 target,
                 f"interface Vlan{operation['vlan']}",
                 [f" ip address {operation['ip']} {_prefix_to_mask(int(operation['prefix']))}", " no shutdown"],

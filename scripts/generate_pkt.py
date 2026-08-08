@@ -2552,6 +2552,16 @@ def _write_pkt_root(root: ET.Element, pkt_path: Path, xml_path: Path | None = No
     # one VLAN and whose port sits in another cannot reach its own subnet.
     _align_host_vlans_to_addresses(root)
     _align_router_gateway(root)
+    # Last, because `_align_router_gateway` writes the gateway onto the
+    # physical cabled interface -- correct for an access link, wrong for a
+    # trunk, where every frame arrives tagged and the address has to sit on
+    # the subinterface for its VLAN. Running before it left VLAN 10 with its
+    # gateway stranded on `GigabitEthernet0/0` and no host able to reach it,
+    # while every other VLAN routed.
+    _move_subinterfaces_to_the_cabled_port(root)
+    # A learned sticky MAC belongs to the donor's device, not to the one now
+    # plugged in, and `restrict` drops every frame that does not match it.
+    _drop_inherited_sticky_macs(root)
     _align_dhcp_pools_with_interfaces(root)
     _group_hosts_under_their_switch(root)
     _separate_overlapping_devices(root)
@@ -4817,6 +4827,40 @@ def _align_router_access_vlan(root: ET.Element) -> list[str]:
     return notes
 
 
+def _drop_inherited_sticky_macs(root: ET.Element) -> list[str]:
+    """Remove sticky MAC addresses the donor's devices left behind.
+
+    `switchport port-security mac-address sticky` is a directive: learn the
+    address of whatever is plugged in. `... sticky 00E0.F925.3A9E` is the
+    result of that learning on the donor's hardware, and a generated lab plugs
+    a different device into the port. The address no longer matches, every
+    frame is a violation, and `restrict` drops them all.
+
+    Measured on the company lab the skill generated: PC1's port on SW1 carried
+    the donor's learned address, PC2's port on SW2 carried none. PC2 reached
+    its gateway and routed across VLANs; PC1 could not reach anything outside
+    its own switch. Same generator, same prompt, one stale line apart.
+
+    The directive stays -- port security is what the prompt asked for. Only the
+    learned address goes, and Packet Tracer learns the new one on first frame.
+    """
+    dropped: list[str] = []
+    for device in root.findall(".//DEVICES/DEVICE"):
+        for section in ("RUNNINGCONFIG", "STARTUPCONFIG"):
+            config = device.find(f"./ENGINE/{section}")
+            if config is None:
+                continue
+            for node in list(config.findall("LINE")):
+                text = (node.text or "").strip()
+                if re.fullmatch(
+                    r"switchport port-security mac-address sticky [0-9A-Fa-f.:-]{12,}", text
+                ):
+                    config.remove(node)
+                    if section == "RUNNINGCONFIG":
+                        dropped.append(f"{device.findtext('./ENGINE/NAME') or ''}: {text}")
+    return dropped
+
+
 def _router_subinterface_vlans(device: ET.Element, physical_port: str) -> list[str]:
     """VLANs the router carries as subinterfaces of `physical_port`."""
     vlans: list[str] = []
@@ -4933,6 +4977,16 @@ def _move_subinterfaces_to_the_cabled_port(root: ET.Element) -> list[str]:
         if len(orphans) != 1:
             continue
         moved_text = (parent_address.text or "").strip()
+        # The subinterface is addressless because it carries `no ip address`.
+        # Leaving that line in place lets IOS apply the address and then wipe
+        # it -- measured: VLAN 10's gateway read 0.0.0.0 in Packet Tracer while
+        # the configuration plainly showed 10.10.10.1 three lines above.
+        for node in list(blocks.get(orphans[0], [])):
+            if (node.text or "").strip() == "no ip address":
+                config_parent = router.find("./ENGINE/RUNNINGCONFIG")
+                if config_parent is not None and node in list(config_parent):
+                    config_parent.remove(node)
+                blocks[orphans[0]].remove(node)
         blocks[orphans[0]].append(parent_address)
         config = router.find("./ENGINE/RUNNINGCONFIG")
         if config is None:
@@ -8654,6 +8708,13 @@ def generate_from_prompt(
     # one VLAN and whose port sits in another cannot reach its own subnet.
     vlan_notes += _align_host_vlans_to_addresses(root)
     gateway_repairs = _align_router_gateway(root)
+    # Last, because `_align_router_gateway` writes the gateway onto the
+    # physical cabled interface -- correct for an access link, wrong for a
+    # trunk, where the address has to sit on the subinterface for its VLAN.
+    trunk_notes += _move_subinterfaces_to_the_cabled_port(root)
+    # A learned sticky MAC belongs to the donor's device, not to the one now
+    # plugged in, and `restrict` drops every frame that does not match it.
+    trunk_notes += _drop_inherited_sticky_macs(root)
     _stamp_target_version(root)
     unexpected_workspace_issues = _unexpected_workspace_issues(donor_root, root)
     if unexpected_workspace_issues:
