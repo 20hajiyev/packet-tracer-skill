@@ -5152,6 +5152,13 @@ def _serve_every_populated_vlan(root: ET.Element) -> list[str]:
     switch_types = {"Switch", "MultiLayerSwitch"}
 
     populated: set[str] = set()
+    # What the hosts in a VLAN are already addressed as. Imposing a scheme here
+    # is how a lab ends up with two address plans: this pass used
+    # 10.10.<vlan>.0/24 while the addressing pass had put that VLAN's hosts on
+    # 192.168.<vlan>.0/24, so the gateway it created served a network none of
+    # them were on. The hosts decide; 10.10.<vlan> is only the fallback for a
+    # VLAN whose hosts carry no address yet.
+    host_subnets: dict[str, Counter[str]] = {}
     router_trunk: tuple[ET.Element, str] | None = None
     for link in root.findall(".//LINKS/LINK"):
         cable = link.find("./CABLE")
@@ -5182,7 +5189,17 @@ def _serve_every_populated_vlan(root: ET.Element) -> list[str]:
                 if line.startswith("interface "):
                     inside = line == f"interface {ports[far]}"
                 elif inside and line.startswith("switchport access vlan "):
-                    populated.add(line.split()[-1])
+                    vlan = line.split()[-1]
+                    populated.add(vlan)
+                    for candidate in near_device.iter():
+                        text = (candidate.text or "").strip()
+                        if candidate.tag.upper() == "IP" and re.fullmatch(
+                            r"\d+\.\d+\.\d+\.\d+", text
+                        ):
+                            host_subnets.setdefault(vlan, Counter())[
+                                text.rsplit(".", 1)[0]
+                            ] += 1
+                            break
                     break
     if router_trunk is None:
         return []
@@ -5220,7 +5237,8 @@ def _serve_every_populated_vlan(root: ET.Element) -> list[str]:
 
     added: list[str] = []
     for vlan in wanted:
-        network = f"10.10.{vlan}"
+        votes = host_subnets.get(vlan)
+        network = votes.most_common(1)[0][0] if votes else f"10.10.{vlan}"
         lines: list[str] = []
         if vlan not in known:
             lines += [
@@ -8429,6 +8447,9 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
             adapted_plan.edit_operations.append({"op": "prune_device", "device": final_name})
             already_pruned.add(final_name)
 
+    # Every switch port a clone has been given, so a port planned for one is
+    # not handed to another.
+    clone_ports_taken: set[tuple[str, str]] = set()
     for clone in pending_host_clones:
         source_final = rename_map.get(str(clone["source"]), str(clone["source"]))
         if source_final in parked_set:
@@ -8464,15 +8485,21 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
                 planned_link = link
                 break
 
-        if planned_port:
+        # A planned port is only good if no earlier clone has taken it. Two
+        # clones can be planned onto the same interface, and trusting the plan
+        # without checking put three pairs of hosts on one port once the donor
+        # grew enough groups for a hundred-host lab to reach this path.
+        if planned_port and (switch_name, planned_port) not in clone_ports_taken:
             switch_port = planned_port
         else:
+            planned_link = None
             used_ports = {
                 str(link[end]["port"])
                 for link in blueprint.get("links", [])
                 for end in ("a", "b")
                 if str(link[end]["dev"]) == switch_name
             }
+            used_ports |= {port for switch, port in clone_ports_taken if switch == switch_name}
             switch_port = next(
                 (
                     candidate
@@ -8491,6 +8518,7 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
                 if gap not in adapted_plan.blocking_gaps:
                     adapted_plan.blocking_gaps.append(gap)
                 continue
+        clone_ports_taken.add((switch_name, switch_port))
         adapted_plan.edit_operations.append(
             {
                 "op": "duplicate_host",
