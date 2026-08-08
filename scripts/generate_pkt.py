@@ -2569,6 +2569,9 @@ def _write_pkt_root(root: ET.Element, pkt_path: Path, xml_path: Path | None = No
     # Both ends of every trunk must name the same native VLAN, or spanning
     # tree blocks the port and the cable carries nothing.
     _match_trunk_native_vlans(root)
+    # After every trunk is settled: port security on a trunk cuts the switch
+    # behind it off entirely.
+    _drop_port_security_from_trunks(root)
     _align_dhcp_pools_with_interfaces(root)
     # After the pools point at real networks: a pool with no client is not
     # DHCP, and the segmented path never emitted the client half.
@@ -4969,6 +4972,52 @@ def _drop_config_for_absent_interfaces(root: ET.Element) -> list[str]:
     return dropped
 
 
+def _drop_port_security_from_trunks(root: ET.Element) -> list[str]:
+    """Port security belongs on an access port, never on a trunk.
+
+    A trunk carries every MAC address behind the switch on the other end, so
+    `switchport port-security maximum 2` on one is a violation waiting for the
+    third host to speak. Measured on the generated company lab: SW1's trunk to
+    SW3 carried port security, SW3 was cut off from the rest of the network,
+    and its whole VLAN 10 -- three workstations -- fell back to APIPA because
+    no DHCP offer could reach them. Every other VLAN leased normally.
+
+    The port-security operation is emitted against a port chosen before the
+    trunks are settled, so the two decisions are made independently and only
+    the cable knows which port ended up carrying a trunk.
+    """
+    dropped: list[str] = []
+    for device in root.findall(".//DEVICES/DEVICE"):
+        if (device.findtext("./ENGINE/TYPE") or "") not in {"Switch", "MultiLayerSwitch"}:
+            continue
+        for section in ("RUNNINGCONFIG", "STARTUPCONFIG"):
+            config = device.find(f"./ENGINE/{section}")
+            if config is None:
+                continue
+            blocks: dict[str, list[ET.Element]] = {}
+            current = ""
+            for node in config.findall("LINE"):
+                text = (node.text or "").strip()
+                if text.startswith("interface "):
+                    current = text.split(None, 1)[1]
+                    blocks.setdefault(current, [])
+                elif current:
+                    blocks.setdefault(current, []).append(node)
+            for port, body in blocks.items():
+                if not any((n.text or "").strip() == "switchport mode trunk" for n in body):
+                    continue
+                removed = [n for n in body if "port-security" in (n.text or "")]
+                for node in removed:
+                    if node in list(config):
+                        config.remove(node)
+                if removed and section == "RUNNINGCONFIG":
+                    dropped.append(
+                        f"{device.findtext('./ENGINE/NAME') or ''}:{port} port security "
+                        f"removed ({len(removed)} line(s)) -- it is a trunk"
+                    )
+    return dropped
+
+
 def _match_trunk_native_vlans(root: ET.Element) -> list[str]:
     """Both ends of a trunk have to agree on the native VLAN.
 
@@ -5623,30 +5672,45 @@ def _align_dhcp_pools_with_interfaces(root: ET.Element) -> list[str]:
         if not interfaces:
             continue
 
-        pools: list[tuple[str, ET.Element, ET.Element | None]] = []
+        # A pool serves a LAN. A /30 is a router-to-router link and never has a
+        # client on it, so it must not be offered as a home for a pool that has
+        # nowhere else to go: measured, a workstation was handed 200.10.0.1/30
+        # -- the ISP's own WAN address -- and two more got /30 masks on a /24
+        # segment, because the search took the first free interface of any
+        # shape.
+        lan_interfaces = [
+            (address, mask)
+            for address, mask in interfaces
+            if (_address_to_int(mask) or 0) <= _address_to_int("255.255.255.0")
+        ]
+
+        pools: list[tuple[str, ET.Element, ET.Element | None, list[ET.Element]]] = []
         pool_name = ""
         network_node: ET.Element | None = None
         gateway_node: ET.Element | None = None
+        block: list[ET.Element] = []
         for line in lines:
             text = (line.text or "").rstrip()
             stripped = text.strip()
             if not text.startswith((" ", "\t")):
                 if pool_name and network_node is not None:
-                    pools.append((pool_name, network_node, gateway_node))
+                    pools.append((pool_name, network_node, gateway_node, block))
                 pool_name = stripped[len("ip dhcp pool ") :] if stripped.startswith("ip dhcp pool ") else ""
                 network_node = None
                 gateway_node = None
+                block = [line] if pool_name else []
                 continue
             if not pool_name:
                 continue
+            block.append(line)
             if stripped.startswith("network "):
                 network_node = line
             elif stripped.startswith("default-router "):
                 gateway_node = line
         if pool_name and network_node is not None:
-            pools.append((pool_name, network_node, gateway_node))
+            pools.append((pool_name, network_node, gateway_node, block))
 
-        for name, network_line, gateway_line in pools:
+        for name, network_line, gateway_line, block in pools:
             parts = (network_line.text or "").split()
             if len(parts) != 3:
                 continue
@@ -5655,15 +5719,24 @@ def _align_dhcp_pools_with_interfaces(root: ET.Element) -> list[str]:
                 continue
             served = {
                 (address, interface_mask)
-                for other_name, other_network, _ in pools
+                for other_name, other_network, _gateway, _block in pools
                 if other_name != name
-                for address, interface_mask in interfaces
+                for address, interface_mask in lan_interfaces
                 if _same_subnet(address, (other_network.text or "").split()[1], interface_mask)
             }
-            replacement = next(
-                (pair for pair in interfaces if pair not in served),
-                interfaces[0],
-            )
+            replacement = next((pair for pair in lan_interfaces if pair not in served), None)
+            if replacement is None:
+                # More pools than LANs to serve. A pool with nowhere to live is
+                # not harmless: left pointing at a link, it hands a workstation
+                # the address of a router-to-router segment.
+                for node in block:
+                    if node in list(config):
+                        config.remove(node)
+                repaired.append(
+                    f"{device.findtext('./ENGINE/NAME') or ''}: pool {name} removed, "
+                    f"no LAN left for it to serve"
+                )
+                continue
             address, interface_mask = replacement
             address_value = _address_to_int(address)
             mask_value = _address_to_int(interface_mask)
@@ -8958,6 +9031,9 @@ def generate_from_prompt(
     # Both ends of every trunk must name the same native VLAN, or spanning
     # tree blocks the port and the cable carries nothing.
     trunk_notes += _match_trunk_native_vlans(root)
+    # After every trunk is settled: port security on a trunk cuts the switch
+    # behind it off entirely.
+    trunk_notes += _drop_port_security_from_trunks(root)
     _stamp_target_version(root)
     unexpected_workspace_issues = _unexpected_workspace_issues(donor_root, root)
     if unexpected_workspace_issues:
