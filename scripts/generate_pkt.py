@@ -2575,7 +2575,15 @@ def _write_pkt_root(root: ET.Element, pkt_path: Path, xml_path: Path | None = No
     _align_dhcp_pools_with_interfaces(root)
     # After the pools point at real networks: a pool with no client is not
     # DHCP, and the segmented path never emitted the client half.
+    # Before the clients are switched over: a VLAN with hosts and no gateway
+    # cannot serve any of them.
+    # A port with no VLAN sits in VLAN 1, which the plan never gives a
+    # gateway, so the host on it is isolated whatever else is right.
+    _place_hosts_in_a_vlan(root)
+    _serve_every_populated_vlan(root)
     _put_workstations_on_dhcp(root)
+    # Snooping without a trusted uplink eats every offer the router sends.
+    _trust_uplinks_for_dhcp_snooping(root)
     _group_hosts_under_their_switch(root)
     _separate_overlapping_devices(root)
     # After the separation pass, so a leftover nudged sideways is still pulled in.
@@ -4840,6 +4848,262 @@ def _align_router_access_vlan(root: ET.Element) -> list[str]:
     return notes
 
 
+def _trust_uplinks_for_dhcp_snooping(root: ET.Element) -> list[str]:
+    """A switch running DHCP snooping has to trust the way to the server.
+
+    Snooping drops server-sourced DHCP messages arriving on untrusted ports,
+    and every port is untrusted until told otherwise. Enabling it without
+    trusting the uplink is therefore a switch that silently discards every
+    offer the router sends back.
+
+    Measured on the 140-device enterprise lab: `dhcp snooping olsun` turned it
+    on across eighteen switches, no port was trusted, and every workstation
+    fell to APIPA while the statically addressed servers beside them reached
+    their gateway 4/4 -- the path was fine, only the offers were being eaten.
+
+    The trunk is the way out of the switch, so the trunks are what get
+    trusted; the access ports stay untrusted, which is the whole point of
+    turning snooping on.
+    """
+    trusted: list[str] = []
+    for device in root.findall(".//DEVICES/DEVICE"):
+        if (device.findtext("./ENGINE/TYPE") or "") not in {"Switch", "MultiLayerSwitch"}:
+            continue
+        config = device.find("./ENGINE/RUNNINGCONFIG")
+        if config is None:
+            continue
+        lines = [(node.text or "") for node in config.findall("LINE")]
+        if not any(line.strip() == "ip dhcp snooping" for line in lines):
+            continue
+        current = ""
+        trunks: list[str] = []
+        for line in lines:
+            text = line.strip()
+            if text.startswith("interface "):
+                current = text.split(None, 1)[1]
+            elif text == "switchport mode trunk" and current:
+                trunks.append(current)
+        for port in dict.fromkeys(trunks):
+            _set_config_block(config, f"interface {port}", [" ip dhcp snooping trust"])
+            trusted.append(f"{device.findtext('./ENGINE/NAME') or ''}:{port}")
+    if not trusted:
+        return []
+    return [f"DHCP snooping trusts {len(trusted)} uplink(s): " + ", ".join(trusted[:6])]
+
+
+def _place_hosts_in_a_vlan(root: ET.Element) -> list[str]:
+    """Every host port in a VLAN lab has to name a VLAN.
+
+    A port with no `switchport access vlan` sits in VLAN 1, which the plan
+    never gives a gateway, so the host on it is isolated however well the rest
+    of the lab is configured. Measured on the 140-device enterprise lab: 50 of
+    112 cabled host ports named no VLAN at all, and every host behind them was
+    stranded.
+
+    The switch decides which one. An access switch serves a department, so the
+    VLAN most of its other host ports already use is the VLAN its bare ports
+    belong to -- and a switch whose ports are all bare takes the lab's lowest
+    VLAN rather than inventing one.
+    """
+    devices_by_ref = {
+        (device.findtext("./ENGINE/SAVE_REF_ID") or "").strip(): device
+        for device in root.findall(".//DEVICES/DEVICE")
+    }
+    switch_types = {"Switch", "MultiLayerSwitch"}
+
+    def access_vlan(switch: ET.Element, port: str) -> str:
+        inside = False
+        for node in switch.findall("./ENGINE/RUNNINGCONFIG/LINE"):
+            line = (node.text or "").strip()
+            if line.startswith("interface "):
+                inside = line == f"interface {port}"
+            elif inside:
+                if line.startswith("switchport access vlan "):
+                    return line.split()[-1]
+                if line.startswith("switchport mode trunk"):
+                    return "TRUNK"
+        return ""
+
+    attachments: list[tuple[ET.Element, str, ET.Element]] = []
+    for link in root.findall(".//LINKS/LINK"):
+        cable = link.find("./CABLE")
+        if cable is None:
+            continue
+        refs = [(cable.findtext(tag) or "").strip() for tag in ("FROM", "TO")]
+        ports = [node.text or "" for node in cable.findall("PORT")]
+        if len(ports) < 2:
+            continue
+        for near, far in ((0, 1), (1, 0)):
+            host = devices_by_ref.get(refs[near])
+            switch = devices_by_ref.get(refs[far])
+            if host is None or switch is None:
+                continue
+            if (switch.findtext("./ENGINE/TYPE") or "") not in switch_types:
+                continue
+            if not _is_host_device(
+                {"type": _normalize_device_type(host.findtext("./ENGINE/TYPE") or "")}
+            ):
+                continue
+            attachments.append((switch, ports[far], host))
+
+    declared: set[str] = set()
+    for device in root.findall(".//DEVICES/DEVICE"):
+        for node in device.findall("./ENGINE/RUNNINGCONFIG/LINE"):
+            text = (node.text or "")
+            match = re.match(r"^vlan (\d+)$", text.strip())
+            if match and not text.startswith(" "):
+                declared.add(match.group(1))
+    fallback = min(declared, key=int) if declared else ""
+
+    votes: dict[str, Counter[str]] = {}
+    for switch, port, _host in attachments:
+        vlan = access_vlan(switch, port)
+        if vlan and vlan != "TRUNK":
+            name = (switch.findtext("./ENGINE/NAME") or "").strip()
+            votes.setdefault(name, Counter())[vlan] += 1
+
+    placed: list[str] = []
+    for switch, port, host in attachments:
+        if access_vlan(switch, port):
+            continue
+        name = (switch.findtext("./ENGINE/NAME") or "").strip()
+        wanted = votes[name].most_common(1)[0][0] if votes.get(name) else fallback
+        if not wanted:
+            continue
+        config = switch.find("./ENGINE/RUNNINGCONFIG")
+        if config is None:
+            continue
+        _set_config_block(
+            config,
+            f"interface {port}",
+            [" switchport mode access", f" switchport access vlan {wanted}"],
+        )
+        placed.append(f"{name}:{port} -> VLAN {wanted} ({host.findtext('./ENGINE/NAME') or ''})")
+    return placed
+
+
+def _serve_every_populated_vlan(root: ET.Element) -> list[str]:
+    """Give every VLAN that carries hosts a gateway and a pool.
+
+    A twenty-VLAN prompt produced a router with subinterfaces for seven of
+    them. The other thirteen had hosts cabled into them, on access ports, in
+    VLANs the router had never heard of -- so those hosts had no gateway, no
+    pool, and no way off their own switch. Measured on a 140-device lab: 23
+    distinct host subnets, half of them the donor's 192.168.x, none of which
+    any router interface served.
+
+    The VLAN plan is the statement of intent, and 10.10.<vlan>.0/24 is the
+    scheme the rest of the generator already uses, so a VLAN that hosts sit in
+    gets that network: a subinterface on the trunk the router already has, and
+    a pool behind it. Nothing is invented for a VLAN nobody is plugged into.
+    """
+    devices_by_ref = {
+        (device.findtext("./ENGINE/SAVE_REF_ID") or "").strip(): device
+        for device in root.findall(".//DEVICES/DEVICE")
+    }
+    switch_types = {"Switch", "MultiLayerSwitch"}
+
+    populated: set[str] = set()
+    router_trunk: tuple[ET.Element, str] | None = None
+    for link in root.findall(".//LINKS/LINK"):
+        cable = link.find("./CABLE")
+        if cable is None:
+            continue
+        refs = [(cable.findtext(tag) or "").strip() for tag in ("FROM", "TO")]
+        ports = [node.text or "" for node in cable.findall("PORT")]
+        if len(ports) < 2:
+            continue
+        for near, far in ((0, 1), (1, 0)):
+            near_device = devices_by_ref.get(refs[near])
+            far_device = devices_by_ref.get(refs[far])
+            if near_device is None or far_device is None:
+                continue
+            far_kind = (far_device.findtext("./ENGINE/TYPE") or "")
+            near_kind = (near_device.findtext("./ENGINE/TYPE") or "")
+            if far_kind not in switch_types:
+                continue
+            if near_kind == "Router" and router_trunk is None:
+                if _router_subinterface_vlans(near_device, ports[near]):
+                    router_trunk = (near_device, ports[near])
+                continue
+            if not _is_host_device({"type": _normalize_device_type(near_kind)}):
+                continue
+            inside = False
+            for node in far_device.findall("./ENGINE/RUNNINGCONFIG/LINE"):
+                line = (node.text or "").strip()
+                if line.startswith("interface "):
+                    inside = line == f"interface {ports[far]}"
+                elif inside and line.startswith("switchport access vlan "):
+                    populated.add(line.split()[-1])
+                    break
+    if router_trunk is None:
+        return []
+
+    router, parent = router_trunk
+    config = router.find("./ENGINE/RUNNINGCONFIG")
+    if config is None:
+        return []
+    known = set(_router_subinterface_vlans(router, parent))
+    # A subinterface without a pool is half the job: the VLAN routes but hands
+    # out no addresses, and its workstations stay on whatever the donor gave
+    # them. Both halves are counted separately for that reason.
+    pooled: set[str] = set()
+    in_pool = False
+    for node in config.findall("LINE"):
+        text = (node.text or "").strip()
+        if text.startswith("ip dhcp pool"):
+            in_pool = True
+            continue
+        if in_pool:
+            match = re.match(r"^network 10\.10\.(\d+)\.0 ", text)
+            if match:
+                pooled.add(match.group(1))
+                in_pool = False
+            elif text.startswith(("interface ", "ip dhcp pool", "router ")):
+                in_pool = False
+
+    # VLAN 1 is nobody's plan, and a number past the third octet has no place
+    # in this scheme.
+    wanted = sorted(
+        (vlan for vlan in populated if vlan != "1" and int(vlan) <= 254), key=int
+    )
+    if not any(vlan not in known or vlan not in pooled for vlan in wanted):
+        return []
+
+    added: list[str] = []
+    for vlan in wanted:
+        network = f"10.10.{vlan}"
+        lines: list[str] = []
+        if vlan not in known:
+            lines += [
+                f"interface {parent}.{vlan}",
+                f" description VLAN{vlan}",
+                f" encapsulation dot1Q {vlan}",
+                f" ip address {network}.1 255.255.255.0",
+                " ip nat inside",
+                "!",
+            ]
+        if vlan not in pooled:
+            lines += [
+                f"ip dhcp excluded-address {network}.1 {network}.99",
+                f"ip dhcp pool VLAN{vlan}",
+                f" network {network}.0 255.255.255.0",
+                f" default-router {network}.1",
+            ]
+        if not lines:
+            continue
+        for text in lines:
+            node = ET.SubElement(config, "LINE")
+            node.text = text
+        added.append(
+            f"VLAN {vlan}"
+            + (" gateway" if vlan not in known else "")
+            + (" pool" if vlan not in pooled else "")
+        )
+    name = router.findtext("./ENGINE/NAME") or ""
+    return [f"{name}: served {len(added)} VLAN(s) that had hosts and no gateway: " + "; ".join(added)]
+
+
 def _put_workstations_on_dhcp(root: ET.Element) -> list[str]:
     """Let the pools actually serve someone.
 
@@ -4899,6 +5163,50 @@ def _put_workstations_on_dhcp(root: ET.Element) -> list[str]:
         )
         config.insert(children.index(first_pool) if first_pool is not None else len(children), node)
 
+    # A workstation's VLAN is the truth about which network it belongs to; its
+    # address may still be the donor's. Pruning leaves hosts on the donor's
+    # plan -- measured on a 140-device lab, 23 subnets across 95 hosts, half of
+    # them 192.168.x that no router interface serves -- and re-addressing each
+    # one by hand is a second address plan waiting to disagree with the first.
+    # Reading the VLAN off the port and letting DHCP supply the address puts
+    # every host on the network it is actually cabled into.
+    vlan_subnets = _vlan_subnets_from_router(root)
+    devices_by_ref = {
+        (device.findtext("./ENGINE/SAVE_REF_ID") or "").strip(): device
+        for device in root.findall(".//DEVICES/DEVICE")
+    }
+    switch_types = {"Switch", "MultiLayerSwitch"}
+
+    def access_vlan(switch: ET.Element, port: str) -> str:
+        inside = False
+        for node in switch.findall("./ENGINE/RUNNINGCONFIG/LINE"):
+            line = (node.text or "").strip()
+            if line.startswith("interface "):
+                inside = line == f"interface {port}"
+            elif inside and line.startswith("switchport access vlan "):
+                return line.split()[-1]
+        return ""
+
+    vlan_of_host: dict[str, str] = {}
+    for link in root.findall(".//LINKS/LINK"):
+        cable = link.find("./CABLE")
+        if cable is None:
+            continue
+        refs = [(cable.findtext(tag) or "").strip() for tag in ("FROM", "TO")]
+        ports = [node.text or "" for node in cable.findall("PORT")]
+        if len(ports) < 2:
+            continue
+        for near, far in ((0, 1), (1, 0)):
+            host = devices_by_ref.get(refs[near])
+            switch = devices_by_ref.get(refs[far])
+            if host is None or switch is None:
+                continue
+            if (switch.findtext("./ENGINE/TYPE") or "") not in switch_types:
+                continue
+            vlan = access_vlan(switch, ports[far])
+            if vlan:
+                vlan_of_host[(host.findtext("./ENGINE/NAME") or "").strip()] = vlan
+
     moved: list[str] = []
     for device in root.findall(".//DEVICES/DEVICE"):
         kind = _normalize_device_type(device.findtext("./ENGINE/TYPE") or "")
@@ -4910,7 +5218,9 @@ def _put_workstations_on_dhcp(root: ET.Element) -> list[str]:
             if node.tag.upper() == "IP" and re.fullmatch(r"\d+\.\d+\.\d+\.\d+", text):
                 address = text
                 break
-        if not address or address.rsplit(".", 1)[0] not in served:
+        vlan = vlan_of_host.get((device.findtext("./ENGINE/NAME") or "").strip(), "")
+        served_by_vlan = vlan_subnets.get(vlan, "") in served if vlan else False
+        if not served_by_vlan and (not address or address.rsplit(".", 1)[0] not in served):
             continue
         for port in device.findall(".//PORT"):
             if port.find("PORT_DHCP_ENABLE") is not None:
@@ -9042,7 +9352,15 @@ def generate_from_prompt(
     _align_dhcp_pools_with_interfaces(root)
     # After the pools point at real networks: a pool with no client is not
     # DHCP, and the segmented path never emitted the client half.
+    # Before the clients are switched over: a VLAN with hosts and no gateway
+    # cannot serve any of them.
+    # A port with no VLAN sits in VLAN 1, which the plan never gives a
+    # gateway, so the host on it is isolated whatever else is right.
+    _place_hosts_in_a_vlan(root)
+    _serve_every_populated_vlan(root)
     _put_workstations_on_dhcp(root)
+    # Snooping without a trusted uplink eats every offer the router sends.
+    _trust_uplinks_for_dhcp_snooping(root)
     _group_hosts_under_their_switch(root)
     _separate_overlapping_devices(root)
     # After the separation pass, so a leftover nudged sideways is still pulled in.
