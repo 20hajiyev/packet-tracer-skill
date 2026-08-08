@@ -4993,14 +4993,29 @@ def _move_subinterfaces_to_the_cabled_port(root: ET.Element) -> list[str]:
             continue
         index = list(config).index(parent_address)
         config.remove(parent_address)
+        # After `encapsulation dot1Q`, not straight after the header. IOS
+        # refuses an address on a subinterface that has no encapsulation yet,
+        # and the refusal is silent in a saved file: measured, VLAN 10's
+        # gateway read 0.0.0.0 in Packet Tracer while `ip address 10.10.10.1`
+        # sat two lines above `encapsulation dot1Q 10`. The subinterfaces that
+        # worked all carry the address after the encapsulation.
         anchor = next(
             (
                 node
-                for node in config.findall("LINE")
-                if (node.text or "").strip() == f"interface {orphans[0]}"
+                for node in blocks.get(orphans[0], [])
+                if (node.text or "").strip().startswith("encapsulation ")
             ),
             None,
         )
+        if anchor is None:
+            anchor = next(
+                (
+                    node
+                    for node in config.findall("LINE")
+                    if (node.text or "").strip() == f"interface {orphans[0]}"
+                ),
+                None,
+            )
         if anchor is None:
             config.insert(index, parent_address)
             continue
