@@ -10169,7 +10169,7 @@ def edit_from_prompt(
             plan,
         )
 
-    edit_pkt_file(pkt_path, plan, output_path, xml_out_path)
+    edit_pkt_file(pkt_path, plan, output_path, xml_out_path, repair=_align_etherchannels_with_cabling)
     print(f"Edited PKT file created: {output_path}")
 
 

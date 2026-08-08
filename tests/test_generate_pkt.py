@@ -309,12 +309,16 @@ def test_edit_from_prompt_forces_edit_mode_and_pkt_path(tmp_path: Path) -> None:
     captured: dict[str, object] = {}
     original_edit = generate_pkt_module.edit_pkt_file
     try:
-        def fake_edit(pkt_path, plan, output_path, xml_out_path=None):
+        def fake_edit(pkt_path, plan, output_path, xml_out_path=None, repair=None):
             captured["pkt_path"] = str(pkt_path)
             captured["goal"] = plan.goal
             captured["plan_pkt_path"] = plan.pkt_path
             captured["output"] = str(output_path)
             captured["xml_out"] = str(xml_out_path) if xml_out_path is not None else None
+            # An edit names ports from the request, so it can write the same
+            # channel-group that took a switch off the network. The repair the
+            # generation pipelines run has to reach this path too.
+            captured["repair"] = getattr(repair, "__name__", None)
             Path(output_path).write_bytes(b"ok")
             if xml_out_path is not None:
                 Path(xml_out_path).write_text("<xml />", encoding="utf-8")
@@ -330,6 +334,7 @@ def test_edit_from_prompt_forces_edit_mode_and_pkt_path(tmp_path: Path) -> None:
     assert captured["plan_pkt_path"] == str(source)
     assert captured["output"] == str(output)
     assert captured["xml_out"] == str(xml_out)
+    assert captured["repair"] == "_align_etherchannels_with_cabling"
     assert output.exists()
     assert xml_out.exists()
 

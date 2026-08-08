@@ -5,6 +5,7 @@ import hashlib
 import json
 import re
 from collections import Counter
+from collections.abc import Callable
 from pathlib import Path
 import xml.etree.ElementTree as ET
 from functools import lru_cache
@@ -2441,9 +2442,23 @@ def apply_edit_operations(root: ET.Element, plan: IntentPlan) -> ET.Element:
     return apply_plan_operations(root, plan)
 
 
-def edit_pkt_file(pkt_path: str | Path, plan: IntentPlan, output_path: str | Path, xml_out_path: str | Path | None = None) -> Path:
+def edit_pkt_file(
+    pkt_path: str | Path,
+    plan: IntentPlan,
+    output_path: str | Path,
+    xml_out_path: str | Path | None = None,
+    repair: Callable[[ET.Element], object] | None = None,
+) -> Path:
     root = decode_pkt_to_root(pkt_path)
     updated = apply_plan_operations(root, plan)
+    # An edit names ports the way a plan does -- from the request, not from the
+    # file -- so it can write the same configuration that took SW2 off the
+    # network: a channel-group on a port whose peer does not bundle. The
+    # generation pipelines repair that after the fact and the edit path had no
+    # such step. The caller passes the repair in; importing it here would close
+    # a loop, since the module that owns it already imports this one.
+    if repair is not None:
+        repair(updated)
     xml_bytes = serialize_pkt_xml(updated)
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
