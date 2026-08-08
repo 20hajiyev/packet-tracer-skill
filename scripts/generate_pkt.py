@@ -2572,6 +2572,9 @@ def _write_pkt_root(root: ET.Element, pkt_path: Path, xml_path: Path | None = No
     # After every trunk is settled: port security on a trunk cuts the switch
     # behind it off entirely.
     _drop_port_security_from_trunks(root)
+    # After the trunks are settled: a channel-group naming ports the cable
+    # never joined takes the switch behind it off the network.
+    _align_etherchannels_with_cabling(root)
     _align_dhcp_pools_with_interfaces(root)
     # After the pools point at real networks: a pool with no client is not
     # DHCP, and the segmented path never emitted the client half.
@@ -3384,6 +3387,12 @@ def _synthesize_security_ops(plan: IntentPlan, devices: list[dict[str, object]])
                 },
             )
 
+    # These interface names are a guess -- no cable exists yet, so nothing here
+    # can know which ports face the core or whether the peer bundles too. The
+    # guess is deliberate and it is not the final word: it records the intent to
+    # bundle, and `_align_etherchannels_with_cabling` decides against the real
+    # cabling, keeping the members of a genuine two-cable bundle and removing
+    # the rest. Left on its own the guess cost SW2 its uplink.
     if switches and {"etherchannel", "lacp", "pagp"} & capabilities and len(switches) >= 2:
         mode = "active" if "lacp" in capabilities else ("desirable" if "pagp" in capabilities else "on")
         for switch in switches[:2]:
@@ -5656,6 +5665,142 @@ def _drop_port_security_from_trunks(root: ET.Element) -> list[str]:
                         f"removed ({len(removed)} line(s)) -- it is a trunk"
                     )
     return dropped
+
+
+def _align_etherchannels_with_cabling(root: ET.Element) -> list[str]:
+    """An EtherChannel is two or more cables between the same two switches.
+
+    `_synthesize_security_ops` writes `channel-group 1 mode on` onto
+    `GigabitEthernet0/1` and `GigabitEthernet0/2` of the first two switches it
+    finds, without ever asking what those ports are cabled to. Measured on the
+    153-device enterprise lab: SW2's `Gi0/1` is its only uplink to the core and
+    `Gi0/2` has no cable at all, so the pass bundled a live trunk with a dead
+    port towards a peer -- SW18 -- that was not bundling anything. The port
+    joins a `Port-channel1` that no line in the file configures, the trunk
+    settings stop applying, and the switch drops off the network: Printer6, the
+    one routable host behind SW2, could not reach even its own gateway's real
+    address on VLAN 50, while identical hosts behind SW3 and SW4 -- neither of
+    which was given a channel-group -- answered normally.
+
+    Which ports form a bundle is a fact about the cabling, and the plan settles
+    it before any cable exists, so the two decisions are made independently and
+    nothing compares them. This pass is the one that can see the cables. A
+    member survives only where the peer port bundles too and the same pair of
+    switches carries at least two such cables; those get one channel number,
+    one mode, and the `interface Port-channelN` that holds the trunk settings.
+    Everything else loses the line, because a bundle of one is not a bundle --
+    it is an ordinary port with configuration that stops it working.
+    """
+    switch_types = {"Switch", "MultiLayerSwitch"}
+    devices_by_ref: dict[str, ET.Element] = {}
+    devices_by_name: dict[str, ET.Element] = {}
+    for device in root.findall(".//DEVICES/DEVICE"):
+        devices_by_ref[(device.findtext("./ENGINE/SAVE_REF_ID") or "").strip()] = device
+        devices_by_name[(device.findtext("./ENGINE/NAME") or "").strip()] = device
+
+    members: dict[tuple[str, str], tuple[int, str]] = {}
+    for name, device in devices_by_name.items():
+        if (device.findtext("./ENGINE/TYPE") or "") not in switch_types:
+            continue
+        current = ""
+        for node in device.findall("./ENGINE/RUNNINGCONFIG/LINE"):
+            text = (node.text or "").strip()
+            if text.startswith("interface "):
+                current = text.split(None, 1)[1]
+                continue
+            match = re.match(r"^channel-group (\d+) mode (\S+)$", text)
+            if match and current:
+                members[(name, current)] = (int(match.group(1)), match.group(2))
+    if not members:
+        return []
+
+    bundles: dict[tuple[str, str], list[tuple[tuple[str, str], tuple[str, str]]]] = {}
+    for link in root.findall(".//LINKS/LINK"):
+        cable = link.find("./CABLE")
+        if cable is None:
+            continue
+        refs = [(cable.findtext(tag) or "").strip() for tag in ("FROM", "TO")]
+        ports = [node.text or "" for node in cable.findall("PORT")]
+        if len(ports) < 2:
+            continue
+        left, right = devices_by_ref.get(refs[0]), devices_by_ref.get(refs[1])
+        if left is None or right is None:
+            continue
+        if (left.findtext("./ENGINE/TYPE") or "") not in switch_types:
+            continue
+        if (right.findtext("./ENGINE/TYPE") or "") not in switch_types:
+            continue
+        ends = (
+            ((left.findtext("./ENGINE/NAME") or "").strip(), ports[0]),
+            ((right.findtext("./ENGINE/NAME") or "").strip(), ports[1]),
+        )
+        if ends[0] not in members or ends[1] not in members:
+            continue
+        bundles.setdefault(tuple(sorted((ends[0][0], ends[1][0]))), []).append(ends)
+
+    keep: dict[tuple[str, str], tuple[int, str]] = {}
+    notes: list[str] = []
+    for pair, cables in sorted(bundles.items()):
+        if len(cables) < 2:
+            continue
+        channel = min(members[end][0] for cable in cables for end in cable)
+        mode = members[cables[0][0]][1]
+        for cable in cables:
+            for end in cable:
+                keep[end] = (channel, mode)
+        notes.append(
+            f"{pair[0]} <-> {pair[1]} bundled on Port-channel{channel} "
+            f"({len(cables)} cables, mode {mode})"
+        )
+
+    def trunk_body(name: str, port: str) -> list[str]:
+        device = devices_by_name.get(name)
+        wanted: list[str] = []
+        if device is None:
+            return wanted
+        inside = False
+        for node in device.findall("./ENGINE/RUNNINGCONFIG/LINE"):
+            text = (node.text or "").strip()
+            if text.startswith("interface "):
+                inside = text == f"interface {port}"
+            elif inside and text.startswith("switchport") and text not in wanted:
+                wanted.append(text)
+        return [f" {line}" for line in wanted]
+
+    for (name, port), (channel, mode) in sorted(keep.items()):
+        device = devices_by_name.get(name)
+        config = device.find("./ENGINE/RUNNINGCONFIG") if device is not None else None
+        if config is None:
+            continue
+        _set_config_block(config, f"interface {port}", [f" channel-group {channel} mode {mode}"])
+        body = trunk_body(name, port)
+        if body:
+            _set_config_block(config, f"interface Port-channel{channel}", body)
+
+    removed = 0
+    for name, device in sorted(devices_by_name.items()):
+        if (device.findtext("./ENGINE/TYPE") or "") not in switch_types:
+            continue
+        for section in ("RUNNINGCONFIG", "STARTUPCONFIG"):
+            config = device.find(f"./ENGINE/{section}")
+            if config is None:
+                continue
+            current = ""
+            doomed: list[ET.Element] = []
+            for node in config.findall("LINE"):
+                text = (node.text or "").strip()
+                if text.startswith("interface "):
+                    current = text.split(None, 1)[1]
+                elif text.startswith("channel-group ") and (name, current) not in keep:
+                    doomed.append(node)
+            for node in doomed:
+                if node in list(config):
+                    config.remove(node)
+            if doomed and section == "RUNNINGCONFIG":
+                removed += len(doomed)
+    if removed:
+        notes.append(f"{removed} channel-group line(s) removed -- no bundle on the other end")
+    return notes
 
 
 def _match_trunk_native_vlans(root: ET.Element) -> list[str]:
@@ -9696,6 +9841,9 @@ def generate_from_prompt(
     # After every trunk is settled: port security on a trunk cuts the switch
     # behind it off entirely.
     trunk_notes += _drop_port_security_from_trunks(root)
+    # After the trunks are settled: a channel-group naming ports the cable
+    # never joined takes the switch behind it off the network.
+    trunk_notes += _align_etherchannels_with_cabling(root)
     _stamp_target_version(root)
     unexpected_workspace_issues = _unexpected_workspace_issues(donor_root, root)
     if unexpected_workspace_issues:
