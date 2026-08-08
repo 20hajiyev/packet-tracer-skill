@@ -1399,8 +1399,16 @@ def _ensure_link(
     right_port: str,
     media: str,
     port_mem_map: dict[tuple[str, str], str] | None = None,
+    allow_parallel: bool = False,
 ) -> None:
-    existing = _find_link_by_devices(root, left_name, right_name)
+    # Every caller but one wants at most one cable between a pair of devices, so
+    # a second call re-points the first cable instead of adding one. An
+    # EtherChannel is the exception: it is only a bundle if two cables run
+    # between the same two switches, and asking for the second one used to move
+    # the first. The new-link branch below is what a parallel cable needs -- it
+    # is the branch that drops the saving session's memory pointers, which is
+    # what makes Packet Tracer accept a link it did not write itself.
+    existing = None if allow_parallel else _find_link_by_devices(root, left_name, right_name)
     devices = {device.findtext("./ENGINE/NAME", default=""): device for device in root.findall(".//DEVICES/DEVICE")}
     index_refs, save_refs = _device_refs(root)
     left_device = devices.get(left_name)

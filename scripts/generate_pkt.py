@@ -5684,12 +5684,16 @@ def _align_etherchannels_with_cabling(root: ET.Element) -> list[str]:
 
     Which ports form a bundle is a fact about the cabling, and the plan settles
     it before any cable exists, so the two decisions are made independently and
-    nothing compares them. This pass is the one that can see the cables. A
-    member survives only where the peer port bundles too and the same pair of
-    switches carries at least two such cables; those get one channel number,
-    one mode, and the `interface Port-channelN` that holds the trunk settings.
-    Everything else loses the line, because a bundle of one is not a bundle --
-    it is an ordinary port with configuration that stops it working.
+    nothing compares them. This pass is the one that can see the cables.
+
+    A pair asked to bundle needs two of them. Where only one exists and both
+    switches still have a free port, the second is laid here -- the only place
+    that knows both which pair was asked and which ports are still free -- and
+    every cable between the pair becomes a member, with one channel number, one
+    mode, the trunk settings copied onto the ports that were not trunks before,
+    and the `interface Port-channelN` that holds them. Where the second cable
+    cannot be laid the line goes, because a bundle of one is not a bundle: it is
+    an ordinary port carrying configuration that stops it working.
     """
     switch_types = {"Switch", "MultiLayerSwitch"}
     devices_by_ref: dict[str, ET.Element] = {}
@@ -5714,6 +5718,20 @@ def _align_etherchannels_with_cabling(root: ET.Element) -> list[str]:
     if not members:
         return []
 
+    from pkt_editor import _ensure_link
+
+    busy: set[tuple[str, str]] = set()
+    for link in root.findall(".//LINKS/LINK"):
+        cable = link.find("./CABLE")
+        if cable is None:
+            continue
+        refs = [(cable.findtext(tag) or "").strip() for tag in ("FROM", "TO")]
+        ports = [node.text or "" for node in cable.findall("PORT")]
+        for index, ref in enumerate(refs):
+            device = devices_by_ref.get(ref)
+            if device is not None and index < len(ports):
+                busy.add(((device.findtext("./ENGINE/NAME") or "").strip(), ports[index]))
+
     bundles: dict[tuple[str, str], list[tuple[tuple[str, str], tuple[str, str]]]] = {}
     for link in root.findall(".//LINKS/LINK"):
         cable = link.find("./CABLE")
@@ -5734,24 +5752,11 @@ def _align_etherchannels_with_cabling(root: ET.Element) -> list[str]:
             ((left.findtext("./ENGINE/NAME") or "").strip(), ports[0]),
             ((right.findtext("./ENGINE/NAME") or "").strip(), ports[1]),
         )
-        if ends[0] not in members or ends[1] not in members:
+        # One end asking is enough to record the intent. Which end was given the
+        # line is an accident of the order the planner walked the switches.
+        if ends[0] not in members and ends[1] not in members:
             continue
         bundles.setdefault(tuple(sorted((ends[0][0], ends[1][0]))), []).append(ends)
-
-    keep: dict[tuple[str, str], tuple[int, str]] = {}
-    notes: list[str] = []
-    for pair, cables in sorted(bundles.items()):
-        if len(cables) < 2:
-            continue
-        channel = min(members[end][0] for cable in cables for end in cable)
-        mode = members[cables[0][0]][1]
-        for cable in cables:
-            for end in cable:
-                keep[end] = (channel, mode)
-        notes.append(
-            f"{pair[0]} <-> {pair[1]} bundled on Port-channel{channel} "
-            f"({len(cables)} cables, mode {mode})"
-        )
 
     def trunk_body(name: str, port: str) -> list[str]:
         device = devices_by_name.get(name)
@@ -5766,6 +5771,119 @@ def _align_etherchannels_with_cabling(root: ET.Element) -> list[str]:
             elif inside and text.startswith("switchport") and text not in wanted:
                 wanted.append(text)
         return [f" {line}" for line in wanted]
+
+    def drop_line(config: ET.Element, port: str, prefix: str) -> None:
+        """`_set_config_block` matches on the first two words, so an access VLAN
+        left on a port that is now a trunk survives writing `switchport mode
+        trunk` beside it."""
+        current = ""
+        for node in list(config.findall("LINE")):
+            text = (node.text or "").strip()
+            if text.startswith("interface "):
+                current = text.split(None, 1)[1]
+            elif current == port and text.startswith(prefix):
+                config.remove(node)
+
+    def free_ports(name: str, family: str, count: int) -> list[str]:
+        """Free sockets of one speed, because a bundle cannot mix them.
+
+        A gigabit port bundled with a FastEthernet one is refused for speed
+        mismatch, and the first attempt at this produced exactly that: SW3
+        offered `GigabitEthernet0/1` to one neighbour and `FastEthernet0/1` to
+        the next, because the search preferred gigabit rather than matching.
+        """
+        device = devices_by_name.get(name)
+        if device is None or not family:
+            return []
+        found: list[str] = []
+        for candidate in donor_interface_names(device) or []:
+            if not candidate.startswith(family) or "." in candidate:
+                continue
+            if (name, candidate) not in busy and port_exists(device, candidate):
+                found.append(candidate)
+                if len(found) == count:
+                    break
+        return found
+
+    def family_of(port: str) -> str:
+        for prefix in ("GigabitEthernet", "FastEthernet"):
+            if port.startswith(prefix):
+                return prefix
+        return ""
+
+    # A switch in two bundles needs two channel numbers: members of different
+    # neighbours cannot share one Port-channel. The planner writes `1` for
+    # every switch it touches, so SW3 came out with four members of "channel 1"
+    # facing two different neighbours.
+    taken_channels: dict[str, set[int]] = {}
+
+    keep: dict[tuple[str, str], tuple[int, str]] = {}
+    notes: list[str] = []
+    for pair, cables in sorted(bundles.items()):
+        stated = [members[end] for cable in cables for end in cable if end in members]
+        template = next((end for cable in cables for end in cable if trunk_body(*end)), cables[0][0])
+        body = trunk_body(*template)
+
+        def lay(left: tuple[str, str], right: tuple[str, str]) -> tuple[tuple[str, str], tuple[str, str]]:
+            _ensure_link(root, left[0], left[1], right[0], right[1], "crossover", allow_parallel=True)
+            busy.add(left)
+            busy.add(right)
+            return (left, right)
+
+        if len(cables) == 1:
+            # A bundle needs a second cable, and the pass that lays cables ran
+            # long before anything asked for a bundle. Adding it here is the
+            # only place both facts are known: which pair was asked to bundle,
+            # and which of their ports are still free.
+            (left_name, left_member), (right_name, right_member) = cables[0]
+            family = family_of(left_member)
+            if family == family_of(right_member):
+                left_free = free_ports(left_name, family, 1)
+                right_free = free_ports(right_name, family, 1)
+                if left_free and right_free:
+                    cables.append(lay((left_name, left_free[0]), (right_name, right_free[0])))
+        if len(cables) == 1:
+            # The member's own speed has no socket left -- on a 2960 both
+            # gigabit ports are usually the two uplinks. A bundle can still be
+            # built beside it out of two cables of a speed that does have room;
+            # the original cable stays an ordinary trunk and loses its line.
+            (left_name, _), (right_name, _) = cables[0]
+            for family in ("GigabitEthernet", "FastEthernet"):
+                left_free = free_ports(left_name, family, 2)
+                right_free = free_ports(right_name, family, 2)
+                if len(left_free) == 2 and len(right_free) == 2:
+                    cables = [
+                        lay((left_name, left_free[index]), (right_name, right_free[index]))
+                        for index in range(2)
+                    ]
+                    break
+        if len(cables) < 2:
+            continue
+        mode = stated[0][1]
+        used = taken_channels.setdefault(pair[0], set()) | taken_channels.setdefault(pair[1], set())
+        channel = next(
+            number
+            for number in [min(n for n, _ in stated), *range(1, 65)]
+            if number not in used
+        )
+        taken_channels[pair[0]].add(channel)
+        taken_channels[pair[1]].add(channel)
+        for cable in cables:
+            for end in cable:
+                keep[end] = (channel, mode)
+                if end in members:
+                    continue
+                # A port that was never a trunk -- either the far end of the
+                # intent, or the one just cabled -- has to carry what the rest
+                # of the bundle carries, or the two halves disagree.
+                config = devices_by_name[end[0]].find("./ENGINE/RUNNINGCONFIG")
+                if config is not None and body:
+                    _set_config_block(config, f"interface {end[1]}", body)
+                    drop_line(config, end[1], "switchport access vlan")
+        notes.append(
+            f"{pair[0]} <-> {pair[1]} bundled on Port-channel{channel} "
+            f"({len(cables)} cables, mode {mode})"
+        )
 
     for (name, port), (channel, mode) in sorted(keep.items()):
         device = devices_by_name.get(name)
