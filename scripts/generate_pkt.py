@@ -5683,7 +5683,16 @@ def _drop_config_for_absent_interfaces(root: ET.Element) -> list[str]:
                 if stripped.startswith("interface "):
                     name = stripped.split(None, 1)[1]
                     parent = name.split(".", 1)[0]
-                    removing = not port_exists(device, parent)
+                    # A VLAN interface, a loopback, a port-channel or a tunnel
+                    # is configuration, not a socket -- `port_exists` says so
+                    # deliberately, and reading that as "the device does not
+                    # have it" deletes the management SVI. Measured: "management
+                    # vlan 99 ve telnet olsun" produced a lab with VLAN 99
+                    # declared, its ports assigned and its trunks allowing it,
+                    # and no `interface Vlan99` for anything to telnet into.
+                    removing = not parent.startswith(
+                        ("Vlan", "Loopback", "Port-channel", "Tunnel", "PRP-channel")
+                    ) and not port_exists(device, parent)
                     if removing:
                         removed_here.append(name)
                         config.remove(node)
@@ -6894,6 +6903,8 @@ def _move_static_hosts_onto_their_vlan_network(root: ET.Element) -> list[str]:
     DHCP clients are not touched: Packet Tracer replaces their address at
     runtime, so there is nothing here to correct.
     """
+    from lab_coherence import _interface_addresses
+
     switch_types = {"Switch", "MultiLayerSwitch"}
     devices_by_ref = {
         (device.findtext("./ENGINE/SAVE_REF_ID") or "").strip(): device
@@ -6924,9 +6935,9 @@ def _move_static_hosts_onto_their_vlan_network(root: ET.Element) -> list[str]:
             if standby:
                 virtual = standby.group(1)
                 held.add(virtual)
-    if not gateways:
-        return []
-
+    # No early return on an empty `gateways`: a lab with no VLANs still has a
+    # router interface per segment, and its hosts still have to be on it. The
+    # loop below already skips a host for which neither source knows an answer.
     port_vlan: dict[tuple[str, str], int] = {}
     for device in root.findall(".//DEVICES/DEVICE"):
         if (device.findtext("./ENGINE/TYPE") or "") not in switch_types:
@@ -6939,6 +6950,62 @@ def _move_static_hosts_onto_their_vlan_network(root: ET.Element) -> list[str]:
                 port = text.split(None, 1)[1]
             elif text.startswith("switchport access vlan ") and port:
                 port_vlan[(name, port)] = int(text.rsplit(" ", 1)[1])
+
+    # Which router interface answers for each switch, when no VLAN says so.
+    # Switches cabled to each other share one segment, so a router reached
+    # through a neighbouring switch is still this host's way out.
+    neighbours: dict[str, set[str]] = {}
+    router_on_switch: dict[str, tuple[str, str]] = {}
+    for link in root.findall(".//LINKS/LINK"):
+        cable = link.find("./CABLE")
+        if cable is None:
+            continue
+        refs = [(cable.findtext(tag) or "").strip() for tag in ("FROM", "TO")]
+        ports = [node.text or "" for node in cable.findall("PORT")]
+        if len(ports) < 2:
+            continue
+        left, right = devices_by_ref.get(refs[0]), devices_by_ref.get(refs[1])
+        if left is None or right is None:
+            continue
+        left_name = (left.findtext("./ENGINE/NAME") or "").strip()
+        right_name = (right.findtext("./ENGINE/NAME") or "").strip()
+        left_kind = (left.findtext("./ENGINE/TYPE") or "")
+        right_kind = (right.findtext("./ENGINE/TYPE") or "")
+        if left_kind in switch_types and right_kind in switch_types:
+            neighbours.setdefault(left_name, set()).add(right_name)
+            neighbours.setdefault(right_name, set()).add(left_name)
+        for near, near_port, far, far_name in (
+            (left, ports[0], right, right_name),
+            (right, ports[1], left, left_name),
+        ):
+            if (near.findtext("./ENGINE/TYPE") or "") != "Router":
+                continue
+            if (far.findtext("./ENGINE/TYPE") or "") not in switch_types:
+                continue
+            for port, address, mask in _interface_addresses(near):
+                if port == near_port and mask not in {"255.255.255.252", "255.255.255.254"}:
+                    router_on_switch[far_name] = (address, mask)
+                    break
+
+    segment_gateway: dict[str, tuple[str, str]] = {}
+    for start in list(neighbours) + list(router_on_switch):
+        if start in segment_gateway:
+            continue
+        seen = {start}
+        queue = [start]
+        found: tuple[str, str] | None = None
+        while queue:
+            current = queue.pop()
+            if current in router_on_switch:
+                found = router_on_switch[current]
+                break
+            for neighbour in neighbours.get(current, ()):
+                if neighbour not in seen:
+                    seen.add(neighbour)
+                    queue.append(neighbour)
+        if found is not None:
+            for name in seen:
+                segment_gateway.setdefault(name, found)
 
     taken = set(held)
     for device in root.findall(".//DEVICES/DEVICE"):
@@ -6968,10 +7035,25 @@ def _move_static_hosts_onto_their_vlan_network(root: ET.Element) -> list[str]:
             # the PORT node the same way.
             if (host.findtext("./ENGINE/TYPE") or "") not in HOST_DEVICE_TYPES:
                 continue
-            vlan = port_vlan.get(((switch.findtext("./ENGINE/NAME") or "").strip(), switch_port))
-            if not vlan or vlan not in gateways:
+            switch_name = (switch.findtext("./ENGINE/NAME") or "").strip()
+            vlan = port_vlan.get((switch_name, switch_port))
+            if vlan and vlan in gateways:
+                gateway, mask = gateways[vlan]
+            elif switch_name in segment_gateway:
+                # Not `not vlan`: the donor's access ports carry a VLAN number
+                # whether or not any router subinterface serves it, so keying
+                # on "has no VLAN" skipped every host in a lab that had VLAN
+                # tags and no router-on-a-stick. A VLAN nothing routes cannot
+                # answer for a host; the segment's own router interface can.
+                # A lab with no VLANs still has one router interface per
+                # segment, and a host still has to be on it. Measured on
+                # "2 router 2 switch 6 komputer": R1's LAN is 192.168.3.254,
+                # PC4 was correctly on it, and the other five sat on
+                # 192.168.1.x pointing at .254 and .1 -- three address plans
+                # in a lab of six workstations.
+                gateway, mask = segment_gateway[switch_name]
+            else:
                 continue
-            gateway, mask = gateways[vlan]
             current_gateway = (host.findtext(".//GATEWAY") or "").strip()
             if current_gateway in held:
                 continue
@@ -7481,6 +7563,64 @@ def _group_hosts_under_their_switch(root: ET.Element) -> list[str]:
 # How far a cable-less leftover may sit outside the wired lab before it is
 # pulled in. Wide enough that a device merely sitting at the edge is left alone.
 STRAY_DEVICE_MARGIN = 400
+
+
+def _drop_cables_the_plan_did_not_ask_for(root: ET.Element, blueprint: dict[str, object]) -> list[str]:
+    """A host socket takes one cable, and the plan says which one.
+
+    Holding a surplus donor device back so it can answer to a planned name
+    keeps its donor cabling too. The plan then lays its own cable to that name,
+    and the device ends up on two switches at once -- Packet Tracer refuses the
+    file, and the corpus caught four cases of it in one run:
+
+        port PC3 FastEthernet0 is used by both link 3 and link 8
+
+    The inherited cable is the one to drop: the plan chose which switch that
+    host belongs to, and the donor's arrangement is an accident of which lab it
+    came from. Where neither cable matches the plan the first is kept, because
+    leaving both is the one outcome that does not open.
+    """
+    from pkt_editor import _remove_link
+
+    planned: dict[str, set[str]] = {}
+    for link in blueprint.get("links", []) or []:
+        left = str((link.get("a") or {}).get("dev") or "")
+        right = str((link.get("b") or {}).get("dev") or "")
+        if left and right:
+            planned.setdefault(left, set()).add(right)
+            planned.setdefault(right, set()).add(left)
+
+    names = {
+        (device.findtext("./ENGINE/SAVE_REF_ID") or "").strip(): (device.findtext("./ENGINE/NAME") or "").strip()
+        for device in root.findall(".//DEVICES/DEVICE")
+    }
+    on_port: dict[tuple[str, str], list[str]] = {}
+    for link in root.findall(".//LINKS/LINK"):
+        cable = link.find("./CABLE")
+        if cable is None:
+            continue
+        refs = [(cable.findtext(tag) or "").strip() for tag in ("FROM", "TO")]
+        ports = [node.text or "" for node in cable.findall("PORT")]
+        if len(ports) < 2:
+            continue
+        left, right = names.get(refs[0], ""), names.get(refs[1], "")
+        if not left or not right:
+            continue
+        on_port.setdefault((left, ports[0]), []).append(right)
+        on_port.setdefault((right, ports[1]), []).append(left)
+
+    dropped: list[str] = []
+    for (device_name, port), partners in sorted(on_port.items()):
+        if len(partners) < 2:
+            continue
+        wanted = planned.get(device_name, set())
+        keep = next((partner for partner in partners if partner in wanted), partners[0])
+        for partner in partners:
+            if partner == keep:
+                continue
+            _remove_link(root, device_name, partner)
+            dropped.append(f"{device_name}:{port} no longer also cabled to {partner}")
+    return dropped
 
 
 def _adopt_planned_names(root: ET.Element, blueprint: dict[str, object]) -> list[str]:
@@ -10660,6 +10800,11 @@ def generate_from_prompt(
     # in the file that was written.
     for _note in _adopt_planned_names(root, requested_devices):
         print(_note)
+    # After the rename, not before: the cleanup asks the plan which switch a
+    # device belongs to, and until adoption the device still answers to a
+    # holding name the plan never mentions.
+    for _note in _drop_cables_the_plan_did_not_ask_for(root, requested_devices):
+        pass
     _annotate_generated_lab(root, blueprint, prepared_plan)
     prune_unused_images(root)
     xml_bytes = serialize_pkt_xml(root)

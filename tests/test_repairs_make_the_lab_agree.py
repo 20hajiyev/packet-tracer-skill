@@ -15,6 +15,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from generate_pkt import (  # noqa: E402
+    _drop_cables_the_plan_did_not_ask_for,
+    _drop_config_for_absent_interfaces,
     _drop_vlan_subinterfaces_off_router_links,
     _merge_repeated_interface_blocks,
     _move_static_hosts_onto_their_vlan_network,
@@ -198,3 +200,85 @@ def test_a_router_on_an_access_port_is_not_a_host() -> None:
     )
     assert _move_static_hosts_onto_their_vlan_network(root) == []
     assert root.findall(".//DEVICES/DEVICE")[2].findtext(".//PORT/IP") == "200.10.0.2"
+
+
+def _switch_with_ports(name: str, config: list[str], ports: int = 4) -> ET.Element:
+    device = _device(name, "Switch", config)
+    engine = device.find("./ENGINE")
+    slot = ET.SubElement(ET.SubElement(engine, "MODULE"), "SLOT")
+    for _ in range(ports):
+        socket = ET.SubElement(ET.SubElement(slot, "MODULE"), "PORT")
+        ET.SubElement(socket, "TYPE").text = "eCopperFastEthernet"
+    return device
+
+
+def test_a_management_svi_is_not_hardware_and_is_not_deleted() -> None:
+    """"management vlan 99 ve telnet olsun" produced a lab with nothing to telnet into.
+
+    `port_exists` says a VLAN interface is not a socket, which is true and is
+    the wrong question: an SVI is configuration. Reading it as "the device does
+    not have this interface" deleted the management address while leaving VLAN
+    99 declared, assigned to ports and allowed on every trunk.
+    """
+    config = [
+        "interface FastEthernet0/1",
+        " switchport access vlan 99",
+        "!",
+        "interface Vlan99",
+        " ip address 10.10.99.2 255.255.255.0",
+        "!",
+    ]
+    root = _lab([_switch_with_ports("SW1", config)])
+    _drop_config_for_absent_interfaces(root)
+    lines = _lines(root, "SW1")
+    assert "interface Vlan99" in lines
+    assert "ip address 10.10.99.2 255.255.255.0" in lines
+
+
+def test_configuration_for_hardware_that_really_is_absent_still_goes() -> None:
+    root = _lab([_switch_with_ports("SW1", ["interface GigabitEthernet9/9", " shutdown", "!"])])
+    assert _drop_config_for_absent_interfaces(root)
+    assert "interface GigabitEthernet9/9" not in _lines(root, "SW1")
+
+
+def test_a_host_keeps_the_cable_the_plan_chose() -> None:
+    """A device held back for a planned name brings its donor cabling with it."""
+    root = _lab(
+        [_device("SW1", "Switch", []), _device("SW2", "Switch", []), _device("PC3", "Pc", [])],
+        [
+            ("SW1", "FastEthernet0/3", "PC3", "FastEthernet0"),
+            ("PC3", "FastEthernet0", "SW2", "FastEthernet0/7"),
+        ],
+    )
+    blueprint = {"links": [{"a": {"dev": "PC3", "port": "FastEthernet0"}, "b": {"dev": "SW2", "port": "FastEthernet0/7"}}]}
+    assert _drop_cables_the_plan_did_not_ask_for(root, blueprint)
+    remaining = [
+        (cable.findtext("FROM"), cable.findtext("TO"))
+        for cable in root.findall(".//LINKS/LINK/CABLE")
+    ]
+    assert remaining == [("ref-PC3", "ref-SW2")], remaining
+
+
+def test_a_host_with_one_cable_is_left_alone() -> None:
+    root = _lab(
+        [_device("SW1", "Switch", []), _device("PC1", "Pc", [])],
+        [("SW1", "FastEthernet0/1", "PC1", "FastEthernet0")],
+    )
+    assert _drop_cables_the_plan_did_not_ask_for(root, {"links": []}) == []
+    assert len(root.findall(".//LINKS/LINK")) == 1
+
+
+def test_a_lab_with_no_vlans_still_puts_hosts_on_the_router_segment() -> None:
+    """Six workstations, three address plans, and one router interface."""
+    router = _device("R1", "Router", ["interface GigabitEthernet0/0", " ip address 192.168.3.254 255.255.255.0", "!"])
+    switch = _device("SW1", "Switch", ["interface FastEthernet0/1", " switchport access vlan 1", "!"])
+    host = _host("PC1", "Pc", "192.168.1.20", "255.255.255.0", "192.168.1.1")
+    root = _lab(
+        [router, switch, host],
+        [
+            ("R1", "GigabitEthernet0/0", "SW1", "GigabitEthernet0/1"),
+            ("SW1", "FastEthernet0/1", "PC1", "FastEthernet0"),
+        ],
+    )
+    assert _move_static_hosts_onto_their_vlan_network(root)
+    assert _address(root, "PC1") == ("192.168.3.20", "192.168.3.254")
