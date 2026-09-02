@@ -2190,10 +2190,15 @@ def _apply_wireless_op(device: ET.Element, operation: dict[str, object]) -> None
             if node.find("CHANNEL") is not None:
                 _ensure_text(node, "CHANNEL", str(operation["channel"]))
             if operation.get("passphrase"):
-                if node.find("WEP_KEY") is not None:
-                    _ensure_text(node, "WEP_KEY", str(operation["passphrase"]))
-                if node.find("WPA_PASSPHRASE") is not None:
-                    _ensure_text(node, "WPA_PASSPHRASE", str(operation["passphrase"]))
+                # Write the key the chosen security uses, creating the element
+                # when the donor's own network had none. Guarding on "does this
+                # element already exist" meant a donor running an open network
+                # silently swallowed the passphrase: `ssid EvSebeke wpa2 sifre
+                # Gizli123` produced a lab carrying the SSID eleven times over
+                # and the word Gizli123 not once, with WPA2 configured and no
+                # key to join it with.
+                key = "WEP_KEY" if str(operation.get("auth_type")) == "1" else "WPA_PASSPHRASE"
+                _ensure_text(node, key, str(operation["passphrase"]))
         for profile in _profile_nodes(engine):
             _ensure_text(profile, "NAME", str(operation["ssid"]))
             _ensure_text(profile, "SSID", str(operation["ssid"]))
