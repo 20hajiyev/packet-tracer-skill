@@ -212,8 +212,15 @@ NATURAL_DEVICE_ALIASES = {
         "iot device", "iot cihaz", "smart device", "agilli cihaz", "sensor",
         "smart light", "smart door", "motion sensor", "temperature sensor",
         "smoke detector", "fan", "lamp", "termostat", "thermostat",
+        "camera", "kamera", "cctv", "webcam", "iot",
     ],
-    "CCTVCamera": ["camera", "kamera", "cctv", "webcam"],
+    # A camera is an IoT thing in Packet Tracer, not a kind of its own. The
+    # `CCTVCamera` key it used to carry is one the planner produced and no lab
+    # contains: counted across the 642 catalogued samples, zero devices of any
+    # camera-like type, against 439 IoT things. It was the same defect the
+    # `Smartphone` and `Cable Modem` notes describe -- an askable kind with no
+    # donor behind it, so asking for a camera could only ever be reported back
+    # as an undelivered device.
     "Hub": ["hub", "konsentrator"],
     "Repeater": ["repeater", "təkrarlayıcı", "tekrarlayici"],
     # Added from what the donor pool actually holds, not from Packet Tracer's
@@ -268,6 +275,10 @@ NATURAL_DEVICE_ALIASES = {
     #
     # So a palette of 74 entries is not 74 askable kinds. These four are the
     # ones that survive as distinct types in a saved lab.
+    # 45 devices across 37 of the bundled samples, and no way to ask for one
+    # until now: `MCU` survives as its own type in a saved lab, unlike the
+    # palette entries folded away above.
+    "MCU": ["mcu", "microcontroller", "mikrokontroller", "micro controller"],
     "SBC": ["sbc", "single board computer", "raspberry", "raspberry pi"],
     "WiredEndDevice": ["wired end device", "simli son cihaz"],
     "WirelessEndDevice": ["wireless end device", "simsiz son cihaz"],

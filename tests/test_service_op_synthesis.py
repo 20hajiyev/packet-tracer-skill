@@ -538,7 +538,11 @@ def test_voice_devices_can_be_asked_for() -> None:
     # Using the raw names looked for kinds the planner never produces, so a
     # donor holding 112 IoT devices still reported "no spare device".
     assert parse_intent("1 router 2 switch 4 ip phone qur").device_counts["IpPhone"] == 4
-    assert parse_intent("1 switch 3 kamera qur").device_counts["CCTVCamera"] == 3
+    # A camera used to have a key of its own, which no donor could satisfy:
+    # zero camera-like types across the 642 catalogued samples. Packet Tracer
+    # models one as an IoT thing, so that is where the word goes -- the same
+    # correction the `Smartphone` and `Cable Modem` notes record.
+    assert parse_intent("1 switch 3 kamera qur").device_counts["IoT"] == 3
     assert parse_intent("1 switch 5 sensor qur").device_counts["IoT"] == 5
 
 

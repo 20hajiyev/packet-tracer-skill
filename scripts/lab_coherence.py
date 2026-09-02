@@ -112,9 +112,19 @@ def _standby_addresses(device: ET.Element) -> list[tuple[str, str]]:
 
 
 def _host_addresses(device: ET.Element) -> list[tuple[str, str, str]]:
-    """(port name, address, mask) a host carries on its sockets."""
+    """(port name, address, mask) a host really uses.
+
+    A port with `PORT_DHCP_ENABLE` set is a DHCP client: Packet Tracer ignores
+    whatever address and gateway the file still carries and leases new ones at
+    runtime. Reading those stale fields made the checker report 82 hosts in the
+    enterprise lab as pointing at a gateway nobody answered for, when 78 of
+    them were simply waiting for a lease. The checker had the defect it looks
+    for -- a fact read from one place while the device is governed by another.
+    """
     found: list[tuple[str, str, str]] = []
     for port in device.findall(".//PORT"):
+        if (port.findtext("PORT_DHCP_ENABLE") or "").strip().lower() == "true":
+            continue
         address = (port.findtext("IP") or "").strip()
         mask = (port.findtext("SUBNET") or "").strip()
         if address and address != "0.0.0.0":

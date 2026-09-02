@@ -37,6 +37,126 @@ Useful ideas from `MCP-Packet-Tracer` were adopted only at the architecture
 level. PTBuilder live deploy and external donor usage were intentionally not
 adopted.
 
+## Using This Skill Correctly
+
+Read this before generating anything. Every rule below was learned by measuring
+a lab that looked finished and was not.
+
+### A lab that opens is not a lab that works
+
+This is the single most expensive mistake available here. Generated labs have
+passed every structural check, opened cleanly in Packet Tracer, read correctly
+line by line, and been unable to pass a single packet. "It opened" tells you
+the container is valid. It tells you nothing about the network.
+
+Two things separate a finished lab from a plausible one:
+
+```bash
+python scripts/generate_pkt.py --coherence-report output/lab.pkt
+```
+
+and a live ping. Do both. `--coherence-report` exits non-zero when the lab
+contradicts itself, and generation prints the same summary as a `WARNING:` line
+when it hands the file over — never ignore that line.
+
+### What the coherence report is telling you
+
+Every defect this project has paid for has one shape: **a fact derived twice,
+in two passes, with nothing comparing the derivations.** Each half reads
+correctly on its own. The report is that comparison:
+
+| Finding | What it means |
+|---|---|
+| `interface_declared_twice` | IOS keeps the last block; readers scan the first |
+| `port_not_on_device` | Packet Tracer refuses to open the file |
+| `port_double_booked` | two cables on one socket |
+| `duplicate_address` | two interfaces claim one address |
+| `real_address_is_also_virtual` | a router holds an address that is someone's HSRP virtual |
+| `native_vlan_mismatch` | spanning tree blocks a cabled, configured port |
+| `etherchannel_peer_does_not_bundle` | the switch behind it drops off the network |
+| `gateway_answers_for_nobody` | a static host points at an address nothing holds |
+| `pool_without_interface` | DHCP hands out addresses nothing can route |
+
+The report never repairs. A checker that fixes what it finds stops being able
+to tell you whether the thing it checks is working.
+
+### Measuring in a live Packet Tracer
+
+Three steps, in order, every time:
+
+1. **Confirm which document is open.** With two windows open the bridge answers
+   for the other one. A pass rate measured against the wrong lab is worse than
+   no measurement, because it is believed. Check the device list first.
+2. **Throw the first reading away.** Spanning tree has not converged; the first
+   ping after opening a large lab reports 0/4 on a path that works. It is not a
+   measurement, it is the lab starting up.
+3. **Then measure.** A *failing* ping takes far longer than a passing one --
+   each packet waits out its own timeout, about 13 seconds for four -- so
+   budget 45-60s per call rather than reading a timeout as a failure.
+
+Ping from a host. Routers and switches answer through a different bridge path
+that is not reliable here.
+
+### When two repairs in a row do not change the measurement
+
+Stop repairing. The symptom is not where the defect is. Find the pass that
+wrote the state, and fix it there. The fastest way in: **diff the broken device
+against a working sibling.** One switch unreachable while identical ones work
+has one extra line, and reading configuration top to bottom will not find it as
+quickly as `diff` will.
+
+### Facts about Packet Tracer that cost a lab each
+
+- a copper cable in a fibre socket is **dropped in silence** -- the file opens,
+  the cable is simply not there
+- a duplicate `interface` block is applied last-wins, while readers scan the first
+- a subinterface `ip address` before its `encapsulation dot1Q` is refused
+  silently
+- `PORT_DHCP_ENABLE=true` makes Packet Tracer ignore the static address in the
+  file; a host with both is a DHCP client, and judging it on its stale address
+  is a false reading
+- DHCP snooping with no trusted uplink eats every offer the router sends
+- port security on a trunk isolates the whole switch behind it
+- a `channel-group` whose peer does not bundle takes that switch off the network
+- an interface name the device does not own blocks the file from opening at all;
+  a double-booked port does not
+
+### Scale
+
+There is no artificial device limit. The only ceiling is physical: a switch has
+the ports it has, and the generator says so plainly when it runs out. Ask for
+more switches, not fewer hosts.
+
+### A generated lab becomes the next build's donor
+
+Donor selection can pick a lab this skill produced, so every repair pass
+eventually runs over its own output. Write interface configuration with
+`_set_config_block`, never by appending, and check a new pass by running it
+three times and asserting the document stops changing after the first.
+
+### The palette is not the vocabulary
+
+Packet Tracer's device palette lists more kinds than a saved lab distinguishes:
+`SMARTPHONE-PT` saves as `Pda`, `Fiber Patch Panel` saves as `Patch Panel`.
+Adding an askable kind with no donor behind it produces a request that can only
+come back as an undelivered device. `tests/test_askable_kinds_have_donors.py`
+holds the vocabulary to what real labs actually contain, in both directions.
+
+### When generation refuses
+
+A refusal returns `blocking_gaps` together with a `blueprint_plan`. That is not
+a failure to work around by loosening a policy -- it is the skill saying no
+donor can serve the request. Read the gaps, adjust the request or supply a
+donor, and try again.
+
+### What works without Packet Tracer installed
+
+Decode, inventory, edit, generate and structural verification all work from the
+donor cache with no install and no environment variables -- the Twofish engine
+is vendored pure Python. Only `--validate-open` and live pings need the
+application itself. Tests that build a lab are marked `requires_donors` and skip
+where there is nothing to build from.
+
 ## How `.pkt` Files Work
 
 For the modern format targeted by this skill, the pipeline is:
@@ -226,8 +346,10 @@ If the user does not specify details:
 
 ## Constraints
 
-- The builder depends on a local Packet Tracer installation with the bundled
-  sample saves present, on any of Windows, macOS or Linux
+- The builder needs Packet Tracer's bundled sample saves as prototype sources,
+  from a local installation on Windows, macOS or Linux **or** from the donor
+  cache under `~/.pkt/saves`, which a single generate run on an installed
+  machine populates and which can then be copied anywhere
 - Donor devices the plan does not need are deleted. `PACKET_TRACER_SPARE_STRATEGY=park`
   restores the older behaviour of renaming them `UNUSED-*` / `*-SPARE-*` and
   moving them offscreen, if a donor turns out to depend on one staying present
@@ -250,6 +372,12 @@ Generate from a blueprint file:
 
 ```powershell
 python scripts/generate_pkt.py --blueprint examples/blueprint_minimal.json --output output\minimal.pkt
+```
+
+Check what a finished lab contradicts about itself, and exit non-zero if it does:
+
+```powershell
+python scripts/generate_pkt.py --coherence-report output\campus.pkt
 ```
 
 Generate from a hybrid prompt:

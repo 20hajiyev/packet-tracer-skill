@@ -127,3 +127,26 @@ def test_the_summary_counts_each_kind() -> None:
     root = _lab([_device("R1", "Router", ROUTER), _host("PC1", "192.168.10.20", "192.168.10.1")])
     text = summarise(check_lab_coherence(root))
     assert "contradiction(s)" in text and "gateway_answers_for_nobody" in text
+
+
+def test_a_dhcp_client_is_not_judged_on_the_address_it_is_about_to_replace() -> None:
+    """78 of the enterprise lab's 82 "unreachable gateway" hosts were leasing.
+
+    `PORT_DHCP_ENABLE` means Packet Tracer ignores the address and gateway the
+    file still carries. Reading them anyway is the same defect the checker
+    exists to find, committed by the checker.
+    """
+    device = _device("PC1", "Pc", [], [("FastEthernet0", "192.168.1.23", "255.255.255.0")])
+    device.find("./PORT/IP")  # the stale address stays in the file
+    ET.SubElement(device.find("./PORT"), "PORT_DHCP_ENABLE").text = "true"
+    ET.SubElement(device, "GATEWAY").text = "192.168.1.1"
+    root = _lab([_device("R1", "Router", ROUTER), device])
+    assert check_lab_coherence(root) == []
+
+
+def test_a_static_host_pointing_at_nothing_is_still_reported() -> None:
+    device = _device("PC1", "Pc", [], [("FastEthernet0", "192.168.1.23", "255.255.255.0")])
+    ET.SubElement(device.find("./PORT"), "PORT_DHCP_ENABLE").text = "false"
+    ET.SubElement(device, "GATEWAY").text = "192.168.1.1"
+    root = _lab([_device("R1", "Router", ROUTER), device])
+    assert "gateway_answers_for_nobody" in _kinds(root)
