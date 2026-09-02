@@ -2588,6 +2588,17 @@ def _write_pkt_root(root: ET.Element, pkt_path: Path, xml_path: Path | None = No
     # VLANs it may carry, and it was written before those VLANs were
     # created -- so their hosts had a gateway the trunk would not pass.
     _trunk_router_on_a_stick(root)
+    # Again, now that the VLAN gateways exist. The first call ran before
+    # `_serve_every_populated_vlan` created them, so it judged the plan's pools
+    # against interfaces that were not there yet: a pool named VLAN20 carrying
+    # the default 192.168.1.0 survived, and the VLAN-20 pass then added a
+    # second pool of the same name for 192.168.20.0. IOS merges pools by name
+    # and keeps the last, so VLAN 20 served a network nothing routes.
+    _align_dhcp_pools_with_interfaces(root)
+    _drop_duplicate_dhcp_pools(root)
+    _merge_repeated_interface_blocks(root)
+    _drop_vlan_subinterfaces_off_router_links(root)
+    _move_static_hosts_onto_their_vlan_network(root)
     _put_workstations_on_dhcp(root)
     # Snooping without a trusted uplink eats every offer the router sends.
     _trust_uplinks_for_dhcp_snooping(root)
@@ -6541,6 +6552,401 @@ def _same_subnet(left: str, right: str, mask: str) -> bool:
     return left_value & mask_value == right_value & mask_value
 
 
+def _drop_duplicate_dhcp_pools(root: ET.Element) -> list[str]:
+    """One pool name, one block.
+
+    IOS merges two `ip dhcp pool VLAN20` blocks and keeps the last, so a
+    duplicate is never harmless: whichever block the reader happens to see is
+    not necessarily the one that runs. They arise because the plan emits a pool
+    from its default addressing and the VLAN pass emits one from the VLAN's own
+    hosts -- two derivations of the same pool, which is this file's usual
+    defect. Retargeting the first onto the right network leaves the names
+    colliding, so the redundant block goes.
+
+    The first block wins; by the time this runs, alignment has already pointed
+    both at a network the router is on.
+    """
+    dropped: list[str] = []
+    for device in root.findall(".//DEVICES/DEVICE"):
+        config = device.find("./ENGINE/RUNNINGCONFIG")
+        if config is None:
+            continue
+        seen: set[str] = set()
+        doomed: list[ET.Element] = []
+        current = ""
+        for node in config.findall("LINE"):
+            text = (node.text or "").rstrip()
+            stripped = text.strip()
+            if not text.startswith((" ", "	")):
+                if stripped.startswith("ip dhcp pool "):
+                    name = stripped[len("ip dhcp pool ") :].strip()
+                    current = name if name in seen else ""
+                    seen.add(name)
+                    if current:
+                        doomed.append(node)
+                    continue
+                current = ""
+                continue
+            if current:
+                doomed.append(node)
+        for node in doomed:
+            if node in list(config):
+                config.remove(node)
+        if doomed:
+            dropped.append(
+                f"{device.findtext('./ENGINE/NAME') or ''}: removed a repeated pool block"
+            )
+    return dropped
+
+
+def _merge_repeated_interface_blocks(root: ET.Element) -> list[str]:
+    """Make the file say what the device would actually do.
+
+    IOS applies repeated `interface` blocks in order and keeps the last value
+    for each setting; every reader here scans for the first. A file carrying
+    both is correct and unreadable at once -- measured on a lab built five
+    times over, where `GigabitEthernet0/1.40` appeared five times holding
+    `10.10.40.1`, then `10.10.40.3`, then `10.10.40.1` again.
+
+    The passes that caused it are fixed, but a lab generated before that, or a
+    donor from anywhere, still carries the damage -- and a generated lab is a
+    candidate donor for the next build, so it propagates. Merging applies the
+    device's own rule: one block, settings in first-appearance order, each
+    holding the value the last block gave it.
+    """
+    from pkt_editor import _replace_lines, _setting_name
+
+    merged: list[str] = []
+    for device in root.findall(".//DEVICES/DEVICE"):
+        for section in ("RUNNINGCONFIG", "STARTUPCONFIG"):
+            config = device.find(f"./ENGINE/{section}")
+            if config is None:
+                continue
+            lines = [(node.text or "") for node in config.findall("LINE")]
+            order: list[str] = []
+            bodies: dict[str, list[str]] = {}
+            other: list[tuple[int, str]] = []
+            current = ""
+            repeated = 0
+            for line in lines:
+                stripped = line.strip()
+                if stripped.startswith("interface "):
+                    current = stripped
+                    if current in bodies:
+                        repeated += 1
+                    else:
+                        order.append(current)
+                        bodies[current] = []
+                    continue
+                if current and line.startswith((" ", "	")):
+                    # Same rule `_set_config_block` writes by, so a merged
+                    # block and a written one agree on what overwrites what.
+                    # Keying on the first two words instead kept both
+                    # `description Satis` and `description VLAN40 standby`,
+                    # where IOS keeps only the last.
+                    body = bodies[current]
+                    name = _setting_name(line)
+                    for index, existing in enumerate(body):
+                        if _setting_name(existing) == name:
+                            body[index] = line
+                            break
+                    else:
+                        body.append(line)
+                    continue
+                current = ""
+                if stripped != "!":
+                    # The rebuild puts a separator after every block; keeping
+                    # the originals as well doubles them.
+                    other.append((len(order), line))
+            if not repeated:
+                continue
+            rebuilt: list[str] = []
+            for index, header in enumerate(order):
+                rebuilt.extend(text for position, text in other if position == index)
+                rebuilt.append(header)
+                rebuilt.extend(bodies[header])
+                rebuilt.append("!")
+            rebuilt.extend(text for position, text in other if position >= len(order))
+            _replace_lines(config, rebuilt)
+            if section == "RUNNINGCONFIG":
+                merged.append(
+                    f"{device.findtext('./ENGINE/NAME') or ''}: merged {repeated} repeated interface block(s)"
+                )
+    return merged
+
+
+def _drop_vlan_subinterfaces_off_router_links(root: ET.Element) -> list[str]:
+    """A dot1Q subinterface needs a switch on the other end of its parent port.
+
+    Measured on the enterprise lab: R5 through R8 each carried eight VLAN
+    subinterfaces holding `10.10.10.1`, `10.10.20.1` and so on -- the very
+    addresses R1 offers as its HSRP virtual gateways -- on a `GigabitEthernet0/1`
+    cabled to another router. A VLAN cannot cross a routed link, so those
+    subinterfaces could never carry traffic; all they did was claim the gateway
+    address four more times each.
+
+    The parent port is worse off still: the point-to-point pass had given it a
+    /30 address, so one port was a routed link and a trunk at once.
+
+    Only subinterfaces whose parent faces something other than a switch are
+    dropped, so the routers that really are trunked keep everything.
+    """
+    switch_types = {"Switch", "MultiLayerSwitch"}
+    devices_by_ref = {
+        (device.findtext("./ENGINE/SAVE_REF_ID") or "").strip(): device
+        for device in root.findall(".//DEVICES/DEVICE")
+    }
+    faces_switch: set[tuple[str, str]] = set()
+    cabled: set[tuple[str, str]] = set()
+    for link in root.findall(".//LINKS/LINK"):
+        cable = link.find("./CABLE")
+        if cable is None:
+            continue
+        refs = [(cable.findtext(tag) or "").strip() for tag in ("FROM", "TO")]
+        ports = [node.text or "" for node in cable.findall("PORT")]
+        if len(ports) < 2:
+            continue
+        left, right = devices_by_ref.get(refs[0]), devices_by_ref.get(refs[1])
+        if left is None or right is None:
+            continue
+        for near, far, port in ((left, right, ports[0]), (right, left, ports[1])):
+            name = (near.findtext("./ENGINE/NAME") or "").strip()
+            cabled.add((name, port))
+            if (far.findtext("./ENGINE/TYPE") or "") in switch_types:
+                faces_switch.add((name, port))
+
+    dropped: list[str] = []
+    for device in root.findall(".//DEVICES/DEVICE"):
+        if (device.findtext("./ENGINE/TYPE") or "") != "Router":
+            continue
+        name = (device.findtext("./ENGINE/NAME") or "").strip()
+        for section in ("RUNNINGCONFIG", "STARTUPCONFIG"):
+            config = device.find(f"./ENGINE/{section}")
+            if config is None:
+                continue
+            doomed: list[ET.Element] = []
+            removed: set[str] = set()
+            keep = False
+            for node in config.findall("LINE"):
+                text = (node.text or "")
+                stripped = text.strip()
+                if stripped.startswith("interface "):
+                    port = stripped.split(None, 1)[1]
+                    parent = port.split(".")[0]
+                    # An uncabled parent is left alone: the lab may still be
+                    # waiting for its trunk, and nothing conflicts until it is
+                    # cabled to something that is not a switch.
+                    keep = (
+                        "." in port
+                        and (name, parent) in cabled
+                        and (name, parent) not in faces_switch
+                    )
+                    if keep:
+                        doomed.append(node)
+                        removed.add(port)
+                    continue
+                if keep and (text.startswith((" ", "	")) or stripped == "!"):
+                    doomed.append(node)
+                    continue
+                keep = False
+            for node in doomed:
+                if node in list(config):
+                    config.remove(node)
+            if removed and section == "RUNNINGCONFIG":
+                dropped.append(
+                    f"{name}: dropped {len(removed)} VLAN subinterface(s) on a port facing a router"
+                )
+    return dropped
+
+
+HOST_DEVICE_TYPES = {
+    "Pc",
+    "Laptop",
+    "Server",
+    "Printer",
+    "Tablet",
+    "IpPhone",
+    "HomeVoip",
+    "AnalogPhone",
+    "TV",
+    "IoT",
+    "SBC",
+    "MCU",
+    "WiredEndDevice",
+    "WirelessEndDevice",
+}
+
+
+def _network_from(address: str, mask: str) -> tuple[int, int] | None:
+    left, right = _address_to_int(address), _address_to_int(mask)
+    if left is None or right is None:
+        return None
+    return left & right, right
+
+
+def _octets(value: int) -> str:
+    return ".".join(str((value >> shift) & 0xFF) for shift in (24, 16, 8, 0))
+
+
+def _join_host_part(address: str, gateway: str, mask: str) -> str:
+    """Keep the host's own number, move it onto the gateway's network.
+
+    `192.168.80.10` under a gateway of `10.10.80.1/24` becomes `10.10.80.10`,
+    so a renumbered lab still reads the way whoever asked for it expects.
+    """
+    host, network = _address_to_int(address), _network_from(gateway, mask)
+    if host is None or network is None:
+        return gateway
+    return _octets(network[0] | (host & ~network[1] & 0xFFFFFFFF))
+
+
+def _next_address(address: str) -> str:
+    value = _address_to_int(address)
+    return address if value is None else _octets(value + 1)
+
+
+def _set_text(parent: ET.Element, tag: str, value: str) -> None:
+    node = parent.find(tag)
+    if node is None:
+        node = ET.SubElement(parent, tag)
+    node.text = value
+
+
+def _move_static_hosts_onto_their_vlan_network(root: ET.Element) -> list[str]:
+    """A static host has to sit on the network its own VLAN is routed on.
+
+    Two passes decide a host's address: one hands out addresses, one decides
+    what each VLAN's gateway is, and neither reads the other. Measured on the
+    enterprise lab: Server6 sat in VLAN 10 holding `192.168.10.13` with a
+    default gateway of `192.168.10.1`, while VLAN 10 is routed on
+    `10.10.10.0/24`. Nineteen servers and printers were like that -- addressed,
+    cabled, in the right VLAN, and pointing at a gateway no interface in the
+    lab answers for.
+
+    The VLAN's gateway is shared infrastructure and the host is one device, so
+    the host moves. Its host part is kept where it fits, which leaves the
+    lab's addressing readable, and the gateway it is given is the HSRP virtual
+    address when the VLAN has one -- the address the rest of the lab already
+    points at.
+
+    DHCP clients are not touched: Packet Tracer replaces their address at
+    runtime, so there is nothing here to correct.
+    """
+    switch_types = {"Switch", "MultiLayerSwitch"}
+    devices_by_ref = {
+        (device.findtext("./ENGINE/SAVE_REF_ID") or "").strip(): device
+        for device in root.findall(".//DEVICES/DEVICE")
+    }
+
+    gateways: dict[int, tuple[str, str]] = {}
+    held: set[str] = set()
+    for device in root.findall(".//DEVICES/DEVICE"):
+        vlan = 0
+        address = mask = virtual = ""
+        for node in [*device.findall("./ENGINE/RUNNINGCONFIG/LINE"), None]:
+            text = (node.text or "").strip() if node is not None else "interface END"
+            if text.startswith("interface "):
+                if vlan and address and vlan not in gateways:
+                    gateways[vlan] = (virtual or address, mask)
+                vlan = 0
+                address = mask = virtual = ""
+                continue
+            encapsulation = re.match(r"^encapsulation dot1Q (\d+)", text)
+            if encapsulation:
+                vlan = int(encapsulation.group(1))
+            addressed = re.match(r"^ip address (\d+\.\d+\.\d+\.\d+) (\d+\.\d+\.\d+\.\d+)$", text)
+            if addressed:
+                address, mask = addressed.group(1), addressed.group(2)
+                held.add(address)
+            standby = re.match(r"^standby \d+ ip (\d+\.\d+\.\d+\.\d+)$", text)
+            if standby:
+                virtual = standby.group(1)
+                held.add(virtual)
+    if not gateways:
+        return []
+
+    port_vlan: dict[tuple[str, str], int] = {}
+    for device in root.findall(".//DEVICES/DEVICE"):
+        if (device.findtext("./ENGINE/TYPE") or "") not in switch_types:
+            continue
+        name = (device.findtext("./ENGINE/NAME") or "").strip()
+        port = ""
+        for node in device.findall("./ENGINE/RUNNINGCONFIG/LINE"):
+            text = (node.text or "").strip()
+            if text.startswith("interface "):
+                port = text.split(None, 1)[1]
+            elif text.startswith("switchport access vlan ") and port:
+                port_vlan[(name, port)] = int(text.rsplit(" ", 1)[1])
+
+    taken = set(held)
+    for device in root.findall(".//DEVICES/DEVICE"):
+        for port in device.findall(".//PORT"):
+            value = (port.findtext("IP") or "").strip()
+            if value:
+                taken.add(value)
+
+    moved: list[str] = []
+    for link in root.findall(".//LINKS/LINK"):
+        cable = link.find("./CABLE")
+        if cable is None:
+            continue
+        refs = [(cable.findtext(tag) or "").strip() for tag in ("FROM", "TO")]
+        ports = [node.text or "" for node in cable.findall("PORT")]
+        if len(ports) < 2:
+            continue
+        left, right = devices_by_ref.get(refs[0]), devices_by_ref.get(refs[1])
+        if left is None or right is None:
+            continue
+        for switch, switch_port, host in ((left, ports[0], right), (right, ports[1], left)):
+            if (switch.findtext("./ENGINE/TYPE") or "") not in switch_types:
+                continue
+            # Only end devices. A router cabled to an access port is not a host
+            # with a default gateway, and the first version of this rewrote
+            # R1's WAN address from 200.10.0.2 to 10.10.30.4 because it read
+            # the PORT node the same way.
+            if (host.findtext("./ENGINE/TYPE") or "") not in HOST_DEVICE_TYPES:
+                continue
+            vlan = port_vlan.get(((switch.findtext("./ENGINE/NAME") or "").strip(), switch_port))
+            if not vlan or vlan not in gateways:
+                continue
+            gateway, mask = gateways[vlan]
+            current_gateway = (host.findtext(".//GATEWAY") or "").strip()
+            if current_gateway in held:
+                continue
+            socket = next(
+                (
+                    node
+                    for node in host.findall(".//PORT")
+                    if (node.findtext("IP") or "").strip()
+                    and (node.findtext("IP") or "").strip() != "0.0.0.0"
+                    and (node.findtext("PORT_DHCP_ENABLE") or "").strip().lower() != "true"
+                ),
+                None,
+            )
+            if socket is None:
+                continue
+            was = (socket.findtext("IP") or "").strip()
+            network = _network_from(gateway, mask)
+            wanted = _network_from(was, mask)
+            if network is None or (wanted is not None and wanted == network):
+                continue
+            candidate = _join_host_part(was, gateway, mask)
+            while candidate in taken or candidate == gateway:
+                candidate = _next_address(candidate)
+            taken.add(candidate)
+            _set_text(socket, "IP", candidate)
+            _set_text(socket, "SUBNET", mask)
+            node = host.find(".//GATEWAY")
+            if node is None:
+                node = ET.SubElement(host, "GATEWAY")
+            node.text = gateway
+            moved.append(
+                f"{host.findtext('./ENGINE/NAME') or ''} {was} -> {candidate} "
+                f"(VLAN {vlan}, gateway {gateway})"
+            )
+    return moved
+
+
 def _align_dhcp_pools_with_interfaces(root: ET.Element) -> list[str]:
     """Point a DHCP pool at a network the router is actually on.
 
@@ -10012,6 +10418,17 @@ def generate_from_prompt(
     # VLANs it may carry, and it was written before those VLANs were
     # created -- so their hosts had a gateway the trunk would not pass.
     _trunk_router_on_a_stick(root)
+    # Again, now that the VLAN gateways exist. The first call ran before
+    # `_serve_every_populated_vlan` created them, so it judged the plan's pools
+    # against interfaces that were not there yet: a pool named VLAN20 carrying
+    # the default 192.168.1.0 survived, and the VLAN-20 pass then added a
+    # second pool of the same name for 192.168.20.0. IOS merges pools by name
+    # and keeps the last, so VLAN 20 served a network nothing routes.
+    _align_dhcp_pools_with_interfaces(root)
+    _drop_duplicate_dhcp_pools(root)
+    _merge_repeated_interface_blocks(root)
+    _drop_vlan_subinterfaces_off_router_links(root)
+    _move_static_hosts_onto_their_vlan_network(root)
     _put_workstations_on_dhcp(root)
     # Snooping without a trusted uplink eats every offer the router sends.
     _trust_uplinks_for_dhcp_snooping(root)

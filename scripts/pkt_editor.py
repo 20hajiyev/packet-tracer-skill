@@ -707,6 +707,10 @@ def _append_unique_config_lines(parent: ET.Element | None, lines: list[str]) -> 
 _WORD_VALUED_SETTINGS = (
     "switchport port-security violation",
     "switchport mode",
+    # An interface has one description. Without this, `description Satis` and
+    # `description VLAN40 standby` read as different settings and both survive
+    # a merge, where the device keeps only the last.
+    "description",
     "duplex",
     "speed",
 )

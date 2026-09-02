@@ -399,11 +399,30 @@ def _check_no_interface_is_declared_twice(devices: list[ET.Element]) -> list[Fin
     return findings
 
 
+def _check_no_pool_is_declared_twice(devices: list[ET.Element]) -> list[Finding]:
+    """IOS merges two pools of one name and keeps the last."""
+    findings: list[Finding] = []
+    for device in devices:
+        counts: dict[str, int] = {}
+        for node in device.findall("./ENGINE/RUNNINGCONFIG/LINE"):
+            text = (node.text or "").strip()
+            if text.startswith("ip dhcp pool "):
+                name = text[len("ip dhcp pool ") :].strip()
+                counts[name] = counts.get(name, 0) + 1
+        for name, count in sorted(counts.items()):
+            if count > 1:
+                findings.append(
+                    Finding("dhcp_pool_declared_twice", f"{_name(device)} pool {name}", f"{count} blocks")
+                )
+    return findings
+
+
 def check_lab_coherence(root: ET.Element) -> list[Finding]:
     """Every contradiction the lab states about itself, most structural first."""
     devices = root.findall(".//DEVICES/DEVICE")
     return [
         *_check_no_interface_is_declared_twice(devices),
+        *_check_no_pool_is_declared_twice(devices),
         *_check_config_names_real_ports(devices),
         *_check_ports_carry_one_cable(root),
         *_check_addresses_are_unique(devices),
