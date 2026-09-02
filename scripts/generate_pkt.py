@@ -4987,18 +4987,24 @@ def _add_hsrp_gateway_redundancy(root: ET.Element) -> list[str]:
         _set_config_block(
             config, f"interface {router_port}.{vlan}", standby_block(subnet, vlan, f"{subnet}.2", 110)
         )
-        for text in (
+        # Appending the block was the obvious way to write it and it is wrong:
+        # a generated lab becomes the donor for the next build, so this pass
+        # runs again over its own output. Measured on the enterprise lab after
+        # five builds -- every subinterface on the standby router written five
+        # times over, `10.10.40.1` then `10.10.40.3` then `10.10.40.1` again.
+        # IOS applies them in order and keeps the last; every reader that scans
+        # for the first sees a different address. A pass has to be safe to run
+        # on what it already produced.
+        _set_config_block(
+            spare_config,
             f"interface {router_port}.{vlan}",
-            f" description VLAN{vlan} standby",
-            f" encapsulation dot1Q {vlan}",
-            *standby_block(subnet, vlan, f"{subnet}.3", None),
-            "!",
-        ):
-            node = ET.SubElement(spare_config, "LINE")
-            node.text = text
-    for text in (f"interface {router_port}", " no shutdown", "!"):
-        node = ET.SubElement(spare_config, "LINE")
-        node.text = text
+            [
+                f" description VLAN{vlan} standby",
+                f" encapsulation dot1Q {vlan}",
+                *standby_block(subnet, vlan, f"{subnet}.3", None),
+            ],
+        )
+    _set_config_block(spare_config, f"interface {router_port}", [" no shutdown"])
 
     name = (router.findtext("./ENGINE/NAME") or "").strip()
     return [
@@ -7024,6 +7030,31 @@ def _report_unwired_devices(root: ET.Element, blueprint: dict[str, object]) -> l
     if len(stranded) > 6:
         described += f", and {len(stranded) - 6} more"
     return [f"WARNING: {len(stranded)} requested device(s) have no cable: {described}"]
+
+
+def _report_coherence(root: ET.Element) -> None:
+    """Say what the finished lab contradicts about itself.
+
+    A lab whose halves disagree opens perfectly well and passes every static
+    check -- that is how a printer in VLAN 200 with a 192.168.110 address, a
+    gateway no interface answered for, and a subinterface declared five times
+    all reached a delivered file. The report never repairs and never fails the
+    build: a checker that fixes what it finds stops being able to tell you
+    whether the thing it checks is working.
+    """
+    try:
+        from lab_coherence import check_lab_coherence, summarise
+
+        contradictions = check_lab_coherence(root)
+        if not contradictions:
+            return
+        print(f"WARNING: {summarise(contradictions)}")
+        for finding in contradictions[:5]:
+            print(f"  {finding}")
+        if len(contradictions) > 5:
+            print(f"  ... and {len(contradictions) - 5} more; run --coherence-report for all")
+    except Exception as exc:  # reporting must never take a working build down
+        print(f"WARNING: coherence check did not run ({exc})")
 
 
 def _report_undelivered_devices(root: ET.Element, blueprint: dict[str, object]) -> list[str]:
@@ -9799,6 +9830,7 @@ def generate_from_blueprint(blueprint_path: Path, output_path: Path, xml_out_pat
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_bytes(pkt_bytes)
     print(f"PKT file created: {output_path}")
+    _report_coherence(root)
     print(f"XML bytes: {len(xml_bytes)}")
     print(f"PKT bytes: {len(pkt_bytes)}")
 
@@ -10011,6 +10043,7 @@ def generate_from_prompt(
         print(note)
     for note in _report_unwired_devices(root, requested_devices):
         print(note)
+    _report_coherence(root)
     print(f"Selected donor: {donor_archetype.compat_donor}")
     compat_donor, compat_donor_version = _compat_donor_details()
     if compat_donor is not None:
@@ -10910,6 +10943,12 @@ def main() -> None:
     parser.add_argument("--compare-scenarios", action="append", help="Compare multiple prompts and print a scenario acceptance matrix")
     parser.add_argument("--parity-report", help="Print prompt-scoped capability parity JSON")
     parser.add_argument("--validate-open", help="Launch Packet Tracer with the given .pkt file")
+    parser.add_argument(
+        "--coherence-report",
+        help="Report the contradictions a .pkt states about itself: addresses held twice, "
+        "gateways no interface answers for, pools no interface serves, bundles the cable "
+        "does not join, interfaces declared more than once",
+    )
     parser.add_argument("--validate-open-debug", help="Build staged donor compatibility debug report for a prompt")
     parser.add_argument("--compat-donor", help="Explicit Packet Tracer 9.0 donor .pkt path for strict compatibility mode")
     parser.add_argument("--reference-root", action="append", help="Optional local folder of imported external sample .pkt files")
@@ -10989,6 +11028,17 @@ def main() -> None:
             inventory_out=Path(args.inventory_out) if args.inventory_out else None,
         )
         return
+    if args.coherence_report:
+        from lab_coherence import check_lab_coherence, summarise
+
+        root = decode_pkt_to_root(Path(args.coherence_report))
+        findings = check_lab_coherence(root)
+        print(summarise(findings))
+        for finding in findings:
+            print(f"  {finding}")
+        # A lab that contradicts itself opens perfectly well, so the exit code
+        # is the only place the answer can be acted on.
+        raise SystemExit(1 if findings else 0)
     if args.edit:
         if not args.prompt:
             parser.error("--edit requires --prompt")
