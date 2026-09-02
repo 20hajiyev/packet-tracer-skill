@@ -2606,6 +2606,7 @@ def _write_pkt_root(root: ET.Element, pkt_path: Path, xml_path: Path | None = No
     # so nothing written before it has to change.
     _add_hsrp_gateway_redundancy(root)
     # A router with no path to another router carries none of its routes.
+    _drop_stale_point_to_point_addresses(root)
     _mesh_routers_with_point_to_point_links(root)
     _group_hosts_under_their_switch(root)
     _separate_overlapping_devices(root)
@@ -5156,6 +5157,66 @@ def _place_hosts_in_a_vlan(root: ET.Element) -> list[str]:
         )
         placed.append(f"{name}:{port} -> VLAN {wanted} ({host.findtext('./ENGINE/NAME') or ''})")
     return placed
+
+
+def _drop_stale_point_to_point_addresses(root: ET.Element) -> list[str]:
+    """A router-to-router address on a port with no cable is left over.
+
+    `_mesh_routers_with_point_to_point_links` only ever takes free ports, so it
+    cannot overwrite a live link -- but a generated lab is the next build's
+    donor, and pruning can take the cable while leaving the address behind. The
+    pass then picks a different free port, and the router ends up holding the
+    same /30 address twice. Measured on a six-switch lab: R1 carried
+    `10.255.0.2` on both `GigabitEthernet0/1` and `GigabitEthernet0/2`, one of
+    them cabled and one not.
+
+    Only the range this file hands out is touched, and only where no cable
+    arrives, so a donor's own addressing is never disturbed.
+    """
+    cabled: set[tuple[str, str]] = set()
+    devices_by_ref = {
+        (device.findtext("./ENGINE/SAVE_REF_ID") or "").strip(): device
+        for device in root.findall(".//DEVICES/DEVICE")
+    }
+    for link in root.findall(".//LINKS/LINK"):
+        cable = link.find("./CABLE")
+        if cable is None:
+            continue
+        refs = [(cable.findtext(tag) or "").strip() for tag in ("FROM", "TO")]
+        ports = [node.text or "" for node in cable.findall("PORT")]
+        for index, ref in enumerate(refs):
+            device = devices_by_ref.get(ref)
+            if device is not None and index < len(ports):
+                cabled.add(((device.findtext("./ENGINE/NAME") or "").strip(), ports[index]))
+
+    dropped: list[str] = []
+    for device in root.findall(".//DEVICES/DEVICE"):
+        if (device.findtext("./ENGINE/TYPE") or "") != "Router":
+            continue
+        name = (device.findtext("./ENGINE/NAME") or "").strip()
+        for section in ("RUNNINGCONFIG", "STARTUPCONFIG"):
+            config = device.find(f"./ENGINE/{section}")
+            if config is None:
+                continue
+            port = ""
+            doomed: list[ET.Element] = []
+            for node in config.findall("LINE"):
+                text = (node.text or "").strip()
+                if text.startswith("interface "):
+                    port = text.split(None, 1)[1]
+                elif (
+                    port
+                    and "." not in port
+                    and (name, port) not in cabled
+                    and re.match(r"^ip address 10\.255\.\d+\.\d+ ", text)
+                ):
+                    doomed.append(node)
+            for node in doomed:
+                if node in list(config):
+                    config.remove(node)
+            if doomed and section == "RUNNINGCONFIG":
+                dropped.append(f"{name}: dropped {len(doomed)} stale point-to-point address(es)")
+    return dropped
 
 
 def _mesh_routers_with_point_to_point_links(root: ET.Element) -> list[str]:
@@ -8995,6 +9056,26 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
             int(target.get("y", 0)),
         )
 
+    # A surplus donor device is only surplus once every planned device of its
+    # kind has been filled. Measured on "2 switch, 1 router, 6 PC": the donor
+    # holds eight PCs across three switches, the plan keeps two switches, and
+    # PC4 and PC5 went out with the switch they hung off -- while PC7 and PC8,
+    # cabled to a switch that survived, were deleted as spares. Six were asked
+    # for and four arrived, out of eight that were there.
+    #
+    # `_adopt_planned_names` already gives a missing planned name to a cabled
+    # device that has one to spare. It ran after these were deleted, so it had
+    # nothing to work with. Keeping them is all it needs.
+    planned_kinds = {
+        str(device.get("name") or ""): _device_kind(device)
+        for device in blueprint.get("devices", [])
+    }
+    claimed = set(rename_map.values()) | set(kept_devices)
+    shortfall: dict[str, int] = {}
+    for planned_name, planned_kind in planned_kinds.items():
+        if planned_name and planned_name not in claimed:
+            shortfall[planned_kind] = shortfall.get(planned_kind, 0) + 1
+
     spare_name_counts: dict[tuple[str | None, str], int] = {}
     for device_type, candidates in spare_candidates_by_type.items():
         for candidate in candidates:
@@ -9003,6 +9084,21 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
             count_key = (str(group_name) if group_name is not None else None, device_type)
             spare_name_counts[count_key] = spare_name_counts.get(count_key, 0) + 1
             spare_index = spare_name_counts[count_key]
+            if shortfall.get(device_type, 0) > 0:
+                # Held back for the planned name it is about to be given, but
+                # renamed first: leaving the donor's name on it collided with a
+                # planned name already handed to another device, and the lab
+                # came out with two PC1s and two cables on one port.
+                shortfall[device_type] -= 1
+                holding = f"SPARE-{device_type.upper()}{spare_index}"
+                donor_name = str(donor_member["name"])
+                kept_devices.add(donor_name)
+                rename_map[donor_name] = holding
+                if donor_name != holding:
+                    adapted_plan.edit_operations.append(
+                        {"op": "rename_device", "device": donor_name, "new_name": holding}
+                    )
+                continue
             spare_name = (
                 f"{group_name}-SPARE-{device_type.upper()}{spare_index}"
                 if group_name
@@ -10523,6 +10619,7 @@ def generate_from_prompt(
     # so nothing written before it has to change.
     _add_hsrp_gateway_redundancy(root)
     # A router with no path to another router carries none of its routes.
+    _drop_stale_point_to_point_addresses(root)
     _mesh_routers_with_point_to_point_links(root)
     _group_hosts_under_their_switch(root)
     _separate_overlapping_devices(root)
