@@ -87,3 +87,46 @@ def test_hosts_with_no_switch_are_still_placed() -> None:
     _lay_out_switch_blocks([], hosts)
 
     assert all("x" in host and "y" in host for host in hosts)
+
+
+def _bare_lab(devices: list[tuple[str, int]], cables: list[tuple[str, str]]) -> "ET.Element":
+    import xml.etree.ElementTree as ET
+
+    root = ET.fromstring("<PACKETTRACER5><NETWORK><DEVICES/><LINKS/></NETWORK></PACKETTRACER5>")
+    for name, x in devices:
+        device = ET.fromstring(
+            "<DEVICE><ENGINE><NAME/><TYPE>Pc</TYPE><SAVE_REF_ID/></ENGINE>"
+            "<WORKSPACE><LOGICAL><X/><Y>100</Y></LOGICAL></WORKSPACE></DEVICE>"
+        )
+        device.find("./ENGINE/NAME").text = name
+        device.find("./ENGINE/SAVE_REF_ID").text = f"ref-{name}"
+        device.find("./WORKSPACE/LOGICAL/X").text = str(x)
+        root.find(".//DEVICES").append(device)
+    for left, right in cables:
+        cable = ET.SubElement(ET.SubElement(root.find(".//LINKS"), "LINK"), "CABLE")
+        ET.SubElement(cable, "FROM").text = f"ref-{left}"
+        ET.SubElement(cable, "PORT").text = "FastEthernet0"
+        ET.SubElement(cable, "TO").text = f"ref-{right}"
+        ET.SubElement(cable, "PORT").text = "FastEthernet0"
+    return root
+
+
+def test_a_cabled_device_is_never_parked_however_far_right_it_sits() -> None:
+    """Four passes each tested x against the threshold and nothing else.
+
+    A lab whose blocks had been laid end to end ran past 9,000 halfway through,
+    and from there the layout stopped tidying, the compaction stopped pulling
+    in, the overlap pass stopped separating and the annotation stopped drawing
+    frames. One rule, written four times, wrong in every copy.
+    """
+    from generate_pkt import _parked_names
+
+    root = _bare_lab([("PC1", 15510), ("PC2", 200), ("UNUSED-PC1", 15800)], [("PC1", "PC2")])
+    assert _parked_names(root) == {"UNUSED-PC1"}
+
+
+def test_an_uncabled_device_inside_the_canvas_is_not_parked_either() -> None:
+    from generate_pkt import _parked_names
+
+    root = _bare_lab([("PC1", 400), ("PC2", 500)], [])
+    assert _parked_names(root) == set()

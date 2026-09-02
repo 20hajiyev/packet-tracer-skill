@@ -3583,6 +3583,7 @@ def _draw_lab_annotations(root, blueprint, plan, add_note, add_rectangle, clear_
     # are. Both are in the file.
     placed: dict[str, tuple[float, float]] = {}
     kinds: dict[str, str] = {}
+    parked = _parked_names(root)
     for device in root.findall(".//DEVICES/DEVICE"):
         name = (device.findtext("./ENGINE/NAME") or "").strip()
         if not name:
@@ -3592,7 +3593,7 @@ def _draw_lab_annotations(root, blueprint, plan, add_note, add_rectangle, clear_
             y = float((device.findtext("./WORKSPACE/LOGICAL/Y") or "").strip())
         except ValueError:
             continue
-        if x >= PARKED_LOGICAL_X:
+        if name in parked:
             continue
         placed[name] = (x, y)
         kinds[name] = (device.findtext("./ENGINE/TYPE") or "").strip()
@@ -7291,6 +7292,38 @@ BLOCK_ROW_PITCH = 420
 BLOCK_HOST_DROP = 200
 
 
+def _parked_names(root: ET.Element) -> set[str]:
+    """Devices deliberately set aside, which is not the same as "far to the right".
+
+    The parked column holds the donor's leftovers when
+    `PACKET_TRACER_SPARE_STRATEGY=park` is in force: renamed `UNUSED-*` and
+    moved offscreen so they are visibly not part of the lab. Four passes tested
+    for that by comparing x against `PARKED_LOGICAL_X` and nothing else, which
+    is the same rule written four times and it was wrong in every copy. A lab
+    whose blocks had been laid end to end ran past the threshold halfway
+    through, and from there the layout pass stopped tidying, the compaction
+    stopped pulling in, the overlap pass stopped separating and the annotation
+    stopped drawing frames -- measured as SW13 and its eight hosts stranded at
+    x 15,510, and nine frames for seventeen blocks.
+
+    A cabled device is never parked, whatever its coordinates. One function
+    answers that now, so the four passes cannot drift apart again.
+    """
+    wired = {name for pair in _link_device_pairs(root) for name in pair}
+    parked: set[str] = set()
+    for device in root.findall(".//DEVICES/DEVICE"):
+        name = (device.findtext("./ENGINE/NAME") or "").strip()
+        if not name or name in wired:
+            continue
+        try:
+            x = float((device.findtext("./WORKSPACE/LOGICAL/X") or "").strip())
+        except ValueError:
+            continue
+        if x >= PARKED_LOGICAL_X:
+            parked.add(name)
+    return parked
+
+
 def _group_hosts_under_their_switch(root: ET.Element) -> list[str]:
     """Lay each switch's hosts out beneath it, one block per switch.
 
@@ -7318,6 +7351,7 @@ def _group_hosts_under_their_switch(root: ET.Element) -> list[str]:
     kinds: dict[str, str] = {}
     nodes: dict[str, tuple[ET.Element, ET.Element]] = {}
     position: dict[str, tuple[float, float]] = {}
+    parked = _parked_names(root)
     wired = {name for pair in _link_device_pairs(root) for name in pair}
     for device in root.findall(".//DEVICES/DEVICE"):
         name = (device.findtext("./ENGINE/NAME") or "").strip()
@@ -7330,14 +7364,7 @@ def _group_hosts_under_their_switch(root: ET.Element) -> list[str]:
             y = float((y_node.text or "").strip())
         except ValueError:
             continue
-        if x >= PARKED_LOGICAL_X and name not in wired:
-            # The parked column is where deliberately unused spares are sent,
-            # and skipping it is right for them. It was skipping cabled devices
-            # too: a lab whose blocks had already been laid end to end ran past
-            # the threshold halfway through, so the pass that exists to tidy the
-            # layout ignored exactly the half that needed tidying. Measured on
-            # the enterprise lab -- SW13 and its eight hosts sat at x 15,510 and
-            # were left there.
+        if name in parked:
             continue
         kinds[name] = (device.findtext("./ENGINE/TYPE") or "").strip()
         nodes[name] = (x_node, y_node)
@@ -7668,6 +7695,7 @@ def _compact_stray_devices(root: ET.Element) -> list[str]:
     speaking of -- the wireless scenarios have no cables at all -- so those are
     left exactly as they are.
     """
+    parked = _parked_names(root)
     positions: dict[str, tuple[ET.Element, ET.Element, float, float]] = {}
     for device in root.findall(".//DEVICES/DEVICE"):
         name = (device.findtext("./ENGINE/NAME") or "").strip()
@@ -7680,7 +7708,7 @@ def _compact_stray_devices(root: ET.Element) -> list[str]:
             y = float((y_node.text or "").strip())
         except ValueError:
             continue
-        if x >= PARKED_LOGICAL_X:
+        if name in parked:
             continue
         positions[name] = (x_node, y_node, x, y)
 
@@ -7735,6 +7763,7 @@ def _separate_overlapping_devices(root: ET.Element) -> list[str]:
             for other_x, other_y in placed
         )
 
+    parked = _parked_names(root)
     placed: list[tuple[float, float]] = []
     moved: list[str] = []
     for device in root.findall(".//DEVICES/DEVICE"):
@@ -7747,7 +7776,7 @@ def _separate_overlapping_devices(root: ET.Element) -> list[str]:
             y = float((y_node.text or "").strip())
         except ValueError:
             continue
-        if x >= PARKED_LOGICAL_X:
+        if (device.findtext("./ENGINE/NAME") or "").strip() in parked:
             continue
         if not too_close(x, y, placed):
             placed.append((x, y))
