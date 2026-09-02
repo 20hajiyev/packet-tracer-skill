@@ -43,6 +43,14 @@ def _kinds_in_real_labs() -> set[str]:
     return found
 
 
+# This direction is a property of the donor corpus, not of the repository. The
+# committed catalogue is whatever the machine that last rebuilt it could see,
+# and CI's copy carries no Printer, Bridge or Repeater although Packet Tracer's
+# own samples are full of them -- so asserting it there measures the checkout,
+# not the skill. It runs where a real corpus exists. Shipping it unguarded
+# turned CI red on the first push: measured with one catalogue, asserted
+# against another.
+@pytest.mark.requires_donors
 @pytest.mark.skipif(not CATALOG.exists(), reason="sample catalogue not built")
 def test_every_askable_kind_exists_in_some_real_lab() -> None:
     available = _kinds_in_real_labs()
