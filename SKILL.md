@@ -121,6 +121,23 @@ quickly as `diff` will.
 - an interface name the device does not own blocks the file from opening at all;
   a double-booked port does not
 
+### Drawing the topology yourself
+
+The generator packs switch blocks into a roughly square grid, which is fine for
+a lab nobody planned. When you have already decided the shape -- which
+department sits where, which switch faces which, where the core belongs -- say
+so in the blueprint and set `PACKET_TRACER_LAYOUT=keep`. Every `x`/`y` in the
+blueprint is then left exactly as given, and the frames are drawn around the
+devices where they land.
+
+Sketch first, build second, is the better order for anything a person will
+look at: you can see the whole diagram before a single cable exists, and the
+skill's job narrows to making the file match the drawing.
+
+Without the knob the packing applies, and it is deterministic: the same
+blueprint gives the same coordinates every time, so a regenerated lab does not
+drift.
+
 ### Scale
 
 There is no artificial device limit. The only ceiling is physical: a switch has

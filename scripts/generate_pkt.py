@@ -7223,6 +7223,13 @@ LOGICAL_ICON_SPACING = 110
 PARKED_LOGICAL_X = 9000
 
 
+# How far apart two rows of switch blocks sit, and how far the hosts hang
+# below their switch. Taken from the spacing the annotation already draws its
+# frames with, so a frame still wraps its own block.
+BLOCK_ROW_PITCH = 420
+BLOCK_HOST_DROP = 200
+
+
 def _group_hosts_under_their_switch(root: ET.Element) -> list[str]:
     """Lay each switch's hosts out beneath it, one block per switch.
 
@@ -7240,9 +7247,17 @@ def _group_hosts_under_their_switch(root: ET.Element) -> list[str]:
     Routers, the core, and anything not cabled to an access switch are left
     where they are: they sit above this row and the reader expects them there.
     """
+    # An agent that has already drawn the topology -- deciding where each
+    # department sits and which switch faces which -- knows more about the
+    # intended shape than a packing rule does. `PACKET_TRACER_LAYOUT=keep`
+    # leaves every coordinate exactly as the blueprint gave it.
+    if (os.getenv("PACKET_TRACER_LAYOUT") or "").strip().lower() == "keep":
+        return []
+
     kinds: dict[str, str] = {}
     nodes: dict[str, tuple[ET.Element, ET.Element]] = {}
     position: dict[str, tuple[float, float]] = {}
+    wired = {name for pair in _link_device_pairs(root) for name in pair}
     for device in root.findall(".//DEVICES/DEVICE"):
         name = (device.findtext("./ENGINE/NAME") or "").strip()
         x_node = device.find("./WORKSPACE/LOGICAL/X")
@@ -7254,7 +7269,14 @@ def _group_hosts_under_their_switch(root: ET.Element) -> list[str]:
             y = float((y_node.text or "").strip())
         except ValueError:
             continue
-        if x >= PARKED_LOGICAL_X:
+        if x >= PARKED_LOGICAL_X and name not in wired:
+            # The parked column is where deliberately unused spares are sent,
+            # and skipping it is right for them. It was skipping cabled devices
+            # too: a lab whose blocks had already been laid end to end ran past
+            # the threshold halfway through, so the pass that exists to tidy the
+            # layout ignored exactly the half that needed tidying. Measured on
+            # the enterprise lab -- SW13 and its eight hosts sat at x 15,510 and
+            # were left there.
             continue
         kinds[name] = (device.findtext("./ENGINE/TYPE") or "").strip()
         nodes[name] = (x_node, y_node)
@@ -7275,15 +7297,52 @@ def _group_hosts_under_their_switch(root: ET.Element) -> list[str]:
     if len(blocks) < 2:
         return []
 
-    ordered = sorted(blocks, key=lambda name: position[name][0])
-    host_row = max(position[host][1] for members in blocks.values() for host in members)
+    # Document order, not current x. Sorting by position made the pass depend
+    # on its own output: run twice, the blocks pack differently, and a lab
+    # regenerated from itself drifts. Measured at 2,530 units wide on the first
+    # run and 2,715 on the second.
+    appearance = {
+        (device.findtext("./ENGINE/NAME") or "").strip(): index
+        for index, device in enumerate(root.findall(".//DEVICES/DEVICE"))
+    }
+    ordered = sorted(blocks, key=lambda name: appearance.get(name, 0))
     moved: list[str] = []
-    cursor = min(position[name][0] for name in ordered) - LOGICAL_ICON_SPACING
 
+    widths = {
+        name: max(len(blocks[name]) - 1, 0) * LOGICAL_ICON_SPACING for name in ordered
+    }
+    # One row of blocks reads as a strip, not a diagram. Eighteen switches laid
+    # end to end measured 15,840 units across against 4,020 tall -- a lab you
+    # scroll sideways through for a minute and never see at once.
+    #
+    # How many blocks per row: the packing is greedy, so a budget taken from
+    # the total width leaves a third of each row empty and the diagram comes
+    # out as tall as the strip was wide -- 2,510 by 3,560 on the first attempt.
+    # Counting in whole blocks instead balances the two spans: with `columns`
+    # blocks across, the lab is columns x pitch wide and count/columns x
+    # BLOCK_ROW_PITCH tall, and those are equal at the square root below.
+    pitch_x = max(widths.values(), default=0) + LOGICAL_ICON_SPACING
+    columns = max(1, round((len(ordered) * BLOCK_ROW_PITCH / pitch_x) ** 0.5))
+    budget = columns * pitch_x
+    # A fixed anchor, not one read back from the devices this pass just moved.
+    # Each switch ends up centred over its hosts, so the minimum switch x is
+    # larger after a run than before it; deriving the left margin from that
+    # walked the whole diagram to the right on every regeneration while the
+    # routers stayed put, and the lab grew wider each time -- 2,430 units, then
+    # 2,616, then 2,946.
+    left = float(LOGICAL_ICON_SPACING)
+    switch_row = min(position[name][1] for name in ordered)
+
+    cursor = left
+    row = 0
     for switch_name in ordered:
+        width = widths[switch_name]
+        if cursor > left and cursor - left + width > budget:
+            row += 1
+            cursor = left
         members = sorted(blocks[switch_name], key=lambda name: _name_sort_key(name))
-        width = max(len(members) - 1, 0) * LOGICAL_ICON_SPACING
         start = cursor + LOGICAL_ICON_SPACING
+        host_row = switch_row + row * BLOCK_ROW_PITCH + BLOCK_HOST_DROP
         for index, host in enumerate(members):
             target = (start + index * LOGICAL_ICON_SPACING, host_row)
             if position[host] == target:
@@ -7296,10 +7355,38 @@ def _group_hosts_under_their_switch(root: ET.Element) -> list[str]:
         # The switch sits centred over the hosts it serves, so the block reads
         # as one shape rather than a row with a label somewhere off to the side.
         centre = start + width / 2
+        top = switch_row + row * BLOCK_ROW_PITCH
         x_node, y_node = nodes[switch_name]
         x_node.text = str(int(centre))
-        position[switch_name] = (centre, position[switch_name][1])
+        y_node.text = str(int(top))
+        # The node holds the rounded value, so remember that, not the float:
+        # otherwise every later run sees a mismatch and moves it again.
+        position[switch_name] = (float(int(centre)), float(int(top)))
         cursor = start + width + LOGICAL_ICON_SPACING
+
+    # A switch with no hosts of its own -- the core, carrying only trunks --
+    # is in no block, so nothing placed it. On the enterprise lab that left
+    # SW18 alone at y 4,080, a screen and a half below the network it serves,
+    # with every trunk drawn as a long diagonal across the diagram. It belongs
+    # above the access rows, between them and the routers.
+    core = [
+        name
+        for name, kind in kinds.items()
+        if kind in switch_kinds and name not in blocks and name in wired
+    ]
+    if core:
+        spread = max(position[name][0] for name in ordered) + LOGICAL_ICON_SPACING
+        base = min(position[name][0] for name in ordered)
+        step = max((spread - base) / (len(core) + 1), LOGICAL_ICON_SPACING)
+        for index, name in enumerate(sorted(core, key=lambda text: appearance.get(text, 0))):
+            x_node, y_node = nodes[name]
+            target = (base + step * (index + 1), switch_row - BLOCK_ROW_PITCH)
+            if position[name] == target:
+                continue
+            x_node.text = str(int(target[0]))
+            y_node.text = str(int(target[1]))
+            position[name] = (float(int(target[0])), float(int(target[1])))
+            moved.append(f"{name}: -> above the access rows")
     return moved
 
 

@@ -37,6 +37,13 @@ def test_a_large_lab_stays_roughly_square() -> None:
 
     assert span_y < 4000, f"layout is {span_y} units tall"
     assert span_y < span_x * 3, "the canvas should not be a narrow column"
+    # The column check alone let the opposite through. Eighteen switch blocks
+    # laid end to end measured 15,640 units wide against 4,020 tall and passed
+    # this test, because nothing here constrained width: a strip you scroll
+    # sideways through and never see at once. A diagram is readable when both
+    # spans are of the same order.
+    assert span_x < 4000, f"layout is {span_x} units wide"
+    assert span_x < span_y * 3, "the canvas should not be a wide strip"
 
 
 def test_hosts_sit_under_the_switch_they_belong_to() -> None:
