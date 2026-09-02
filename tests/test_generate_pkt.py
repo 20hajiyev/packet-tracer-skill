@@ -4,6 +4,8 @@ import json
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
+
+import pytest
 from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -381,6 +383,7 @@ def test_build_prompt_blueprint_raises_on_incomplete_plan(monkeypatch) -> None:
         raise AssertionError("Expected PlanningError for incomplete VLAN assignment")
 
 
+@pytest.mark.requires_donors
 def test_build_prompt_blueprint_defaults_vlan_assignment_by_default() -> None:
     blueprint, plan = build_prompt_blueprint(parse_intent("2 switch 4 komputer vlanlarda 10 20"))
 

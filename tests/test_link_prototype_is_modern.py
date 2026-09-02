@@ -27,6 +27,8 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 import pkt_editor  # noqa: E402
@@ -41,6 +43,7 @@ def _cable(link: ET.Element) -> ET.Element:
     return cable
 
 
+@pytest.mark.requires_donors
 def test_the_fallback_carries_what_a_modern_cable_carries() -> None:
     prototype = _fallback_link_prototype()
     assert prototype is not None
@@ -49,6 +52,7 @@ def test_the_fallback_carries_what_a_modern_cable_carries() -> None:
     assert not missing, f"the cloned cable would be missing {missing}"
 
 
+@pytest.mark.requires_donors
 def test_the_fallback_refers_to_devices_the_way_a_saved_lab_does() -> None:
     """The old sample used bare indices; `save-ref-id` is what 9.x writes."""
     cable = _cable(_fallback_link_prototype())
@@ -79,6 +83,7 @@ def test_the_prototype_is_read_once() -> None:
     assert hasattr(pkt_editor._modern_link_prototype_xml, "cache_info")
 
 
+@pytest.mark.requires_donors
 def test_each_caller_gets_its_own_copy() -> None:
     """It is cloned and then mutated, so a shared element would corrupt the next."""
     first = _fallback_link_prototype()

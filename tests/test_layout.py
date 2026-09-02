@@ -11,6 +11,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
@@ -23,6 +25,7 @@ def _placed(prompt: str) -> list[dict[str, object]]:
     return [device for device in blueprint["devices"] if "x" in device and "y" in device]
 
 
+@pytest.mark.requires_donors
 def test_a_large_lab_stays_roughly_square() -> None:
     """Ten thousand units of vertical scroll is not a diagram anyone can read."""
     devices = _placed("200 komputer 10 switch 1 router qur")

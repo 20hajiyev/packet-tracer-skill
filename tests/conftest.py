@@ -39,10 +39,39 @@ def _twofish_ready() -> tuple[bool, str]:
     return False, f"Twofish bridge unavailable: {status or 'missing'} ({message})"
 
 
+def _donors_ready() -> tuple[bool, str]:
+    """Whether this machine can build a lab at all.
+
+    Generation copies device and link prototypes out of real Packet Tracer
+    saves; there is nothing to copy from on a machine with no install and no
+    donor cache, which is every CI runner. Tests that build a lab used to find
+    this out by raising -- `PlanningError: Prompt plan is incomplete` or
+    `FileNotFoundError: No Packet Tracer install and no donor cache were found`
+    -- so a green suite locally meant a red one on the runner, on every commit
+    for four weeks. The twofish bridge already had one probe answering for the
+    whole suite; donors had none, and each test decided for itself or not at
+    all.
+    """
+    from packet_tracer_env import (
+        get_packet_tracer_compatibility_donor,
+        get_packet_tracer_saves_root,
+    )
+
+    if get_packet_tracer_saves_root() is None:
+        return False, "no Packet Tracer install and no donor cache"
+    if get_packet_tracer_compatibility_donor() is None:
+        return False, "no Packet Tracer 9.0 compatibility donor"
+    return True, "donor saves available"
+
+
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(
         "markers",
         "requires_twofish: test requires a local Packet Tracer Twofish bridge and real .pkt decode/edit runtime",
+    )
+    config.addinivalue_line(
+        "markers",
+        "requires_donors: test builds a lab, which needs Packet Tracer saves or a donor cache",
     )
 
 
@@ -69,3 +98,11 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     skip_marker = pytest.mark.skip(reason=f"{reason}; set PKT_REQUIRE_TWOFISH_TESTS=1 for strict release gating")
     for item in twofish_items:
         item.add_marker(skip_marker)
+
+
+def pytest_runtest_setup(item: pytest.Item) -> None:
+    if item.get_closest_marker("requires_donors") is None:
+        return
+    ready, reason = _donors_ready()
+    if not ready:
+        pytest.skip(reason)

@@ -153,6 +153,7 @@ def test_open_report_json_is_explicit_about_proof() -> None:
     assert payload["elapsed_seconds"] == 12.3
 
 
+@pytest.mark.requires_donors
 def test_new_links_carry_no_invented_memory_addresses(tmp_path: Path) -> None:
     """Link MEM_ADDRs are runtime pointers; inventing them breaks the file.
 

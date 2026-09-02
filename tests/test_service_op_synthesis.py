@@ -358,6 +358,7 @@ def test_a_lab_with_no_picture_bank_is_untouched() -> None:
     assert prune_unused_images(ET.fromstring("<PACKETTRACER5><DEVICES/></PACKETTRACER5>")) == 0
 
 
+@pytest.mark.requires_donors
 def test_a_cloned_host_reuses_the_link_the_blueprint_planned() -> None:
     """Clones were wired twice, and the second cable always took the same port.
 
