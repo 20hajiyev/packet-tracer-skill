@@ -8446,6 +8446,7 @@ def _repair_invalid_link_ports(root: ET.Element) -> list[str]:
 
     repairs: list[str] = []
     seen: set[tuple[str, str]] = set()
+    doomed: list[ET.Element] = []
     for link in root.findall(".//LINKS/LINK"):
         cable = link.find("./CABLE")
         if cable is None:
@@ -8503,6 +8504,19 @@ def _repair_invalid_link_ports(root: ET.Element) -> list[str]:
                 None,
             )
             if replacement is None:
+                if reason == "interface does not exist":
+                    # Reporting it and leaving it is the one outcome that
+                    # cannot work: this pass's own subject is that an invalid
+                    # interface name stops Packet Tracer opening the file at
+                    # all. Measured on "1 wireless router 2 laptop qur": the
+                    # donor's laptops carry `eHostWirelessN` and `eBluetooth`
+                    # and no copper socket, the plan cabled them on
+                    # `FastEthernet0`, no relocation existed, and the lab was
+                    # refused. Removing the cable is also what the lab means --
+                    # a laptop with only a wireless card joins over the air.
+                    doomed.append(link)
+                    repairs.append(f"{name}: cable on {port} removed -- the device has no such socket")
+                    break
                 repairs.append(f"{name}: {port} unusable ({reason}) and no free interface was available")
                 seen.add((ref, port))
                 continue
@@ -8517,6 +8531,12 @@ def _repair_invalid_link_ports(root: ET.Element) -> list[str]:
             seen.add((ref, replacement))
             port_node.text = replacement
             repairs.append(f"{name}: {port} -> {replacement} ({reason})")
+
+    links_parent = root.find(".//LINKS")
+    if links_parent is not None:
+        for link in doomed:
+            if link in list(links_parent):
+                links_parent.remove(link)
     return repairs
 
 

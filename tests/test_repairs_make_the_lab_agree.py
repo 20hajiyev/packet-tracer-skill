@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from generate_pkt import (  # noqa: E402
     _drop_cables_the_plan_did_not_ask_for,
+    _repair_invalid_link_ports,
     _drop_config_for_absent_interfaces,
     _drop_vlan_subinterfaces_off_router_links,
     _merge_repeated_interface_blocks,
@@ -282,3 +283,57 @@ def test_a_lab_with_no_vlans_still_puts_hosts_on_the_router_segment() -> None:
     )
     assert _move_static_hosts_onto_their_vlan_network(root)
     assert _address(root, "PC1") == ("192.168.3.20", "192.168.3.254")
+
+
+def _wireless_laptop(name: str) -> ET.Element:
+    """A laptop whose Ethernet module was swapped for a wireless one."""
+    device = _device(name, "Laptop", [])
+    slot = ET.SubElement(ET.SubElement(device.find("./ENGINE"), "MODULE"), "SLOT")
+    for kind in ("eHostWirelessN", "eBluetooth"):
+        socket = ET.SubElement(ET.SubElement(slot, "MODULE"), "PORT")
+        ET.SubElement(socket, "TYPE").text = kind
+    return device
+
+
+def _copper_switch(name: str, ports: int = 4) -> ET.Element:
+    device = _device(name, "Switch", [])
+    slot = ET.SubElement(ET.SubElement(device.find("./ENGINE"), "MODULE"), "SLOT")
+    for _ in range(ports):
+        socket = ET.SubElement(ET.SubElement(slot, "MODULE"), "PORT")
+        ET.SubElement(socket, "TYPE").text = "eCopperFastEthernet"
+    return device
+
+
+def _copper_host(name: str) -> ET.Element:
+    device = _device(name, "Pc", [])
+    slot = ET.SubElement(ET.SubElement(device.find("./ENGINE"), "MODULE"), "SLOT")
+    socket = ET.SubElement(ET.SubElement(slot, "MODULE"), "PORT")
+    ET.SubElement(socket, "TYPE").text = "eCopperFastEthernet"
+    return device
+
+
+def test_a_cable_to_a_socket_the_device_does_not_have_is_removed() -> None:
+    """The wireless lab was refused by Packet Tracer for exactly this.
+
+    The donor's laptops carry `eHostWirelessN` and `eBluetooth` and no copper
+    socket; the plan cabled them on `FastEthernet0`; no relocation existed, so
+    the repair reported the fault and left the name in place -- and an invalid
+    interface name is what stops the file opening at all. A laptop with only a
+    wireless card joins over the air, so the cable is what is wrong.
+    """
+    root = _lab(
+        [_copper_switch("SW1"), _wireless_laptop("Laptop1")],
+        [("SW1", "FastEthernet0/1", "Laptop1", "FastEthernet0")],
+    )
+    notes = _repair_invalid_link_ports(root)
+    assert any("no such socket" in note for note in notes), notes
+    assert root.findall(".//LINKS/LINK") == []
+
+
+def test_a_cable_to_a_socket_the_device_does_have_is_kept() -> None:
+    root = _lab(
+        [_copper_switch("SW1"), _copper_host("PC1")],
+        [("SW1", "FastEthernet0/1", "PC1", "FastEthernet0")],
+    )
+    _repair_invalid_link_ports(root)
+    assert len(root.findall(".//LINKS/LINK")) == 1
