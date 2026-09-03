@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from generate_pkt import (  # noqa: E402
     _drop_cables_the_plan_did_not_ask_for,
     _repair_invalid_link_ports,
+    _retarget_config_to_real_interface_names,
     _drop_config_for_absent_interfaces,
     _drop_vlan_subinterfaces_off_router_links,
     _merge_repeated_interface_blocks,
@@ -337,3 +338,65 @@ def test_a_cable_to_a_socket_the_device_does_have_is_kept() -> None:
     )
     _repair_invalid_link_ports(root)
     assert len(root.findall(".//LINKS/LINK")) == 1
+
+
+def _router_with_ports(name: str, config: list[str], ports: int = 3) -> ET.Element:
+    """A 2911: GigabitEthernet0/0 .. 0/2, and no ISR-style 0/0/0.
+
+    The device's own blocks come first, the way a donor writes them: the shape a
+    device uses is read from the interfaces it already names, so a fixture
+    carrying only the stray ISR-style block teaches `port_exists` the wrong
+    shape and nothing gets retargeted.
+    """
+    own: list[str] = []
+    for index in range(ports):
+        own += [f"interface GigabitEthernet0/{index}", " duplex auto", "!"]
+    device = _device(name, "Router", own + config)
+    slot = ET.SubElement(ET.SubElement(device.find("./ENGINE"), "MODULE"), "SLOT")
+    for _ in range(ports):
+        socket = ET.SubElement(ET.SubElement(slot, "MODULE"), "PORT")
+        ET.SubElement(socket, "TYPE").text = "eCopperGigabitEthernet"
+    return device
+
+
+def test_config_written_for_an_isr_lands_on_the_2911_that_arrived() -> None:
+    """The IPv6 lab shipped with no IPv6 address on anything.
+
+    The planner named `GigabitEthernet0/0/0` from the model it planned, the
+    donor supplied a 2911, and the drop pass deleted the block -- taking the
+    address and every OSPFv3 line with it, while `ipv6 unicast-routing` survived
+    because it is global.
+    """
+    config = [
+        "interface GigabitEthernet0/0/0",
+        " ipv6 address 2001:db8:1::1/64",
+        " ipv6 ospf 1 area 0",
+        "!",
+    ]
+    root = _lab([_router_with_ports("R1", config)])
+    assert _retarget_config_to_real_interface_names(root)
+    lines = _lines(root, "R1")
+    # The header the device does not have is gone, and the settings it carried
+    # now sit under one it does. Two blocks of that name may exist until the
+    # merge pass combines them, which is the next pass in both pipelines.
+    assert "interface GigabitEthernet0/0/0" not in lines
+    assert "interface GigabitEthernet0/0" in lines
+    assert "ipv6 address 2001:db8:1::1/64" in lines
+    assert "ipv6 ospf 1 area 0" in lines
+    _merge_repeated_interface_blocks(root)
+    merged = _lines(root, "R1")
+    assert merged.count("interface GigabitEthernet0/0") == 1
+    assert "ipv6 address 2001:db8:1::1/64" in merged
+
+
+def test_a_name_the_device_really_has_is_not_touched() -> None:
+    root = _lab([_router_with_ports("R1", [])])
+    assert _retarget_config_to_real_interface_names(root) == []
+    assert "interface GigabitEthernet0/1" in _lines(root, "R1")
+
+
+def test_a_subinterface_keeps_its_vlan_tag_when_the_parent_is_respelled() -> None:
+    config = ["interface GigabitEthernet0/0/1.30", " encapsulation dot1Q 30", "!"]
+    root = _lab([_router_with_ports("R1", config)])
+    _retarget_config_to_real_interface_names(root)
+    assert "interface GigabitEthernet0/1.30" in _lines(root, "R1")

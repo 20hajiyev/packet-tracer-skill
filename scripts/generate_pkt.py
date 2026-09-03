@@ -2543,6 +2543,7 @@ def _write_pkt_root(root: ET.Element, pkt_path: Path, xml_path: Path | None = No
     # First of the configuration repairs: a block for hardware the device does
     # not have carries the donor's whole address plan into every pass that
     # reads the router's networks.
+    _retarget_config_to_real_interface_names(root)
     _drop_config_for_absent_interfaces(root)
     _trunk_uplinks_in_file(root)
     # Before the access-VLAN pass, which would otherwise strip the tagging:
@@ -5648,6 +5649,80 @@ def _put_workstations_on_dhcp(root: ET.Element) -> list[str]:
             for profile in _profile_nodes(engine):
                 _ensure_text(profile, "DHCP_ENABLED", "1")
         moved.append(f"{device.findtext('./ENGINE/NAME') or ''}: {address} -> DHCP")
+    return moved
+
+
+def _retarget_config_to_real_interface_names(root: ET.Element) -> list[str]:
+    """Move a config block onto the interface the device actually has.
+
+    The planner names an interface from the model it planned; the donor supplies
+    a different model; nothing compares the two. `_router_port` gave
+    `GigabitEthernet0/0/0` -- an ISR's shape -- and the device that arrived was a
+    2911 carrying `GigabitEthernet0/0` .. `0/2`. The block was written, and
+    `_drop_config_for_absent_interfaces` then deleted it, which is right for
+    hardware that is genuinely gone and wrong here: the intent was real and the
+    only thing mistaken was the spelling.
+
+    Measured on "2 router 2 switch 6 komputer qur ipv6 ve ospfv3 olsun": the
+    IPv6 address and every OSPFv3 line went out with the block, and the lab
+    shipped with `ipv6 unicast-routing` -- a global line, so it survived -- and
+    not one IPv6 address on anything.
+
+    Only the slot spelling is changed, never the port number: `0/0/2` may become
+    `0/2` and `0/1` may become `0/0/1`, and a subinterface keeps its tag. A name
+    that no rewriting makes real is left for the drop pass to deal with.
+    """
+    from pkt_transformer import port_exists
+
+    moved: list[str] = []
+    for device in root.findall(".//DEVICES/DEVICE"):
+        if (device.findtext("./ENGINE/TYPE") or "") != "Router":
+            continue
+        name = (device.findtext("./ENGINE/NAME") or "").strip()
+        for section in ("RUNNINGCONFIG", "STARTUPCONFIG"):
+            config = device.find(f"./ENGINE/{section}")
+            if config is None:
+                continue
+            taken = {
+                (node.text or "").strip().split(None, 1)[1]
+                for node in config.findall("LINE")
+                if (node.text or "").strip().startswith("interface ")
+            }
+            for node in config.findall("LINE"):
+                text = (node.text or "").strip()
+                if not text.startswith("interface "):
+                    continue
+                port = text.split(None, 1)[1]
+                parent, _, tag = port.partition(".")
+                if port_exists(device, parent):
+                    continue
+                match = re.match(r"^([A-Za-z]+)((?:\d+/)+\d+)$", parent)
+                if match is None:
+                    continue
+                kind, numbers = match.group(1), match.group(2).split("/")
+                shapes = []
+                if len(numbers) == 3:
+                    shapes.append(f"{kind}{numbers[0]}/{numbers[2]}")
+                elif len(numbers) == 2:
+                    shapes.append(f"{kind}{numbers[0]}/0/{numbers[1]}")
+                # Renaming onto a block that already exists is allowed: the
+                # merge pass runs later and combines them by the device's own
+                # rule. Refusing was what made the first version of this do
+                # nothing at all -- `GigabitEthernet0/0/0` maps to
+                # `GigabitEthernet0/0`, and a router already has a block for
+                # its own first interface.
+                replacement = next(
+                    (shape for shape in shapes if port_exists(device, shape)),
+                    "",
+                )
+                if not replacement:
+                    continue
+                wanted = replacement if not tag else f"{replacement}.{tag}"
+                node.text = f"interface {wanted}"
+                taken.discard(port)
+                taken.add(wanted)
+                if section == "RUNNINGCONFIG":
+                    moved.append(f"{name}: {port} -> {wanted}, the interface the device has")
     return moved
 
 
@@ -10742,6 +10817,7 @@ def generate_from_prompt(
     # First of the configuration repairs: a block for hardware the device does
     # not have carries the donor's whole address plan into every pass that
     # reads the router's networks.
+    _retarget_config_to_real_interface_names(root)
     absent_notes = _drop_config_for_absent_interfaces(root)
     trunk_notes = _trunk_uplinks_in_file(root)
     trunk_notes += absent_notes
