@@ -2598,6 +2598,8 @@ def _write_pkt_root(root: ET.Element, pkt_path: Path, xml_path: Path | None = No
     _align_dhcp_pools_with_interfaces(root)
     _drop_duplicate_dhcp_pools(root)
     _merge_repeated_interface_blocks(root)
+    _separate_config_blocks(root)
+    _add_missing_vlans_to_the_database(root)
     _drop_vlan_subinterfaces_off_router_links(root)
     _move_static_hosts_onto_their_vlan_network(root)
     _put_workstations_on_dhcp(root)
@@ -6745,6 +6747,128 @@ def _drop_duplicate_dhcp_pools(root: ET.Element) -> list[str]:
     return dropped
 
 
+def _add_missing_vlans_to_the_database(root: ET.Element) -> list[str]:
+    """Create the VLAN in the switch, not only in its configuration text.
+
+    A `vlan 80` line in the running config does not put VLAN 80 in Packet
+    Tracer's VLAN database; the database is its own structure,
+    `ENGINE/VLANS/VLAN`, carrying `name`, `number` and `rspan`. A port assigned
+    to a VLAN the database does not hold forwards nothing, and the lab reads as
+    fully configured throughout.
+
+    Measured on the enterprise lab, and it is the whole difference between the
+    VLANs that worked and the ones that did not. `pt_read_vlans` on SW5 listed
+    1, 10, 20, 30, 40, 50, 60, 70, 99 and the four factory entries -- exactly
+    the donor's own -- while the file's config declared 80, 120, 130, 140, 150,
+    190, 200, 210 as well. Hosts in the donor's VLANs reached their gateway
+    4/4; hosts in the added ones reached nothing, on any switch.
+
+    This is why the earlier VLAN-declaration pass was reverted as useless: it
+    wrote the config line, which was never the thing that was missing.
+    """
+    reserved = {1002, 1003, 1004, 1005}
+    added: list[str] = []
+    for device in root.findall(".//DEVICES/DEVICE"):
+        if (device.findtext("./ENGINE/TYPE") or "") not in {"Switch", "MultiLayerSwitch"}:
+            continue
+        wanted: dict[int, str] = {}
+        pending = 0
+        for node in device.findall("./ENGINE/RUNNINGCONFIG/LINE"):
+            text = (node.text or "").strip()
+            match = re.match(r"^vlan (\d+)$", text)
+            if match:
+                pending = int(match.group(1))
+                wanted.setdefault(pending, f"VLAN{pending}")
+                continue
+            named = re.match(r"^name (\S+)$", text)
+            if named and pending:
+                wanted[pending] = named.group(1)
+                continue
+            pending = 0
+            for pattern in (
+                r"^switchport access vlan (\d+)$",
+                r"^switchport trunk native vlan (\d+)$",
+            ):
+                hit = re.match(pattern, text)
+                if hit:
+                    number = int(hit.group(1))
+                    wanted.setdefault(number, f"VLAN{number}")
+
+        for container in device.findall(".//VLANS"):
+            present = {
+                int(entry.get("number") or 0)
+                for entry in container.findall("VLAN")
+                if (entry.get("number") or "").isdigit()
+            }
+            missing = sorted(number for number in wanted if number not in present and number not in reserved)
+            if not missing:
+                continue
+            for number in missing:
+                entry = ET.SubElement(container, "VLAN")
+                entry.set("name", wanted[number])
+                entry.set("number", str(number))
+                entry.set("rspan", "0")
+            parent = next(
+                (node for node in device.iter() if container in list(node)),
+                None,
+            )
+            if parent is not None and parent.find("VLAN_COUNT") is not None:
+                parent.find("VLAN_COUNT").text = str(len(container.findall("VLAN")))
+            added.append(
+                f"{device.findtext('./ENGINE/NAME') or ''}: VLAN {', '.join(str(n) for n in missing)} "
+                f"created in the database"
+            )
+    return added
+
+
+def _separate_config_blocks(root: ET.Element) -> list[str]:
+    """Put the `!` back between a sub-block and the command that follows it.
+
+    A pass that appends an `interface` block after an `ip dhcp pool` writes the
+    header straight after the pool's own indented lines. IOS reads a top-level
+    command there as leaving the sub-mode; Packet Tracer does not always, and
+    the block is swallowed. Measured on the enterprise lab: the file carried
+    `interface GigabitEthernet0/1.80` with an address and HSRP, and Packet
+    Tracer's own port list for R1 -- nineteen interfaces -- did not contain it.
+    VLAN 80 had a gateway on paper and nothing answered on it.
+
+    Every subinterface the donor wrote is preceded by `!`; every one this
+    project appended is preceded by ` default-router ...`. That is the whole
+    difference between the ones that exist and the one that did not.
+    """
+    from pkt_editor import _replace_lines
+
+    separated: list[str] = []
+    for device in root.findall(".//DEVICES/DEVICE"):
+        for section in ("RUNNINGCONFIG", "STARTUPCONFIG"):
+            config = device.find(f"./ENGINE/{section}")
+            if config is None:
+                continue
+            lines = [(node.text or "") for node in config.findall("LINE")]
+            rebuilt: list[str] = []
+            added = 0
+            for line in lines:
+                indented = line.startswith((" ", "	"))
+                previous = rebuilt[-1] if rebuilt else ""
+                if (
+                    not indented
+                    and line.strip()
+                    and line.strip() != "!"
+                    and previous.startswith((" ", "	"))
+                ):
+                    rebuilt.append("!")
+                    added += 1
+                rebuilt.append(line)
+            if not added:
+                continue
+            _replace_lines(config, rebuilt)
+            if section == "RUNNINGCONFIG":
+                separated.append(
+                    f"{device.findtext('./ENGINE/NAME') or ''}: {added} block separator(s) restored"
+                )
+    return separated
+
+
 def _merge_repeated_interface_blocks(root: ET.Element) -> list[str]:
     """Make the file say what the device would actually do.
 
@@ -10875,6 +10999,8 @@ def generate_from_prompt(
     _align_dhcp_pools_with_interfaces(root)
     _drop_duplicate_dhcp_pools(root)
     _merge_repeated_interface_blocks(root)
+    _separate_config_blocks(root)
+    _add_missing_vlans_to_the_database(root)
     _drop_vlan_subinterfaces_off_router_links(root)
     _move_static_hosts_onto_their_vlan_network(root)
     _put_workstations_on_dhcp(root)

@@ -18,6 +18,8 @@ from generate_pkt import (  # noqa: E402
     _drop_cables_the_plan_did_not_ask_for,
     _repair_invalid_link_ports,
     _retarget_config_to_real_interface_names,
+    _add_missing_vlans_to_the_database,
+    _separate_config_blocks,
     _drop_config_for_absent_interfaces,
     _drop_vlan_subinterfaces_off_router_links,
     _merge_repeated_interface_blocks,
@@ -400,3 +402,73 @@ def test_a_subinterface_keeps_its_vlan_tag_when_the_parent_is_respelled() -> Non
     root = _lab([_router_with_ports("R1", config)])
     _retarget_config_to_real_interface_names(root)
     assert "interface GigabitEthernet0/1.30" in _lines(root, "R1")
+
+
+def test_a_vlan_in_the_config_is_created_in_the_database() -> None:
+    """`vlan 80` in the running config does not create VLAN 80 in the switch.
+
+    Packet Tracer keeps the VLAN database as its own structure. A port assigned
+    to a VLAN the database does not hold forwards nothing, and the lab reads as
+    fully configured throughout. Measured on the enterprise lab: SW5's real
+    database held the donor's nine and none of the eight the skill declared, and
+    hosts in the donor's VLANs reached their gateway 4/4 while hosts in the
+    added ones reached nothing.
+    """
+    switch = _device(
+        "SW1",
+        "Switch",
+        ["vlan 80", " name ANBAR", "!", "interface FastEthernet0/1", " switchport access vlan 150", "!"],
+    )
+    engine = switch.find("./ENGINE")
+    database = ET.SubElement(engine, "VLANS")
+    for number, name in ((1, "default"), (1002, "fddi-default")):
+        entry = ET.SubElement(database, "VLAN")
+        entry.set("name", name)
+        entry.set("number", str(number))
+        entry.set("rspan", "0")
+
+    root = _lab([switch])
+    assert _add_missing_vlans_to_the_database(root)
+    numbers = {entry.get("number") for entry in database.findall("VLAN")}
+    assert {"1", "80", "150", "1002"} <= numbers
+    assert database.find("VLAN[@number='80']").get("name") == "ANBAR"
+    assert database.find("VLAN[@number='150']").get("name") == "VLAN150"
+    # Running it again adds nothing: a generated lab is the next build's donor.
+    assert _add_missing_vlans_to_the_database(root) == []
+
+
+def test_the_factory_vlans_are_not_invented() -> None:
+    switch = _device("SW1", "Switch", ["interface FastEthernet0/1", " switchport access vlan 1002", "!"])
+    ET.SubElement(switch.find("./ENGINE"), "VLANS")
+    root = _lab([switch])
+    assert _add_missing_vlans_to_the_database(root) == []
+
+
+def test_a_block_that_follows_a_sub_block_gets_its_separator_back() -> None:
+    """Packet Tracer swallowed `interface GigabitEthernet0/1.80` without it.
+
+    The file carried the subinterface with an address and HSRP; Packet Tracer's
+    own port list for R1 did not contain it, so VLAN 80 had a gateway on paper
+    and nothing answered on it.
+    """
+    config = [
+        "ip dhcp pool VLAN30",
+        " network 10.10.30.0 255.255.255.0",
+        " default-router 10.10.30.1",
+        "interface GigabitEthernet0/1.80",
+        " encapsulation dot1Q 80",
+        "!",
+    ]
+    root = _lab([_device("R1", "Router", config)])
+    assert _separate_config_blocks(root)
+    lines = _lines(root, "R1")
+    assert lines[lines.index("interface GigabitEthernet0/1.80") - 1] == "!"
+    assert _separate_config_blocks(root) == []
+
+
+def test_a_config_that_already_separates_its_blocks_is_untouched() -> None:
+    config = ["interface GigabitEthernet0/0", " no shutdown", "!", "interface GigabitEthernet0/1", " no shutdown", "!"]
+    root = _lab([_device("R1", "Router", config)])
+    assert _separate_config_blocks(root) == []
+    # `_lines` strips, so compare against the same shape.
+    assert _lines(root, "R1") == [line.strip() for line in config]
