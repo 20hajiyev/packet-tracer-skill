@@ -727,6 +727,74 @@ UNSLOTTED_MULTIPORT_TYPES = {
 WIRELESS_ROUTER_TYPES = {"WirelessRouter", "WirelessRouterNewGeneration"}
 
 
+def wireless_router_port_names(device: ET.Element) -> list[str]:
+    """The interface names a home router really answers to, LAN ports first.
+
+    A home router writes no interfaces into its configuration, so
+    `donor_interface_names` comes back empty and every shape check abstains --
+    which left the port index as the only thing anyone checked. That accepted
+    `FastEthernet0/1` on a device whose sockets are `Ethernet 1` .. `4`: right
+    index, wrong name, and Packet Tracer refuses a lab that names an interface
+    a device does not have.
+
+    The names are positional and set by the model. Measured over every home
+    router in the labs on this machine -- sixteen cables in all, and not one on
+    any other name:
+
+        WirelessRouter                 `Ethernet 1` .. `4`,        `Internet`
+        WirelessRouterNewGeneration    `GigabitEthernet 1` .. `4`, `Internet`
+
+    Both carry five copper ports and the fifth is the uplink, which is why
+    counting sockets and numbering them all put a cable on a port that is not
+    there. Note the older model's ports report `eCopperFastEthernet` and are
+    still named plain `Ethernet`, so the family cannot be read off the socket:
+    the device type is the discriminator.
+
+    Confirmed against the live devices rather than the files alone. Dropped into
+    an empty Packet Tracer and read back:
+
+        Linksys-WRT300N   Vlan1, Internet, Ethernet 1 .. 4, Wireless
+        HomeRouter-PT-AC  Vlan1, Internet, GigabitEthernet 1 .. 4,
+                          Wireless 1 .. 6, Wireless0/0
+
+    Worth doing: the builder's own device table gives `Ethernet 1` .. `4` for
+    the AC model, which the device itself contradicts. `pt_inspect_ports` is no
+    help either -- it answers at the IOS layer, where the LAN sockets are
+    bridged into `Vlan1` and do not appear at all.
+
+    The wireless sockets follow from the same PORT list: the access-point
+    radios are `Wireless 1` .. `N`, or bare `Wireless` when there is only one,
+    and a host radio is `Wireless0/0`. They are listed so a wireless link is
+    never mistaken for a cable on a port that is not there.
+
+    `Internet` comes after the LAN ports so a repair prefers a LAN port and
+    only reaches for the uplink when the LAN ports are taken.
+    """
+    raw_type = (device.findtext("./ENGINE/TYPE") or "").strip()
+    if normalize_device_type(raw_type) not in WIRELESS_ROUTER_TYPES:
+        return []
+    prefix = "GigabitEthernet" if raw_type == "WirelessRouterNewGeneration" else "Ethernet"
+    copper = access_radios = host_radios = 0
+    for node in device.findall(".//PORT"):
+        port_type = (node.findtext("TYPE") or "").strip()
+        if PORT_TYPE_FAMILIES.get(port_type) in {"FastEthernet", "GigabitEthernet"}:
+            copper += 1
+        elif port_type.startswith("eAccessPointWireless"):
+            access_radios += 1
+        elif port_type.startswith("eHostWireless"):
+            host_radios += 1
+    # One of the copper sockets is the uplink, which is why counting them and
+    # numbering them all put a cable on a port that is not there.
+    names = [f"{prefix} {index}" for index in range(1, max(copper - 1, 0) + 1)]
+    names.append("Internet")
+    if access_radios == 1:
+        names.append("Wireless")
+    else:
+        names += [f"Wireless {index}" for index in range(1, access_radios + 1)]
+    names += ["Wireless0/0"] * min(host_radios, 1)
+    return names
+
+
 def donor_interface_names(device: ET.Element) -> list[str]:
     """The interfaces a donor device really has, in the order it lists them.
 
@@ -835,6 +903,16 @@ def port_exists(device: ET.Element, port_name: str) -> bool:
     if "channel" in lowered or lowered.startswith("vlan") or "." in canonical:
         return False
 
+    # A home router's sockets are named positionally and are the same on every
+    # unit of a model, so they can be answered exactly rather than guessed at.
+    # This has to come before the branches below: `Ethernet 1` matches neither
+    # modelled prefix and used to fall through to the permissive branch, where a
+    # device with no configured interfaces is given the benefit of the doubt --
+    # so `Ethernet 99` passed too.
+    if device_type in WIRELESS_ROUTER_TYPES:
+        known = wireless_router_port_names(device)
+        return canonical in known if known else True
+
     # Serial is modelled now, so it gets a real answer: a router with no serial
     # card cannot carry `Serial0/0/0`, and letting that through produced a WAN
     # lab whose PPP configuration sat on an interface that was never cabled.
@@ -905,14 +983,6 @@ def port_exists(device: ET.Element, port_name: str) -> bool:
         if device_type in HOST_DEVICE_TYPES:
             # `FastEthernet0` and, for tolerance, a bare `FastEthernet`.
             return count > 0 and canonical in {kind, f"{kind}0"}
-        if device_type in WIRELESS_ROUTER_TYPES:
-            # One socket of this kind is the WAN port, named `Internet`; the
-            # rest are the LAN ports, numbered from one. Measured across 348
-            # saved labs: twenty cables on `GigabitEthernet 1` .. `4` of the
-            # new-generation model, two on `Ethernet 1` .. `4` of the older
-            # one, and fourteen on `Internet` -- every one of those an uplink.
-            index = _parse_port_index(canonical)
-            return index is not None and 1 <= index <= max(count - 1, 0)
         if device_type in UNSLOTTED_MULTIPORT_TYPES:
             # A hub numbers its ports `FastEthernet0`, `FastEthernet1`, ... --
             # unslotted like a host but many of them.

@@ -314,6 +314,18 @@ def _check_hosts_can_reach_their_gateway(devices: list[ET.Element]) -> list[Find
             gateways.add(address)
         for _port, address in _standby_addresses(device):
             gateways.add(address)
+        # A home router's LAN address is a setting, not a config line, so
+        # reading only running configs made it invisible: the checker went on
+        # reporting `gateway_answers_for_nobody` against a router that had just
+        # been moved onto exactly that address. Packet Tracer puts it on
+        # `Vlan1`, which the live device reports as a real interface.
+        lan = (device.findtext("./ENGINE/LAN_IP_ADDRESS") or "").strip()
+        lan_mask = (device.findtext("./ENGINE/LAN_SUBNET_MASK") or "").strip()
+        if lan and lan != "0.0.0.0":
+            gateways.add(lan)
+            network = _network_of(lan, lan_mask) if lan_mask else None
+            if network is not None:
+                served.add(network)
 
     findings: list[Finding] = []
     for device in devices:

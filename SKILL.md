@@ -120,6 +120,27 @@ quickly as `diff` will.
 - a `channel-group` whose peer does not bundle takes that switch off the network
 - an interface name the device does not own blocks the file from opening at all;
   a double-booked port does not
+- a `vlan N` line in a switch's configuration does **not** create the VLAN --
+  Packet Tracer keeps the database separately, and a port assigned to a VLAN
+  that is not in it forwards nothing
+- a top-level command written straight after an indented sub-block line is
+  swallowed; the `!` between them is load-bearing
+- a home router's sockets are named, not slotted, and the spelling is the
+  model's: `Ethernet 1` .. `4` on `WirelessRouter`, `GigabitEthernet 1` .. `4`
+  on `WirelessRouterNewGeneration`, and `Internet` for the uplink on both. It
+  writes no interfaces into its configuration, so nothing else can tell you
+- a home router's LAN address is a **setting**, not a config line, and lives in
+  `ENGINE/LAN_IP_ADDRESS` with its pool under `ENGINE/DHCP_SERVER/POOLS/POOL`;
+  a reader that only walks running configs cannot see it
+- a wireless client's addressing comes from its `WIRELESS_PROFILE`, not from
+  its port -- both record it, and Packet Tracer obeys the profile
+- a radio link is made by **distance**. A client outside the access point's
+  `COVERAGERANGE` reports its port `up` and `linked` and passes nothing
+- the builder MCP's device table is not authoritative about port names; it
+  gives the AC home router `Ethernet 1` .. `4`, and the device itself says
+  `GigabitEthernet 1` .. `4`. `pt_inspect_ports` answers at the IOS layer,
+  where those sockets are bridged into `Vlan1` and do not appear at all --
+  `pt_query_topology` is the one that lists them
 
 ### Drawing the topology yourself
 

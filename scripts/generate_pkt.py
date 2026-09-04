@@ -42,7 +42,7 @@ from packet_tracer_env import (
 from pkt_builder import build_packet_tracer_xml
 from pkt_codec import decode_pkt_file, decode_pkt_modern, encode_pkt_modern, serialize_pkt_xml
 from pkt_editor import _align_hostname_with_name, _ensure_text, _profile_nodes, _set_config_block, apply_plan_operations, decode_pkt_to_root, edit_pkt_file, inventory_devices, inventory_links, inventory_root
-from pkt_transformer import donor_interface_names, port_capacity, port_exists, transform_from_blueprint
+from pkt_transformer import donor_interface_names, port_capacity, port_exists, transform_from_blueprint, wireless_router_port_names
 import pkt_verify
 import usage_ledger
 from remote_search import (
@@ -2602,6 +2602,17 @@ def _write_pkt_root(root: ET.Element, pkt_path: Path, xml_path: Path | None = No
     _add_missing_vlans_to_the_database(root)
     _drop_vlan_subinterfaces_off_router_links(root)
     _move_static_hosts_onto_their_vlan_network(root)
+    # A home router keeps the donor's LAN network unless someone moves it onto
+    # the one its own clients are addressed for, and its clients keep another
+    # donor's network name unless someone puts them on the air it broadcasts.
+    _join_wireless_clients_to_the_network_that_exists(root)
+    _align_home_router_lan_with_its_clients(root)
+    _match_wireless_security_to_the_access_point(root)
+    # After the LAN move, which needs the planned addresses to know where to
+    # put the pool. Once it has, the pool addresses the clients.
+    _let_the_home_router_address_its_own_clients(root)
+    # Last, so the profile copies whatever the passes above settled on.
+    _make_the_wireless_profile_agree_with_the_port(root)
     _put_workstations_on_dhcp(root)
     # Snooping without a trusted uplink eats every offer the router sends.
     _trust_uplinks_for_dhcp_snooping(root)
@@ -2615,6 +2626,10 @@ def _write_pkt_root(root: ET.Element, pkt_path: Path, xml_path: Path | None = No
     _separate_overlapping_devices(root)
     # After the separation pass, so a leftover nudged sideways is still pulled in.
     _compact_stray_devices(root)
+    # Last of the layout: a radio link is made by distance, so a wireless
+    # client has to end up inside its access point's reach whatever the rows
+    # above decided.
+    _keep_wireless_clients_within_reach_of_their_access_point(root)
     _save_running_config_to_startup(root)
     prune_unused_images(root)
     xml_bytes = serialize_pkt_xml(root)
@@ -7082,6 +7097,537 @@ def _set_text(parent: ET.Element, tag: str, value: str) -> None:
     node.text = value
 
 
+def _keep_wireless_clients_within_reach_of_their_access_point(root: ET.Element) -> list[str]:
+    """A radio link is made by distance, and the layout was deciding distance blind.
+
+    The layout places hosts in rows under the switch they hang off. A wireless
+    client hangs off nothing, so it landed wherever the row logic left it --
+    measured on the generated lab, 420 units below a router whose radio reaches
+    250. Everything else about the lab was by then correct: same SSID, same
+    security, same key, the client a DHCP client and the router serving DHCP.
+    Packet Tracer still reported `ip 0.0.0.0`, no lease, 0/4, and the port as
+    `up` and `linked`, which is what made it look fine.
+
+    Moving that one laptop to 128 units away changed the reading immediately:
+    leased `192.168.10.101` out of the router's pool, radio negotiated up from
+    24 Mbps to 300, and 4/4 to the gateway. The second laptop the same, and
+    then 4/4 between them.
+
+    So this is the last of the pair: the wired topology decides the rows, the
+    radio's coverage decides whether the link exists, and nothing compared
+    them. Clients already in range are left where they are -- the pass has
+    nothing to add there, and moving them would make it depend on its own
+    output.
+    """
+    positions: dict[int, tuple[float, float]] = {}
+
+    def _place(device: ET.Element, x: float, y: float) -> None:
+        logical = device.find("./WORKSPACE/LOGICAL")
+        if logical is None:
+            workspace = device.find("./WORKSPACE")
+            if workspace is None:
+                workspace = ET.SubElement(device, "WORKSPACE")
+            logical = ET.SubElement(workspace, "LOGICAL")
+        for tag, value in (("X", x), ("Y", y)):
+            node = logical.find(tag)
+            if node is None:
+                node = ET.SubElement(logical, tag)
+            node.text = f"{value:.1f}"
+
+    def _at(device: ET.Element) -> tuple[float, float] | None:
+        logical = device.find("./WORKSPACE/LOGICAL")
+        if logical is None:
+            return None
+        try:
+            return float(logical.findtext("X") or ""), float(logical.findtext("Y") or "")
+        except ValueError:
+            return None
+
+    cabled: set[int] = set()
+    for cable in root.findall(".//LINKS/LINK/CABLE"):
+        for tag in ("FROM", "TO"):
+            reference = (cable.findtext(tag) or "").strip()
+            if reference:
+                cabled.add(hash(reference))
+
+    access_points: list[tuple[ET.Element, str, float]] = []
+    for device in root.findall(".//DEVICES/DEVICE"):
+        common = device.find("./ENGINE/WIRELESS_SERVER/WIRELESS_COMMON")
+        if common is None:
+            continue
+        ssid = (common.findtext("SSID") or "").strip()
+        reach = 0.0
+        for port in device.findall(".//PORT"):
+            if not (port.findtext("TYPE") or "").startswith("eAccessPointWireless"):
+                continue
+            try:
+                reach = max(reach, float(port.findtext("COVERAGERANGE") or 0))
+            except ValueError:
+                continue
+        if ssid and reach > 0:
+            access_points.append((device, ssid, reach))
+    if not access_points:
+        return []
+
+    moved: list[str] = []
+    for access_point, ssid, reach in access_points:
+        here = _at(access_point)
+        if here is None:
+            continue
+        clients = []
+        for device in root.findall(".//DEVICES/DEVICE"):
+            if device is access_point:
+                continue
+            common = device.find("./ENGINE/WIRELESS_CLIENT/WIRELESS_COMMON")
+            if common is None or (common.findtext("SSID") or "").strip() != ssid:
+                continue
+            reference = (device.findtext("./ENGINE/SAVE_REF_ID") or "").strip()
+            if reference and hash(reference) in cabled:
+                # A cabled client is on the wire, and the row it sits in is
+                # about that cable, not about the radio.
+                continue
+            clients.append(device)
+        if not clients:
+            continue
+
+        # Half the reach is comfortably inside it and leaves the icons apart.
+        radius = reach / 2
+        for index, device in enumerate(clients):
+            there = _at(device)
+            if there is not None:
+                span = ((there[0] - here[0]) ** 2 + (there[1] - here[1]) ** 2) ** 0.5
+                if span <= radius:
+                    continue
+            angle = 2 * math.pi * index / max(len(clients), 1)
+            x = here[0] + radius * math.cos(angle)
+            y = here[1] + radius * math.sin(angle)
+            _place(device, max(x, float(LOGICAL_ICON_SPACING)), max(y, float(LOGICAL_ICON_SPACING)))
+            name = (device.findtext("./ENGINE/NAME") or "").strip()
+            moved.append(f"{name} moved inside the {int(reach)}-unit reach of {(access_point.findtext('./ENGINE/NAME') or '').strip()}")
+    return moved
+
+
+def _the_only_access_point(root: ET.Element) -> tuple[ET.Element, ET.Element] | None:
+    """The one device broadcasting, and its wireless settings.
+
+    Two networks on the air is more than these passes can attribute, and
+    guessing which client belongs to which would be the same mistake they
+    exist to fix.
+    """
+    found: list[tuple[ET.Element, ET.Element]] = []
+    for device in root.findall(".//DEVICES/DEVICE"):
+        common = device.find("./ENGINE/WIRELESS_SERVER/WIRELESS_COMMON")
+        if common is not None and (common.findtext("SSID") or "").strip():
+            found.append((device, common))
+    return found[0] if len(found) == 1 else None
+
+
+def _let_the_home_router_address_its_own_clients(root: ET.Element) -> list[str]:
+    """A wireless client of a home router takes a lease; it does not hold a static address.
+
+    Measured on the donor this lab is pruned from, which works: `Laptop3` sits
+    on the Linksys's network as a DHCP client, is leased `192.168.0.100` out of
+    the router's own pool, and pings the router 4/4. Meanwhile the generated
+    lab wrote a static `192.168.10.20` onto its laptop's port and profile, and
+    Packet Tracer reported the radio associated, `dhcp_client: true`, `ip
+    0.0.0.0`, 0/4 -- it re-asserts DHCP on this kind of client whatever the
+    file says, which is why forcing the static address never took.
+
+    So the router's pool is the authority for its own clients, and this runs
+    after `_align_home_router_lan_with_its_clients` has moved that pool onto
+    the network the plan chose. The planned addresses are what tell it where to
+    move; once it has, they have done their job.
+
+    Only a router actually serving DHCP counts. One with its server off has
+    nothing to lease, and a client switched to DHCP there would end up with no
+    address at all.
+    """
+    access_point = _the_only_access_point(root)
+    if access_point is None:
+        return []
+    broadcaster, common = access_point
+    if (broadcaster.findtext("./ENGINE/DHCP_SERVER/ENABLED") or "").strip() != "1":
+        return []
+    if _normalize_device_type(broadcaster.findtext("./ENGINE/TYPE") or "") not in WIRELESS_ROUTER_KINDS:
+        return []
+    ssid = (common.findtext("SSID") or "").strip()
+
+    changed: list[str] = []
+    for device in root.findall(".//DEVICES/DEVICE"):
+        if device is broadcaster:
+            continue
+        client = device.find("./ENGINE/WIRELESS_CLIENT/WIRELESS_COMMON")
+        if client is None or (client.findtext("SSID") or "").strip() != ssid:
+            continue
+        moved = False
+        for port in device.findall(".//PORT"):
+            if not (port.findtext("TYPE") or "").startswith("eHostWireless"):
+                continue
+            if (port.findtext("PORT_DHCP_ENABLE") or "").strip().lower() == "true":
+                continue
+            _ensure_text(port, "PORT_DHCP_ENABLE", "true")
+            _ensure_text(port, "IP", "")
+            _ensure_text(port, "SUBNET", "")
+            _ensure_text(port, "PORT_GATEWAY", "")
+            moved = True
+        if moved:
+            name = (device.findtext("./ENGINE/NAME") or "").strip()
+            changed.append(f"{name} now takes its address from {(broadcaster.findtext('./ENGINE/NAME') or '').strip()}, which is what serves {ssid}")
+    return changed
+
+
+def _match_wireless_security_to_the_access_point(root: ET.Element) -> list[str]:
+    """A client set to WEP cannot join a WPA2 network, whatever its SSID says.
+
+    `set_wireless_ssid` writes the access point's authentication, encryption
+    and key. `associate_wireless_client` wrote the client's SSID and nothing
+    else -- so the security was decided once, on the access point, and the
+    client kept whatever the donor left it with. Measured on the lab built from
+    "ssid EvSebeke wpa2 sifre Gizli123":
+
+        WRT1     AUTHEN_TYPE 4  ENCRYPT_TYPE 4  WPA_PASSPHRASE Gizli123
+        Laptop1  AUTHEN_TYPE 1  ENCRYPT_TYPE 1  key 1234567890   (WEP)
+                 second profile AUTHEN_TYPE 0                    (open)
+
+    Three answers on one client, none of them the network's. The radio
+    associated -- Packet Tracer reports the port up and linked -- and not one
+    packet crossed it.
+
+    The client shape comes from three labs that work, `hr-guest`,
+    `meraki_SA_wireless_wpa2_psk` and a saved coursework lab: the key goes in
+    `WEP_PROCESS/KEY` and in each profile's `WEP_KEY` whatever the
+    authentication is. Those field names are legacy; WPA2 uses them too.
+    """
+    from pkt_editor import _profile_nodes
+
+    access_point = _the_only_access_point(root)
+    if access_point is None:
+        return []
+    broadcaster, common = access_point
+    ssid = (common.findtext("SSID") or "").strip()
+    authen = (common.findtext("AUTHEN_TYPE") or "").strip()
+    encrypt = (common.findtext("ENCRYPT_TYPE") or "").strip()
+    if not authen:
+        return []
+    key = ""
+    for tag in ("WPA_PASSPHRASE", "WEP_KEY"):
+        value = (common.findtext(tag) or "").strip()
+        if value:
+            key = value
+            break
+
+    # A profile also records the kind of network it is joining, and a home
+    # router will not take a client set to the narrower one. Measured on the
+    # donor: its two clients on the Linksys, which ping it 4/4, carry
+    # `NETWORK_TYPE` 7; its four clients on the access point carry 3. Ours
+    # were pruned from the access-point side and kept the 3, so they never
+    # associated to the router they were given -- Packet Tracer reported the
+    # radio linked at 24 Mbps, no lease, 0/4. Across 152 wireless labs, 1422
+    # of 1440 client profiles are on 7 whatever their authentication.
+    #
+    # Only for a home router: the access point's own clients work on 3, and
+    # rewriting those would be changing something measured to be fine.
+    network_type = (
+        "7"
+        if _normalize_device_type(broadcaster.findtext("./ENGINE/TYPE") or "") in WIRELESS_ROUTER_KINDS
+        else ""
+    )
+
+    changed: list[str] = []
+    for device in root.findall(".//DEVICES/DEVICE"):
+        if device is broadcaster:
+            continue
+        engine = device.find("./ENGINE")
+        if engine is None:
+            continue
+        client = engine.find("./WIRELESS_CLIENT/WIRELESS_COMMON")
+        if client is None or (client.findtext("SSID") or "").strip() != ssid:
+            continue
+        before = {
+            (client.findtext("AUTHEN_TYPE") or "").strip(),
+            *[(profile.findtext("AUTHEN_TYPE") or "").strip() for profile in _profile_nodes(engine)],
+        }
+        _ensure_text(client, "AUTHEN_TYPE", authen)
+        _ensure_text(client, "ENCRYPT_TYPE", encrypt)
+        process = client.find("WEP_PROCESS")
+        if process is None:
+            process = ET.SubElement(client, "WEP_PROCESS")
+        _ensure_text(process, "KEY", key)
+        _ensure_text(process, "ENCRYPTION", encrypt)
+        for profile in _profile_nodes(engine):
+            _ensure_text(profile, "AUTHEN_TYPE", authen)
+            _ensure_text(profile, "ENCRYPT_TYPE", encrypt)
+            _ensure_text(profile, "WEP_KEY", key)
+            if network_type and (profile.findtext("NETWORK_TYPE") or "").strip() != network_type:
+                _ensure_text(profile, "NETWORK_TYPE", network_type)
+                before = before | {"a network type the router does not take"}
+        if before != {authen}:
+            name = (device.findtext("./ENGINE/NAME") or "").strip()
+            changed.append(f"{name} now uses the security {ssid} is on, not {'/'.join(sorted(before - {authen}))}")
+    return changed
+
+
+def _make_the_wireless_profile_agree_with_the_port(root: ET.Element) -> list[str]:
+    """A wireless host takes its addressing from its profile, not from its port.
+
+    Both record it. The port carried `192.168.10.20` with `PORT_DHCP_ENABLE`
+    false; the profile carried `DHCP_ENABLED` 1 and no address at all. Packet
+    Tracer obeys the profile, so the laptop associated, asked for a lease, and
+    sat on `0.0.0.0` while the file said it was statically addressed -- and
+    every check that read the port agreed the lab was fine.
+
+    Measured live: `Wireless0` up, linked, `dhcp_client: true`, `ip 0.0.0.0`,
+    0/4 to a gateway that by then existed.
+
+    The port is the one the rest of the generator writes and reads, so the
+    profile follows it.
+    """
+    from pkt_editor import _profile_nodes
+
+    changed: list[str] = []
+    for device in root.findall(".//DEVICES/DEVICE"):
+        engine = device.find("./ENGINE")
+        if engine is None:
+            continue
+        profiles = _profile_nodes(engine)
+        if not profiles:
+            continue
+        radio = next(
+            (
+                port
+                for port in device.findall(".//PORT")
+                if (port.findtext("TYPE") or "").startswith("eHostWireless")
+            ),
+            None,
+        )
+        if radio is None:
+            continue
+        by_dhcp = (radio.findtext("PORT_DHCP_ENABLE") or "").strip().lower() == "true"
+        address = (radio.findtext("IP") or "").strip()
+        mask = (radio.findtext("SUBNET") or "").strip()
+        gateway = (radio.findtext("PORT_GATEWAY") or "").strip()
+        if not by_dhcp and not address:
+            # Neither source says anything; inventing an answer here would be
+            # the same mistake in a new place.
+            continue
+        wanted = {
+            "DHCP_ENABLED": "1" if by_dhcp else "0",
+            "IP_ADDRESS": "" if by_dhcp else address,
+            "SUBNET_MASK": "" if by_dhcp else mask,
+            "DEFAULT_GATEWAY": "" if by_dhcp else gateway,
+        }
+        touched = False
+        for profile in profiles:
+            for tag, value in wanted.items():
+                if (profile.findtext(tag) or "").strip() != value:
+                    touched = True
+                _ensure_text(profile, tag, value)
+        if touched:
+            name = (device.findtext("./ENGINE/NAME") or "").strip()
+            how = "DHCP" if by_dhcp else f"{address} statically"
+            changed.append(f"{name} now uses {how} on its radio, which is what its port already said")
+    return changed
+
+
+def _join_wireless_clients_to_the_network_that_exists(root: ET.Element) -> list[str]:
+    """A client cannot associate to a network name nothing is broadcasting.
+
+    Same shape as the addressing fault beside it, one layer down. Measured on
+    `wireless_home`, built from "1 wireless router 2 laptop qur" -- no network
+    name asked for, so nobody set one: the laptops kept the donor's
+    `TestNetwork` and the router kept the donor's `Default`. Two residues from
+    two different donors, and no association between them. `wireless_ssid`
+    names a network in the prompt and both ends get it, which is why only the
+    unnamed case was broken.
+
+    The router broadcasts and the clients join, so the clients move. When the
+    lab has more than one network on the air there is nothing here to infer,
+    and the pass stands aside.
+    """
+    from pkt_editor import _profile_nodes, _wireless_common_nodes
+
+    broadcasters: dict[str, ET.Element] = {}
+    for device in root.findall(".//DEVICES/DEVICE"):
+        ssid = (device.findtext("./ENGINE/WIRELESS_SERVER/WIRELESS_COMMON/SSID") or "").strip()
+        if ssid:
+            broadcasters[ssid] = device
+    if len(broadcasters) != 1:
+        return []
+    ssid, broadcaster = next(iter(broadcasters.items()))
+
+    changed: list[str] = []
+    for device in root.findall(".//DEVICES/DEVICE"):
+        if device is broadcaster:
+            continue
+        engine = device.find("./ENGINE")
+        if engine is None or engine.find("./WIRELESS_CLIENT") is None:
+            continue
+        # `_wireless_common_nodes` walks from ENGINE, so the cellular radio --
+        # nested under CELLULAR_CLIENT and always on `ptcellular` -- is out of
+        # reach, which is what we want.
+        nodes = [
+            node
+            for node in _wireless_common_nodes(engine)
+            if engine.find("./WIRELESS_SERVER/WIRELESS_COMMON") is not node
+        ]
+        profiles = _profile_nodes(engine)
+        current = {
+            (node.findtext("SSID") or "").strip()
+            for node in [*nodes, *profiles]
+            if (node.findtext("SSID") or "").strip()
+        }
+        if not current or current == {ssid}:
+            continue
+        for node in nodes:
+            _ensure_text(node, "SSID", ssid)
+        for profile in profiles:
+            _ensure_text(profile, "NAME", ssid)
+            _ensure_text(profile, "SSID", ssid)
+        name = (device.findtext("./ENGINE/NAME") or "").strip()
+        changed.append(f"{name} now joins {ssid}, the only network on the air, instead of {'/'.join(sorted(current))}")
+    return changed
+
+
+def _align_home_router_lan_with_its_clients(root: ET.Element) -> list[str]:
+    """A home router has to serve the network its own clients are addressed on.
+
+    Two places decide what that network is and neither reads the other. The
+    addressing pass hands the laptops `192.168.10.20` and `.21` with a gateway
+    of `192.168.10.1`; the home router keeps whatever the donor was configured
+    with, `192.168.0.1/24` with a pool from `.100` to `.149`. Measured on
+    `wireless_home` and `wireless_ssid`: the lab opens, the laptops associate,
+    the coherence report says `gateway_answers_for_nobody` twice, and nothing
+    can reach anything because the gateway they point at does not exist.
+
+    The router moves, not the hosts. Its LAN address is a setting; the hosts'
+    addresses are the plan, and the rest of the lab is written against them.
+
+    Only static clients count. A DHCP client takes its address and its gateway
+    from this router at runtime, so it can never disagree with it, and reading
+    its stale address would make an aligned lab look broken.
+    """
+    from lab_coherence import _interface_addresses
+
+    devices = root.findall(".//DEVICES/DEVICE")
+    routers = [
+        device
+        for device in devices
+        if _normalize_device_type(device.findtext("./ENGINE/TYPE") or "") in WIRELESS_ROUTER_KINDS
+    ]
+    if not routers:
+        return []
+
+    # An address some interface in the lab really answers for is not a gap,
+    # whoever holds it.
+    held: set[str] = set()
+    for device in devices:
+        for _port, address, _mask in _interface_addresses(device):
+            held.add(address)
+        for node in device.iter("LAN_IP_ADDRESS"):
+            if (node.text or "").strip():
+                held.add((node.text or "").strip())
+
+    wanted: dict[str, tuple[str, str]] = {}
+    for device in devices:
+        for port in device.findall(".//PORT"):
+            if (port.findtext("PORT_DHCP_ENABLE") or "").strip().lower() == "true":
+                continue
+            gateway = (port.findtext("PORT_GATEWAY") or "").strip()
+            address = (port.findtext("IP") or "").strip()
+            mask = (port.findtext("SUBNET") or "").strip()
+            if not gateway or gateway in held or not address or not mask:
+                continue
+            wanted.setdefault(gateway, (gateway, mask))
+
+    if not wanted:
+        return []
+    # More than one orphaned gateway is more than this pass can attribute, and
+    # guessing which router owns which would be the same mistake again.
+    if len(wanted) > 1 or len(routers) > 1:
+        return []
+
+    gateway, mask = next(iter(wanted.values()))
+    router = routers[0]
+    name = (router.findtext("./ENGINE/NAME") or "").strip()
+    current = (router.findtext("./ENGINE/LAN_IP_ADDRESS") or "").strip()
+    if current == gateway:
+        return []
+
+    network = _network_address(gateway, mask)
+    if not network:
+        return []
+    first, last = _dhcp_pool_bounds(network, mask)
+
+    # Written by path, not by tag. `ENGINE` carries a stray empty `START_IP`
+    # beside the real one in `DHCP_SERVER/POOLS/POOL`, and a search by tag name
+    # filled both -- putting a pool bound on a field the donor left blank on
+    # purpose.
+    engine = router.find("./ENGINE")
+    if engine is None:
+        return []
+    for tag, value in (("LAN_IP_ADDRESS", gateway), ("LAN_SUBNET_MASK", mask)):
+        node = engine.find(tag)
+        if node is None:
+            node = ET.SubElement(engine, tag)
+        node.text = value
+    for pool in engine.findall("./DHCP_SERVER/POOLS/POOL"):
+        for tag, value in (
+            ("NETWORK", network),
+            ("MASK", mask),
+            ("DEFAULT_ROUTER", gateway),
+            ("START_IP", first),
+            ("END_IP", last),
+        ):
+            node = pool.find(tag)
+            if node is None:
+                node = ET.SubElement(pool, tag)
+            node.text = value
+        # A lease is a record of an address this pool handed out. Moving the
+        # pool and keeping them left five leases on `192.168.0.100` .. `.104`
+        # in a router now serving `192.168.10.0/24` -- addresses it can no
+        # longer reach, held against clients that will ask again.
+        leases = pool.find("DHCP_POOL_LEASES")
+        if leases is not None:
+            for lease in list(leases):
+                leases.remove(lease)
+    return [f"{name} now serves {network} with its gateway on {gateway}, which its clients point at"]
+
+
+def _network_address(address: str, mask: str) -> str:
+    try:
+        octets = [int(part) for part in address.split(".")]
+        bits = [int(part) for part in mask.split(".")]
+    except ValueError:
+        return ""
+    if len(octets) != 4 or len(bits) != 4:
+        return ""
+    return ".".join(str(octet & bit) for octet, bit in zip(octets, bits))
+
+
+def _dhcp_pool_bounds(network: str, mask: str) -> tuple[str, str]:
+    """The same span the donor used, `.100` to `.149`, kept inside the network.
+
+    A /24 is what a home router serves in practice; anything narrower gets a
+    pool that fits rather than one that runs past the broadcast address.
+    """
+    try:
+        octets = [int(part) for part in network.split(".")]
+        bits = [int(part) for part in mask.split(".")]
+    except ValueError:
+        return network, network
+    size = 1
+    for bit in bits:
+        size *= 256 - bit
+    first_offset = min(100, max(size - 2, 1))
+    last_offset = min(149, max(size - 2, 1))
+
+    def _at(offset: int) -> str:
+        value = (octets[0] << 24) + (octets[1] << 16) + (octets[2] << 8) + octets[3] + offset
+        return ".".join(str((value >> shift) & 0xFF) for shift in (24, 16, 8, 0))
+
+    return _at(first_offset), _at(last_offset)
+
+
 def _move_static_hosts_onto_their_vlan_network(root: ET.Element) -> list[str]:
     """A static host has to sit on the network its own VLAN is routed on.
 
@@ -8670,6 +9216,14 @@ def _repair_invalid_link_ports(root: ET.Element) -> list[str]:
                 reason = "interface does not exist"
             name = device.findtext("./ENGINE/NAME") or ref
             candidates = donor_interface_names(device)
+            if not candidates:
+                # A home router writes no interfaces into its configuration, so
+                # the probe list below -- all of it slotted -- offered nothing
+                # its sockets are called. Tightening `port_exists` to reject
+                # `FastEthernet0/1` on a device whose ports are `Ethernet 1` ..
+                # `4` would then have removed the cable instead of renaming it,
+                # which is why the two changes belong together.
+                candidates = wireless_router_port_names(device)
             if not candidates:
                 # Some devices carry no running config to read interfaces from,
                 # and a repair with nothing to offer leaves the fault in place:
@@ -11003,6 +11557,17 @@ def generate_from_prompt(
     _add_missing_vlans_to_the_database(root)
     _drop_vlan_subinterfaces_off_router_links(root)
     _move_static_hosts_onto_their_vlan_network(root)
+    # A home router keeps the donor's LAN network unless someone moves it onto
+    # the one its own clients are addressed for, and its clients keep another
+    # donor's network name unless someone puts them on the air it broadcasts.
+    _join_wireless_clients_to_the_network_that_exists(root)
+    _align_home_router_lan_with_its_clients(root)
+    _match_wireless_security_to_the_access_point(root)
+    # After the LAN move, which needs the planned addresses to know where to
+    # put the pool. Once it has, the pool addresses the clients.
+    _let_the_home_router_address_its_own_clients(root)
+    # Last, so the profile copies whatever the passes above settled on.
+    _make_the_wireless_profile_agree_with_the_port(root)
     _put_workstations_on_dhcp(root)
     # Snooping without a trusted uplink eats every offer the router sends.
     _trust_uplinks_for_dhcp_snooping(root)
@@ -11016,6 +11581,10 @@ def generate_from_prompt(
     _separate_overlapping_devices(root)
     # After the separation pass, so a leftover nudged sideways is still pulled in.
     _compact_stray_devices(root)
+    # Last of the layout: a radio link is made by distance, so a wireless
+    # client has to end up inside its access point's reach whatever the rows
+    # above decided.
+    _keep_wireless_clients_within_reach_of_their_access_point(root)
     _save_running_config_to_startup(root)
     # Before the annotation and the serialisation: the annotation names the
     # devices, and a rename after `serialize_pkt_xml` would change nothing
