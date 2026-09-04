@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from intent_parser import NATURAL_DEVICE_ALIASES, parse_intent  # noqa: E402
-from sample_catalog import normalize_device_type  # noqa: E402
+from sample_catalog import load_catalog, normalize_device_type  # noqa: E402
 
 CATALOG = ROOT / "references" / "packettracer-sample-catalog.json"
 
@@ -33,11 +33,19 @@ SYNTHESISED = {"Patch Panel", "Wall Mount"}
 
 
 def _kinds_in_real_labs() -> set[str]:
-    entries = json.loads(CATALOG.read_text(encoding="utf-8"))
+    """Every device kind in the corpus generation can actually draw from.
+
+    This read the committed catalogue file. That was the whole corpus until the
+    catalogue was split in two -- the installed samples are committed, the labs
+    found on this machine are not, because they carry their owner's name. The
+    split left this reader looking at one half and reporting the other half
+    missing: Printer, Bridge, Repeater and both end devices, all of them
+    present on disk and all of them reachable by `load_catalog`, which is what
+    donor ranking consults.
+    """
     found: set[str] = set()
-    for sample in entries:
-        for device in sample.get("devices") or []:
-            kind = device.get("type") if isinstance(device, dict) else device
+    for sample in load_catalog():
+        for kind in sample.normalized_device_counts():
             if kind:
                 found.add(normalize_device_type(kind))
     return found

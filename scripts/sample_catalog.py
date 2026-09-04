@@ -21,6 +21,11 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 SKILL_ROOT = SCRIPT_DIR.parent
 DEFAULT_CATALOG_JSON = SKILL_ROOT / "references" / "packettracer-sample-catalog.json"
 DEFAULT_CATALOG_MD = SKILL_ROOT / "references" / "packettracer-sample-catalog.md"
+# Labs the user happens to have on disk are catalogued for donor ranking but
+# never written to the two files above: those are committed, and a lab from
+# `C:/Users/<name>/Downloads` carries that person's name in its path, its
+# filename and its device labels. Kept beside them, and git-ignored.
+LOCAL_CATALOG_JSON = SKILL_ROOT / "references" / "local-donor-catalog.json"
 DEFAULT_CURATED_DONOR_REGISTRY = SKILL_ROOT / "references" / "curated-donor-registry.json"
 
 CAPABILITY_KEYWORDS = {
@@ -1148,7 +1153,15 @@ def _load_catalog_cached(path_str: str) -> tuple[SampleDescriptor, ...]:
 
 
 def load_catalog(path: Path | None = None) -> list[SampleDescriptor]:
-    return list(_load_catalog_cached(str(path or DEFAULT_CATALOG_JSON)))
+    """Both catalogues, so splitting the file did not shrink donor choice.
+
+    The installed samples are committed; the labs found on this machine are
+    not. Ranking has always seen one list and still does.
+    """
+    catalog = list(_load_catalog_cached(str(path or DEFAULT_CATALOG_JSON)))
+    if path is None and LOCAL_CATALOG_JSON.is_file():
+        catalog.extend(_load_catalog_cached(str(LOCAL_CATALOG_JSON)))
+    return catalog
 
 
 def _summarize_pkt(path: Path, relative_path: str, origin: str, prototype_eligible: bool) -> dict[str, Any]:
@@ -1366,17 +1379,39 @@ def extract_reference_patterns(samples: list[SampleDescriptor]) -> list[Referenc
     return patterns
 
 
-def write_catalog_outputs(items: list[dict[str, Any]], json_path: Path | None = None, md_path: Path | None = None) -> None:
+def write_catalog_outputs(
+    items: list[dict[str, Any]],
+    json_path: Path | None = None,
+    md_path: Path | None = None,
+    local_json_path: Path | None = None,
+) -> None:
+    """Write the installed-sample catalogue, and the local one beside it.
+
+    `_local_donor_items` strips `path` from its entries so the committed
+    catalogue would not depend on whose machine built it -- but that intent
+    lived only there, and this writer, which is what actually persists the
+    file, did not share it. So a rebuild on a machine with saved labs staged
+    350 entries naming the user and their classmates, each with an absolute
+    path under their home directory, into a file bound for a public
+    repository. Provenance is already on every entry; the split reads it
+    rather than trusting the caller to have filtered first.
+    """
     enriched = enrich_catalog_items(items)
-    compact_items: list[dict[str, Any]] = []
+    installed: list[dict[str, Any]] = []
+    local: list[dict[str, Any]] = []
     for item in enriched:
         saved = dict(item)
         saved.pop("path", None)
-        compact_items.append(saved)
-    (json_path or DEFAULT_CATALOG_JSON).write_text(json.dumps(compact_items, indent=2, ensure_ascii=False), encoding="utf-8")
+        (installed if saved.get("origin") == "cisco-local" else local).append(saved)
+    (json_path or DEFAULT_CATALOG_JSON).write_text(json.dumps(installed, indent=2, ensure_ascii=False), encoding="utf-8")
+    local_path = local_json_path or LOCAL_CATALOG_JSON
+    if local:
+        local_path.write_text(json.dumps(local, indent=2, ensure_ascii=False), encoding="utf-8")
+    elif local_path.exists():
+        local_path.unlink()
     root_label = "<PACKET_TRACER_SAVES_ROOT>"
     lines = ["# Packet Tracer Installed Sample Catalog", "", f"Source root: `{root_label}`", ""]
-    for item in enriched:
+    for item in installed:
         if "error" in item:
             lines.append(f"- `{item['relative_path']}`")
             lines.append(f"  decode error: `{item['error']}`")

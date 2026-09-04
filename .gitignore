@@ -20,3 +20,6 @@ scripts/vendor/_twofish*.dll
 *.tgz
 examples/previews/
 output/corpus-results.json
+
+# Labs found on this machine: catalogued for donor ranking, never published.
+references/local-donor-catalog.json
