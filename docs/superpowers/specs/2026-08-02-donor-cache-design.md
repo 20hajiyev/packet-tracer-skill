@@ -213,7 +213,7 @@ the user's lab directories emptied from the search path:
 
 ```
 saves  -> ~/.pkt/saves
-donor  -> ~/.pkt/saves/_donors/Yusif_K231.pkt
+donor  -> ~/.pkt/saves/_donors/local-donor.pkt
 output -> 6 devices, VERSION 9.0.0.0810, structural check passes
 open   -> opened, 13.3 s
 ```

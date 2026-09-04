@@ -24,11 +24,12 @@ inspecting the file.
 
 | measurement | result |
 | --- | --- |
-| corpus scenarios generated | 32 of 33 |
-| of those, opened by Packet Tracer | 32 of 32 |
-| tests | 657 passed, 1 skipped |
+| corpus scenarios generated | 32 of 33 (the 33rd asks for no devices and is refused) |
+| of those, opened by Packet Tracer | 31 of 32 |
+| tests | 824 passed, 1 skipped |
 | generated DHCP lab | four PCs took leases from the router pool and pinged their gateway and each other 4/4 |
 | generated leased line | traffic crossed `Serial0/1/1 <-> Serial0/1/0` 4/4 |
+| generated home-router lab | both hosts pinged the gateway and each other 4/4 |
 
 Three defects had made every generated WAN lab unopenable, each hiding the next.
 A donor the selector had *rejected* still rewrote the request, so a planned
@@ -42,6 +43,18 @@ Two different numbers in this README both describe generation. The one above is
 donor-prune generation: a real lab is pruned and rewired to match the request.
 The atlas `generate_ready` count further down is a stricter per-feature
 acceptance gate, still `0` by design.
+
+**One thing to know before you ask for Wi-Fi.** A lab whose hosts reach the
+network over a *cable* is verified by ping here. A lab whose hosts have only a
+radio is not: Packet Tracer does not re-form the association when it opens such
+a file, so the client shows its port `up` and `linked`, holds no address, and
+reaches nothing until you nudge a device in the workspace. Which of the two you
+get depends on the donor -- one whose laptops carry a copper port produces the
+first, one whose laptops carry only a radio produces the second. The generator
+now makes the client agree with its network in every field that can be written
+(name, security, key, addressing mode, and placement inside the access point's
+coverage), and that is still not sufficient. Treat wireless-only topologies as
+unverified.
 
 The previous line, the `0.2.3` capability release, was focused on:
 
@@ -649,14 +662,25 @@ Bu, promptun Packet Tracer-in açdığı fayla çevrildiyi ilk buraxılışdır.
 
 | Ölçü | Nəticə |
 | --- | --- |
-| korpusda qurulan ssenari | 33-dən 32 |
-| onlardan Packet Tracer-in açdığı | 32-dən 32 |
-| testlər | 657 keçdi, 1 ötürüldü |
+| korpusda qurulan ssenari | 33-dən 32 (33-cü heç bir cihaz istəmir, rədd edilir) |
+| onlardan Packet Tracer-in açdığı | 32-dən 31 |
+| testlər | 824 keçdi, 1 ötürüldü |
 | DHCP laboratoriyası | 4 kompüter routerin hovuzundan ünvan aldı, şlüzə və bir-birinə 4/4 ping |
 | icarə xətti (leased line) | trafik `Serial0/1/1 <-> Serial0/1/0` üzərindən 4/4 keçdi |
+| ev routeri laboratoriyası | hər iki host şlüzə və bir-birinə 4/4 ping etdi |
 
 Ping rəqəmləri cihazların özündə `ping` işlədilməklə alınıb. Bu layihədə bütün
 statik yoxlamaları keçən, amma heç nəyin ping etmədiyi laboratoriyalar olub.
+
+**Wi-Fi istəməzdən əvvəl bilməli olduğunuz bir şey.** Hostları şəbəkəyə **kabel**
+ilə çıxan laboratoriya burada ping ilə təsdiqlənib. Yalnız radiosu olan host isə
+təsdiqlənməyib: Packet Tracer belə faylı açanda assosiasiyanı yenidən qurmur --
+port `up` və `linked` görünür, ünvan olmur, heç yerə çatmır, ta ki iş sahəsində
+cihazı tərpədənə qədər. Hansını alacağınız donordan asılıdır: laptopları mis
+porta malik donor birincisini, yalnız radiosu olan donor ikincisini verir.
+Generator artıq klienti şəbəkəsi ilə yazıla bilən hər sahədə uzlaşdırır (ad,
+təhlükəsizlik, açar, ünvanlama rejimi və əhatə dairəsinin içində yerləşdirmə) --
+bu **hələ də kifayət etmir**. Yalnız simsiz topologiyaları təsdiqlənməmiş sayın.
 
 ### Nə düzəldildi
 

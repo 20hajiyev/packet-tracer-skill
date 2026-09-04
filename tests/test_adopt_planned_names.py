@@ -7,7 +7,7 @@ third switch is the core of the topology -- the router connects to it and it
 connects to the other two. It had kept the donor's name.
 
 Whether the rename lands depends on the donor: applying the same plan against
-`Senan_K231.pkt` by hand produced `SW3` correctly, while the donor the corpus
+the saved floor-switch lab by hand produced `SW3` correctly, while the donor the corpus
 picked supplied its own `MultiLayerSwitch` devices and one was reused as-is.
 
 Being cabled is the test for "doing the job". An idle spare parked to one side

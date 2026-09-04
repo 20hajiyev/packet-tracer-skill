@@ -64,7 +64,7 @@ def test_a_local_lab_is_written_to_the_local_file_not_the_committed_one(tmp_path
     write_catalog_outputs(
         [
             _entry("01 Networking/DHCP/dhcp_apipa.pkt", "cisco-local"),
-            _entry("Senan_K231.pkt", "user-local", r"C:\Users\Sanan\Downloads\Senan_K231.pkt"),
+            _entry("my-coursework-lab.pkt", "user-local", r"C:\Users\ada\Downloads\my-coursework-lab.pkt"),
         ],
         json_path=json_path,
         md_path=md_path,
@@ -73,11 +73,11 @@ def test_a_local_lab_is_written_to_the_local_file_not_the_committed_one(tmp_path
 
     published = json.loads(json_path.read_text(encoding="utf-8"))
     assert [item["relative_path"] for item in published] == ["01 Networking/DHCP/dhcp_apipa.pkt"]
-    assert "Senan_K231" not in md_path.read_text(encoding="utf-8")
+    assert "my-coursework-lab" not in md_path.read_text(encoding="utf-8")
 
     kept = json.loads(local_path.read_text(encoding="utf-8"))
-    assert [item["relative_path"] for item in kept] == ["Senan_K231.pkt"]
-    assert kept[0]["source_path"].endswith("Senan_K231.pkt")
+    assert [item["relative_path"] for item in kept] == ["my-coursework-lab.pkt"]
+    assert kept[0]["source_path"].endswith("my-coursework-lab.pkt")
 
 
 def test_the_local_file_goes_away_when_the_machine_has_no_local_labs(tmp_path: Path) -> None:

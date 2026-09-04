@@ -8,7 +8,7 @@ serial routers also facing a switch, router-to-router serial pairs -- was
 identical between the donor that produced a serial WAN and the ones that did
 not, so the donor cannot be asked. The built lab can.
 
-Asking it takes care. A lab pruned from `Maarif_K231.pkt` was measured holding
+Asking it takes care. A lab pruned from the saved six-department lab was measured holding
 an `eSerial` cable whose ends were `GigabitEthernet0/0/1` and
 `GigabitEthernet0/0/0`. `_reconcile_cable_media` demoted it to copper further
 down the pipeline -- correctly, since Packet Tracer will not open a serial
@@ -114,7 +114,7 @@ def test_a_serial_cable_between_serial_ports_counts() -> None:
 
 
 def test_a_serial_cable_on_ports_the_routers_do_not_have_does_not_count() -> None:
-    """Measured on a lab pruned from `Senan_Haciyev_tapsiriq.pkt`.
+    """Measured on a lab pruned from the saved serial-WAN lab.
 
     The cable read `Serial0/0/0 <-> Serial0/0/0` while both routers owned only
     `Serial2/0` and `Serial3/0`. `port_exists` accepts the name, so counting it

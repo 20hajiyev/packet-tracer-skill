@@ -59,6 +59,10 @@ def _lab(devices: list[ET.Element]) -> ET.Element:
     return root
 
 
+def _lab_device(root: ET.Element, name: str) -> ET.Element:
+    return [d for d in root.findall(".//DEVICES/DEVICE") if (d.findtext("./ENGINE/NAME") or "") == name][0]
+
+
 def _ssids(root: ET.Element, name: str) -> list[str]:
     for device in root.findall(".//DEVICES/DEVICE"):
         if (device.findtext("./ENGINE/NAME") or "") == name:
@@ -69,7 +73,17 @@ def _ssids(root: ET.Element, name: str) -> list[str]:
 def test_a_client_asking_for_a_network_nobody_broadcasts_is_moved_onto_the_one_that_exists() -> None:
     root = _lab([_router("WRT1", "Default"), _laptop("Laptop1", "TestNetwork")])
     assert _join_wireless_clients_to_the_network_that_exists(root)
-    assert _ssids(root, "Laptop1") == ["Default", "Default", "Default", "ptcellular", "ptcellular", "ptcellular"]
+    engine = _lab_device(root, "Laptop1").find("./ENGINE")
+    assert engine.findtext("./WIRELESS_CLIENT/WIRELESS_COMMON/SSID") == "Default"
+    assert engine.findtext("./WIRELESS_CLIENT/CURRENT_PROFILE/WIRELESS_PROFILE/SSID") == "Default"
+
+
+def test_the_saved_profile_list_is_left_as_it_was() -> None:
+    """Every client that works leaves its saved list alone; ours has to as well."""
+    root = _lab([_router("WRT1", "Default"), _laptop("Laptop1", "TestNetwork")])
+    _join_wireless_clients_to_the_network_that_exists(root)
+    engine = _lab_device(root, "Laptop1").find("./ENGINE")
+    assert engine.findtext("./WIRELESS_CLIENT/PROFILES/WIRELESS_PROFILE/SSID") == "TestNetwork"
 
 
 def test_the_cellular_radio_is_left_on_its_own_network() -> None:

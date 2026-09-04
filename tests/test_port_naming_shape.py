@@ -5,7 +5,7 @@ within one slot -- `FastEthernet0/1` .. `0/24` -- while a modular switch numbers
 by slot: `FastEthernet0/1`, `1/1`, ... `9/1`. The generator composes
 `FastEthernet0/{index}`, so it asked such a switch for `FastEthernet0/2`.
 
-Measured on a lab built from `Senan_Haciyev_tapsiriq.pkt`: that one link is why
+Measured on a lab built from the saved serial-WAN lab: that one link is why
 Packet Tracer refused the file. The same file with its uplink on
 `FastEthernet2/1` opens. And the routers in it own two serial ports, so
 `port_exists` answered yes to `Serial0/0/0` on hardware whose only serial

@@ -2151,13 +2151,13 @@ against each with `--donor-root`, then opened in Packet Tracer:
 | --- | --- | --- |
 | `company_network.pkt` | yes | yes |
 | `pkt_skill_serial_wan.pkt` | yes | no |
-| `Senan_Haciyev_tapsiriq.pkt` | no | yes |
+| the saved serial-WAN lab | no | yes |
 | `test.pkt` | yes | no |
 | `train9ng.pkt` | yes | no |
 
 One donor of five gives both. It is not the richest -- `train9ng` has 11
 switches and 18 PCs and yields no serial. It is not the one with the most
-serial routers -- `Senan_Haciyev_tapsiriq` has five and is refused. The
+serial routers -- the saved serial-WAN lab has five and is refused. The
 host-richness ranking tried in the previous cycle is therefore wrong, measured.
 
 Three counts taken from the donors, looking for one that separates the working
@@ -2165,7 +2165,7 @@ donor from the rest:
 
 | donor | serial routers | also facing a switch | router-to-router serial pairs |
 | --- | --- | --- | --- |
-| `Senan_Haciyev_tapsiriq.pkt` | 5 | 3 | 4 |
+| the saved serial-WAN lab | 5 | 3 | 4 |
 | `company_network.pkt` | 2 | 1 | 1 |
 | `pkt_skill_serial_wan.pkt` | 2 | 2 | 1 |
 | `test.pkt` | 2 | 1 | 1 |
@@ -2183,7 +2183,7 @@ answer is sitting in memory at the moment the decision is made.
 ### The check had to be about ports, not about the cable's label
 
 The first version counted `LINK/TYPE == eSerial` and reported a serial WAN for
-a lab pruned from `Maarif_K231.pkt`. Tracing the stages showed why:
+a lab pruned from the saved six-department lab. Tracing the stages showed why:
 
 ```
 after prune:    eSerial on ['GigabitEthernet0/0/1', 'GigabitEthernet0/0/0']
@@ -2286,7 +2286,7 @@ and delete just its two links: **that opens**. Then, with R1 still present and
 unlinked, adding a cable between the switch and R2 is refused as well. So R1
 was never the variable:
 
-> A lab pruned from `Senan_Haciyev_tapsiriq.pkt` opens if and only if no router
+> A lab pruned from the saved serial-WAN lab opens if and only if no router
 > is cabled. Cables among the PCs and the switch are fine.
 
 Everything tried against it, each measured by generating the file and opening

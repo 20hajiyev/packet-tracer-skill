@@ -178,7 +178,7 @@ def test_collect_runtime_doctor_reports_external_bridge_resolution(monkeypatch) 
             "python_version": "3.14.0",
             "python_support_status": "ok",
             "python_support_message": "supported",
-            "resolved_twofish_path": r"C:\Users\Sanan\.codex\skills\pkt\scripts\vendor\_twofish.cp314-win_amd64.pyd",
+            "resolved_twofish_path": r"C:\skills\pkt\scripts\vendor\_twofish.cp314-win_amd64.pyd",
             "twofish_source": "env",
             "twofish_load_status": "ok",
             "twofish_message": "loaded",

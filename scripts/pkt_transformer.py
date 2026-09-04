@@ -855,7 +855,7 @@ def _name_contradicts_device_shape(device: ET.Element, canonical: str, kind: str
       `1/1`, ... `9/1`. Both have one slash, so depth cannot tell them apart,
       and the generator's `FastEthernet0/{index}` asked such a switch for
       `FastEthernet0/2`. Measured: that single link is why a lab built from
-      `Senan_Haciyev_tapsiriq.pkt` was refused; the same file with the uplink on
+      the saved serial-WAN lab was refused; the same file with the uplink on
       `FastEthernet2/1` opens.
 
     Two names are required before concluding anything about the second axis, so

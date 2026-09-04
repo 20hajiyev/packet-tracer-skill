@@ -364,7 +364,7 @@ inherits its `<VERSION>` — the first file ever generated claimed `6.1.0.0026`
 while the skill advertised 9.0. `_existing_ranked_candidates` now applies the
 compatibility ladder.
 
-**6. Donor groups were zipped in name order.** `Senan_K231.pkt` contains
+**6. Donor groups were zipped in name order.** The saved floor-switch lab contains
 `DIA-RS <-> Mertebe 3`, a real Router-Switch link, but `SW1` was assigned to
 `Mertebe 1`, so the plan reported the donor "does not contain that
 device-to-device link". `_align_donor_groups_to_targets` now places the donor's

@@ -93,15 +93,26 @@ def test_the_client_is_put_on_the_security_the_network_is_running() -> None:
     assert common.findtext("./WEP_PROCESS/KEY") == "Gizli123"
 
 
-def test_every_profile_gets_the_key_not_just_the_current_one() -> None:
-    """One client carried a WEP profile and an open profile beside it."""
+def test_only_the_live_profile_is_rewritten_not_the_saved_list() -> None:
+    """This asserted the opposite, and the labs that work say otherwise.
+
+    `hr-guest` has its client on `home`/WPA2 in `CURRENT_PROFILE` while
+    `PROFILES` still holds the untouched `Default`/open boilerplate, and the
+    donor's own access-point clients are the same. Not one working client has
+    its saved list rewritten -- and rewriting ours was why a generated lab
+    matched its network in every visible field and still passed no packet.
+    """
     root = _lab([_router(), _client("Laptop1", "EvSebeke")])
     _match_wireless_security_to_the_access_point(root)
-    laptop = _laptop(root)
-    keys = {(node.text or "") for node in laptop.iter("WEP_KEY")}
-    auths = {(node.text or "") for node in laptop.iter("AUTHEN_TYPE")}
-    assert keys == {"Gizli123"}
-    assert auths == {"4"}
+    engine = _laptop(root).find("./ENGINE")
+
+    live = engine.find("./WIRELESS_CLIENT/CURRENT_PROFILE/WIRELESS_PROFILE")
+    assert live.findtext("AUTHEN_TYPE") == "4"
+    assert live.findtext("WEP_KEY") == "Gizli123"
+
+    saved = engine.find("./WIRELESS_CLIENT/PROFILES/WIRELESS_PROFILE")
+    assert saved.findtext("AUTHEN_TYPE") == "1", "the saved list is boilerplate, not ours to rewrite"
+    assert saved.findtext("WEP_KEY") == "1234567890"
 
 
 def test_a_client_on_another_network_is_not_touched() -> None:
@@ -143,16 +154,16 @@ def test_the_profile_ends_up_saying_what_the_port_says() -> None:
     root = _lab([_router(), _client("Laptop1", "EvSebeke")])
     _let_the_home_router_address_its_own_clients(root)
     _make_the_wireless_profile_agree_with_the_port(root)
-    laptop = _laptop(root)
-    assert {(node.text or "") for node in laptop.iter("DHCP_ENABLED")} == {"1"}
-    assert {(node.text or "") for node in laptop.iter("IP_ADDRESS")} == {""}
+    live = _laptop(root).find("./ENGINE/WIRELESS_CLIENT/CURRENT_PROFILE/WIRELESS_PROFILE")
+    assert live.findtext("DHCP_ENABLED") == "1"
+    assert (live.findtext("IP_ADDRESS") or "") == ""
 
 
 def test_a_static_port_makes_the_profile_static_too() -> None:
     """Without a home router to lease from, the port's address is the answer."""
     root = _lab([_client("Laptop1", "EvSebeke")])
     assert _make_the_wireless_profile_agree_with_the_port(root)
-    laptop = _laptop(root)
-    assert {(node.text or "") for node in laptop.iter("DHCP_ENABLED")} == {"0"}
-    assert {(node.text or "") for node in laptop.iter("IP_ADDRESS")} == {"192.168.10.20"}
-    assert {(node.text or "") for node in laptop.iter("DEFAULT_GATEWAY")} == {"192.168.10.1"}
+    live = _laptop(root).find("./ENGINE/WIRELESS_CLIENT/CURRENT_PROFILE/WIRELESS_PROFILE")
+    assert live.findtext("DHCP_ENABLED") == "0"
+    assert live.findtext("IP_ADDRESS") == "192.168.10.20"
+    assert live.findtext("DEFAULT_GATEWAY") == "192.168.10.1"

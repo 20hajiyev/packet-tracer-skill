@@ -1419,7 +1419,7 @@ def _root_has_serial_link(root: ET.Element) -> bool:
     counted here.
 
     Nor is a serial-looking name enough. A lab pruned from
-    `Senan_Haciyev_tapsiriq.pkt` was measured wiring `Serial0/0/0 <-> Serial0/0/0`
+    the saved serial-WAN lab was measured wiring `Serial0/0/0 <-> Serial0/0/0`
     between two routers whose only serial interfaces are `Serial2/0` and
     `Serial3/0`; `port_exists` accepts the name, but the devices' own interface
     lists do not have it. A cable between ports that do not exist is not a WAN,
@@ -7097,6 +7097,20 @@ def _set_text(parent: ET.Element, tag: str, value: str) -> None:
     node.text = value
 
 
+def _live_profile_nodes(engine: ET.Element) -> list[ET.Element]:
+    """The profile a client is actually using, not its saved list.
+
+    `pkt_editor._profile_nodes` returns both, and writing the live network into
+    both is what every working lab does not do. Measured across the ones that
+    ping: `hr-guest` has its client on `home`/WPA2 in `CURRENT_PROFILE` while
+    `PROFILES` still holds the untouched `Default`/open boilerplate, and the
+    donor's own access-point clients are on `TestNetwork`/WEP with `PROFILES`
+    left exactly the same way. Not one working client has its saved list
+    rewritten.
+    """
+    return engine.findall("./WIRELESS_CLIENT/CURRENT_PROFILE/WIRELESS_PROFILE")
+
+
 def _keep_wireless_clients_within_reach_of_their_access_point(root: ET.Element) -> list[str]:
     """A radio link is made by distance, and the layout was deciding distance blind.
 
@@ -7345,7 +7359,7 @@ def _match_wireless_security_to_the_access_point(root: ET.Element) -> list[str]:
             continue
         before = {
             (client.findtext("AUTHEN_TYPE") or "").strip(),
-            *[(profile.findtext("AUTHEN_TYPE") or "").strip() for profile in _profile_nodes(engine)],
+            *[(profile.findtext("AUTHEN_TYPE") or "").strip() for profile in _live_profile_nodes(engine)],
         }
         _ensure_text(client, "AUTHEN_TYPE", authen)
         _ensure_text(client, "ENCRYPT_TYPE", encrypt)
@@ -7354,7 +7368,7 @@ def _match_wireless_security_to_the_access_point(root: ET.Element) -> list[str]:
             process = ET.SubElement(client, "WEP_PROCESS")
         _ensure_text(process, "KEY", key)
         _ensure_text(process, "ENCRYPTION", encrypt)
-        for profile in _profile_nodes(engine):
+        for profile in _live_profile_nodes(engine):
             _ensure_text(profile, "AUTHEN_TYPE", authen)
             _ensure_text(profile, "ENCRYPT_TYPE", encrypt)
             _ensure_text(profile, "WEP_KEY", key)
@@ -7382,14 +7396,12 @@ def _make_the_wireless_profile_agree_with_the_port(root: ET.Element) -> list[str
     The port is the one the rest of the generator writes and reads, so the
     profile follows it.
     """
-    from pkt_editor import _profile_nodes
-
     changed: list[str] = []
     for device in root.findall(".//DEVICES/DEVICE"):
         engine = device.find("./ENGINE")
         if engine is None:
             continue
-        profiles = _profile_nodes(engine)
+        profiles = _live_profile_nodes(engine)
         if not profiles:
             continue
         radio = next(
@@ -7444,7 +7456,7 @@ def _join_wireless_clients_to_the_network_that_exists(root: ET.Element) -> list[
     lab has more than one network on the air there is nothing here to infer,
     and the pass stands aside.
     """
-    from pkt_editor import _profile_nodes, _wireless_common_nodes
+    from pkt_editor import _wireless_common_nodes
 
     broadcasters: dict[str, ET.Element] = {}
     for device in root.findall(".//DEVICES/DEVICE"):
@@ -7470,7 +7482,7 @@ def _join_wireless_clients_to_the_network_that_exists(root: ET.Element) -> list[
             for node in _wireless_common_nodes(engine)
             if engine.find("./WIRELESS_SERVER/WIRELESS_COMMON") is not node
         ]
-        profiles = _profile_nodes(engine)
+        profiles = _live_profile_nodes(engine)
         current = {
             (node.findtext("SSID") or "").strip()
             for node in [*nodes, *profiles]
@@ -8378,7 +8390,7 @@ def _adopt_planned_names(root: ET.Element, blueprint: dict[str, object]) -> list
     it, and it connects to the other two. It had simply kept the donor's name.
 
     Whether the rename lands depends on the donor. Applying the same plan
-    against `Senan_K231.pkt` by hand produced `SW3` correctly; the donor the
+    against the saved floor-switch lab by hand produced `SW3` correctly; the donor the
     corpus picked has its own `MultiLayerSwitch` devices, and one of them was
     reused without being renamed.
 
@@ -9014,7 +9026,7 @@ def _declare_serial_dce_ends(root: ET.Element) -> list[str]:
     Adding `DCEDEV` and `DCEPORT` to that refused file opens it.
 
     The `FROM` end is named as DCE, which is what the donors do: every serial
-    link in `Senan_Haciyev_tapsiriq.pkt` names its `FROM` device and port.
+    link in the saved serial-WAN lab names its `FROM` device and port.
     """
     changed: list[str] = []
     for link in root.findall(".//LINKS/LINK"):
@@ -9435,9 +9447,9 @@ def _align_donor_groups_to_targets(
     refusal: the donor "does not contain that device-to-device link", when it did
     contain it, on different switches.
 
-    `Senan_K231.pkt` is Router-Mertebe3-Mertebe2-Mertebe1. Name order gave
-    SW2 -> Mertebe 1, so `SW1 <-> SW2` mapped to a pair with no link. Distance
-    ordering gives SW1/SW2/SW3 -> Mertebe 3/2/1, which follows the real chain.
+    The saved floor-switch lab is Router-Floor3-Floor2-Floor1. Name order gave
+    SW2 -> Floor 1, so `SW1 <-> SW2` mapped to a pair with no link. Distance
+    ordering gives SW1/SW2/SW3 -> Floor 3/2/1, which follows the real chain.
     """
     if len(donor_groups) < 2 or not target_groups:
         return donor_groups
@@ -10628,7 +10640,7 @@ def _build_donor_prune_plan(
     # one pays for this pass.
     #
     # This pass was held out for a while: the donor it reaches on this machine
-    # is `Senan_Haciyev_tapsiriq.pkt`, and Packet Tracer refused the lab built
+    # is the saved serial-WAN lab, and Packet Tracer refused the lab built
     # from it -- an unwired device costs one device, a refused file costs the
     # whole lab. That refusal is fixed now. It was a serial cable with no DCE
     # end declared, plus two port names taken from an assumed switch model.

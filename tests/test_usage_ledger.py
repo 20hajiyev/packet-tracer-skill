@@ -58,11 +58,11 @@ def test_record_and_read_back(ledger: Path) -> None:
 
 def test_prompt_text_is_never_written_to_disk(ledger: Path) -> None:
     """A lab description can contain names or addresses. None of it may persist."""
-    secret = "Sanan Haciyev ofis 192.168.44.7 ucun 3 switch qur"
+    secret = "Aysel Qurbanova ofis 192.168.44.7 ucun 3 switch qur"
     record(_entry(prompt_shape=prompt_fingerprint(secret)), ledger)
 
     written = ledger.read_text(encoding="utf-8")
-    for fragment in ("Sanan", "Haciyev", "192.168.44.7", "ofis"):
+    for fragment in ("Aysel", "Qurbanova", "192.168.44.7", "ofis"):
         assert fragment not in written
 
 
