@@ -7569,6 +7569,13 @@ def _align_home_router_lan_with_its_clients(root: ET.Element) -> list[str]:
     if not network:
         return []
     first, last = _dhcp_pool_bounds(network, mask)
+    first_offset, last_offset = _dhcp_pool_offsets(mask)
+    present = {
+        (port.findtext("MACADDRESS") or "").strip().lower()
+        for device in devices
+        for port in device.findall(".//PORT")
+        if (port.findtext("MACADDRESS") or "").strip()
+    }
 
     # Written by path, not by tag. `ENGINE` carries a stray empty `START_IP`
     # beside the real one in `DHCP_SERVER/POOLS/POOL`, and a search by tag name
@@ -7594,14 +7601,29 @@ def _align_home_router_lan_with_its_clients(root: ET.Element) -> list[str]:
             if node is None:
                 node = ET.SubElement(pool, tag)
             node.text = value
-        # A lease is a record of an address this pool handed out. Moving the
-        # pool and keeping them left five leases on `192.168.0.100` .. `.104`
-        # in a router now serving `192.168.10.0/24` -- addresses it can no
-        # longer reach, held against clients that will ask again.
+        # A lease records which client holds which address, and Packet Tracer
+        # restores a client from it when the file opens. Deleting them -- which
+        # this pass did at first, on the reasoning that an address on the old
+        # network is stale -- is why a wireless client came up holding nothing
+        # and reached nothing: with no lease to restore it would have had to
+        # associate and ask again, which opening a file does not make it do.
+        #
+        # Measured: the donor's router carries five leases, one of them against
+        # the very MAC our laptop has, and its client pings 4/4. Ours carried
+        # none. The addresses were stale; the records were not, so they are
+        # renumbered into the new pool instead of dropped.
         leases = pool.find("DHCP_POOL_LEASES")
         if leases is not None:
             for lease in list(leases):
-                leases.remove(lease)
+                mac = (lease.findtext("MAC_ADDRESS") or "").strip().lower()
+                if mac and mac not in present:
+                    # The client it was written for was pruned out of the lab.
+                    leases.remove(lease)
+            for offset, lease in enumerate(list(leases)):
+                held = lease.find("IP_ADDRESS")
+                if held is None:
+                    held = ET.SubElement(lease, "IP_ADDRESS")
+                held.text = _address_at(network, first_offset + offset, last_offset)
     return [f"{name} now serves {network} with its gateway on {gateway}, which its clients point at"]
 
 
@@ -7614,6 +7636,32 @@ def _network_address(address: str, mask: str) -> str:
     if len(octets) != 4 or len(bits) != 4:
         return ""
     return ".".join(str(octet & bit) for octet, bit in zip(octets, bits))
+
+
+def _dhcp_pool_offsets(mask: str) -> tuple[int, int]:
+    """Where a home router's pool starts and stops inside its own network."""
+    try:
+        bits = [int(part) for part in mask.split(".")]
+    except ValueError:
+        return 1, 1
+    if len(bits) != 4:
+        return 1, 1
+    size = 1
+    for bit in bits:
+        size *= 256 - bit
+    return min(100, max(size - 2, 1)), min(149, max(size - 2, 1))
+
+
+def _address_at(network: str, offset: int, ceiling: int) -> str:
+    """The address `offset` into `network`, never past the pool's last one."""
+    try:
+        octets = [int(part) for part in network.split(".")]
+    except ValueError:
+        return network
+    if len(octets) != 4:
+        return network
+    value = (octets[0] << 24) + (octets[1] << 16) + (octets[2] << 8) + octets[3] + min(offset, ceiling)
+    return ".".join(str((value >> shift) & 0xFF) for shift in (24, 16, 8, 0))
 
 
 def _dhcp_pool_bounds(network: str, mask: str) -> tuple[str, str]:

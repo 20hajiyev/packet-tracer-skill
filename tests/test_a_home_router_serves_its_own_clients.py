@@ -32,6 +32,14 @@ def _home_router(name: str = "WRT1", lan: str = "192.168.0.1") -> ET.Element:
         "<NETWORK>192.168.0.0</NETWORK><MASK>255.255.255.0</MASK>"
         "<DEFAULT_ROUTER>192.168.0.1</DEFAULT_ROUTER>"
         "<START_IP>192.168.0.100</START_IP><END_IP>192.168.0.149</END_IP>"
+        "<DHCP_POOL_LEASES>"
+        "<DHCP_POOL_LEASE><MAC_ADDRESS>0001.42AA.65C4</MAC_ADDRESS>"
+        "<CLIENT_ID>0001.42AA.65C4</CLIENT_ID><HOST_PORT>Vlan1</HOST_PORT>"
+        "<IP_ADDRESS>192.168.0.100</IP_ADDRESS><LEASE_TIME>86400000</LEASE_TIME></DHCP_POOL_LEASE>"
+        "<DHCP_POOL_LEASE><MAC_ADDRESS>000A.F309.D80E</MAC_ADDRESS>"
+        "<CLIENT_ID>000A.F309.D80E</CLIENT_ID><HOST_PORT>Vlan1</HOST_PORT>"
+        "<IP_ADDRESS>192.168.0.101</IP_ADDRESS><LEASE_TIME>86400000</LEASE_TIME></DHCP_POOL_LEASE>"
+        "</DHCP_POOL_LEASES>"
         "</POOL></POOLS></DHCP_SERVER></ENGINE></DEVICE>"
     )
     device.find("./ENGINE/NAME").text = name
@@ -39,10 +47,11 @@ def _home_router(name: str = "WRT1", lan: str = "192.168.0.1") -> ET.Element:
     return device
 
 
-def _host(name: str, address: str, gateway: str, dhcp: str = "false") -> ET.Element:
+def _host(name: str, address: str, gateway: str, dhcp: str = "false", mac: str = "0001.42AA.65C4") -> ET.Element:
     device = ET.fromstring("<DEVICE><ENGINE><TYPE>Laptop</TYPE><NAME/></ENGINE></DEVICE>")
     device.find("./ENGINE/NAME").text = name
     port = ET.SubElement(device, "PORT")
+    ET.SubElement(port, "MACADDRESS").text = mac
     ET.SubElement(port, "TYPE").text = "eHostWirelessN"
     ET.SubElement(port, "IP").text = address
     ET.SubElement(port, "SUBNET").text = "255.255.255.0"
@@ -127,3 +136,56 @@ def test_the_stray_empty_field_beside_the_pool_stays_empty() -> None:
 def test_a_lab_with_no_home_router_is_untouched() -> None:
     root = _lab([_host("PC1", "192.168.10.20", "192.168.10.1")])
     assert _align_home_router_lan_with_its_clients(root) == []
+
+
+def _leases(root: ET.Element) -> list[tuple[str, str]]:
+    return [
+        ((lease.findtext("MAC_ADDRESS") or ""), (lease.findtext("IP_ADDRESS") or ""))
+        for lease in root.findall(".//DHCP_POOL_LEASES/DHCP_POOL_LEASE")
+    ]
+
+
+def test_a_lease_is_renumbered_onto_the_new_network_not_deleted() -> None:
+    """Deleting them is what left a wireless client holding nothing on load.
+
+    Packet Tracer restores a client's address from the lease record when the
+    file opens. Without one it would have to associate and ask again, which
+    opening a file does not make it do. The donor's router carries a lease
+    against the very MAC our laptop has, and its client pings 4/4.
+    """
+    root = _lab([_home_router(), _host("Laptop1", "192.168.10.20", "192.168.10.1")])
+    assert _align_home_router_lan_with_its_clients(root)
+    assert _leases(root) == [("0001.42AA.65C4", "192.168.10.100")]
+
+
+def test_a_lease_for_a_device_the_prune_removed_is_dropped() -> None:
+    """A lease naming a client that is not in the lab is a record of nothing."""
+    root = _lab([_home_router(), _host("Laptop1", "192.168.10.20", "192.168.10.1")])
+    _align_home_router_lan_with_its_clients(root)
+    assert "000A.F309.D80E" not in {mac for mac, _ in _leases(root)}
+
+
+def test_the_lease_keeps_the_client_it_was_written_for() -> None:
+    root = _lab([_home_router(), _host("Laptop1", "192.168.10.20", "192.168.10.1")])
+    _align_home_router_lan_with_its_clients(root)
+    lease = root.find(".//DHCP_POOL_LEASES/DHCP_POOL_LEASE")
+    assert lease.findtext("CLIENT_ID") == "0001.42AA.65C4"
+    assert lease.findtext("HOST_PORT") == "Vlan1"
+    assert lease.findtext("LEASE_TIME") == "86400000"
+
+
+def test_renumbering_the_leases_twice_changes_nothing() -> None:
+    root = _lab([_home_router(), _host("Laptop1", "192.168.10.20", "192.168.10.1")])
+    assert _align_home_router_lan_with_its_clients(root)
+    before = _leases(root)
+    assert _align_home_router_lan_with_its_clients(root) == []
+    assert _leases(root) == before
+
+
+def test_leases_stay_inside_the_pool() -> None:
+    root = _lab([_home_router(), _host("Laptop1", "192.168.10.20", "192.168.10.1")])
+    _align_home_router_lan_with_its_clients(root)
+    start = _pool(root, "START_IP")
+    end = _pool(root, "END_IP")
+    for _mac, address in _leases(root):
+        assert start <= address <= end or address == start
