@@ -136,6 +136,16 @@ quickly as `diff` will.
   its port -- both record it, and Packet Tracer obeys the profile
 - a radio link is made by **distance**. A client outside the access point's
   `COVERAGERANGE` reports its port `up` and `linked` and passes nothing
+- an access point's WPA key lives in `WIRELESS_COMMON/WEP_PROCESS/KEY` with
+  `WEP_PROCESS/ENCRYPTION`, never in `WPA_PASSPHRASE`. The names are legacy and
+  WPA2 uses them; the client side is the same shape. Put it in the wrong field
+  and the access point runs WPA2 with no key while its clients have one
+- a wireless client reads `ip 0.0.0.0` at its un-negotiated rate for the first
+  moments after a lab opens, even in a lab Packet Tracer saved itself while it
+  was pinging 4/4. `pt_inspect_ports` right after opening is a **first reading**
+  and has to be discarded exactly like a first ping
+- a home router's DHCP **lease records** are how a client gets its address back
+  when the file opens; move its LAN and they have to be renumbered, not dropped
 - the builder MCP's device table is not authoritative about port names; it
   gives the AC home router `Ethernet 1` .. `4`, and the device itself says
   `GigabitEthernet 1` .. `4`. `pt_inspect_ports` answers at the IOS layer,

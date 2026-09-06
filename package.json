@@ -1,6 +1,6 @@
 {
   "name": "packet-tracer-skill",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": false,
   "description": "Donor-backed Cisco Packet Tracer 9.x skill for natural-language planning, safe-open generation, editing, parity reporting, and runtime diagnostics across coding hosts.",
   "keywords": [
@@ -75,6 +75,7 @@
     "scripts/vendor/twofish_pure.py",
     "templates",
     "references/*.json",
+    "!references/local-donor-catalog.json",
     "references/*.md",
     "examples/README.md",
     "examples/gallery.md",

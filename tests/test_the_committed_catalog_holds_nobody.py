@@ -96,3 +96,31 @@ def test_the_local_file_goes_away_when_the_machine_has_no_local_labs(tmp_path: P
 def test_the_local_catalog_is_not_tracked_by_git() -> None:
     ignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
     assert LOCAL_CATALOG_JSON.name in ignore
+
+
+def test_the_published_package_carries_no_local_lab_index() -> None:
+    """`.gitignore` does not reach npm, and the same leak had a second route.
+
+    The local donor catalogue is git-ignored, but `package.json` ships
+    `references/*.json`, so `npm pack` picked it straight back up -- 351
+    entries naming their owner, with absolute paths under their home directory,
+    on their way to a public registry. Two places decide what ships and nothing
+    compared them, which is the defect this whole file exists to catch.
+    """
+    import json
+    import subprocess
+
+    result = subprocess.run(
+        ["npm", "pack", "--dry-run", "--json"],
+        capture_output=True,
+        text=True,
+        cwd=str(ROOT),
+        shell=True,
+    )
+    if result.returncode != 0:
+        import pytest
+
+        pytest.skip(f"npm not available: {result.stderr[-200:]}")
+    listed = [entry["path"] for entry in json.loads(result.stdout)[0]["files"]]
+    assert listed, "npm pack listed no files at all"
+    assert LOCAL_CATALOG_JSON.name not in {Path(name).name for name in listed}

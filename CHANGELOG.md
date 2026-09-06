@@ -4,6 +4,73 @@ All notable changes to this project should be recorded in this file.
 
 The format is intentionally simple and release-oriented.
 
+## [0.3.1] - 2026-09-06
+
+### Wireless labs that actually carry traffic
+
+`0.3.0` shipped wireless topologies that opened and passed every static check
+while no client could reach anything. Measured on a generated lab after this
+release: a laptop takes its lease from the home router and pings the gateway
+and the other laptop 4/4, over Wi-Fi, on an open network and on WPA2.
+
+Six facts about one wireless lab were each decided in two places with nothing
+comparing them, and every one of them had to be fixed before a packet moved.
+
+### Fixed
+
+- **The access point's key was written where Packet Tracer does not read it.**
+  A working WPA2 home router keeps `WIRELESS_COMMON/WEP_PROCESS/KEY` with
+  `WEP_PROCESS/ENCRYPTION`, and carries no `WPA_PASSPHRASE` at all -- the field
+  names are legacy and WPA2 uses them. Choosing the field by authentication
+  type left the access point running WPA2 with no key while its clients had
+  one. Both sides looked right in every field anyone was reading.
+- **A home router's DHCP lease records were deleted when its LAN moved.** That
+  is how a client gets its address back when the file opens; they are
+  renumbered into the new pool now, and a lease naming a client the prune
+  removed is dropped.
+- **The client's security, network name and addressing mode never followed the
+  access point.** `set_wireless_ssid` wrote the access point;
+  `associate_wireless_client` wrote only the SSID. A repair pass now carries
+  authentication, encryption, key and network type across, and only into the
+  live profile -- every working client leaves its saved `PROFILES` list as the
+  donor's boilerplate.
+- **A home router served whatever network its donor had.** The laptops were
+  addressed on the planned network and the router on the donor's; the router
+  now moves onto the one its own clients point at, and its pool with it.
+- **The layout placed wireless clients out of radio range.** Hosts were laid
+  out in rows under the switch they hang off, and a wireless client hangs off
+  nothing -- one landed 420 units from a router whose radio reaches 250.
+- **`port_exists` accepted interface names a home router does not have.** It
+  checked only the port index, so `FastEthernet0/1` passed on a device whose
+  sockets are `Ethernet 1` .. `4`, and with no interfaces in its configuration
+  `Ethernet 99` passed too. Both models were read off the live devices; the
+  repair pass reads the same list, so a wrong name is renamed rather than the
+  cable dropped.
+- **The coherence checker could not see a home router's LAN address.** It walks
+  running configs, and that address is a setting, so it reported
+  `gateway_answers_for_nobody` against a router holding exactly that address.
+
+### Changed
+
+- The committed sample catalogue is limited to the labs it may publish.
+  Rebuilding it on a machine with saved labs had staged 350 entries naming
+  their owner, with absolute paths under their home directory, into a file
+  bound for a public repository. Local labs go to a git-ignored file beside it
+  and donor ranking reads both, so nothing about donor choice changed.
+- Comments, docs and fixtures no longer identify their evidence by the filename
+  of someone's saved lab.
+
+### Notes on measurement
+
+`pt_inspect_ports` immediately after a lab opens shows a wireless client as
+`up`, `linked`, `ip 0.0.0.0`. That is a first reading and means nothing -- a lab
+Packet Tracer saved itself, seconds after it pinged 4/4, reads the same way on
+reopen. Several hypotheses were rejected against that control rather than
+argued: radio bandwidth matching, channel matching, `NETWORK_TYPE`, and the
+belief that only a runtime nudge could make association work.
+
+833 passed, 1 skipped. Corpus: 32 of 33 generated, 31 opened, 0 unexpected.
+
 ## [0.3.0] - 2026-08-06
 
 ### First verified generation

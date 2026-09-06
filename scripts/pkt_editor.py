@@ -2190,15 +2190,23 @@ def _apply_wireless_op(device: ET.Element, operation: dict[str, object]) -> None
             if node.find("CHANNEL") is not None:
                 _ensure_text(node, "CHANNEL", str(operation["channel"]))
             if operation.get("passphrase"):
-                # Write the key the chosen security uses, creating the element
-                # when the donor's own network had none. Guarding on "does this
-                # element already exist" meant a donor running an open network
-                # silently swallowed the passphrase: `ssid EvSebeke wpa2 sifre
-                # Gizli123` produced a lab carrying the SSID eleven times over
-                # and the word Gizli123 not once, with WPA2 configured and no
-                # key to join it with.
-                key = "WEP_KEY" if str(operation.get("auth_type")) == "1" else "WPA_PASSPHRASE"
-                _ensure_text(node, key, str(operation["passphrase"]))
+                # The key goes in `WEP_PROCESS`, whatever the security is.
+                #
+                # Those field names are legacy: a working WPA2 home router
+                # keeps `WEP_PROCESS/KEY` with `WEP_PROCESS/ENCRYPTION` set to
+                # the encryption type, and carries no `WPA_PASSPHRASE` at all.
+                # Measured on `hr-guest`, which associates and pings; the same
+                # shape the client side already used. Choosing the field by
+                # authentication type -- `WEP_KEY` for WEP, `WPA_PASSPHRASE`
+                # otherwise -- put the passphrase somewhere Packet Tracer does
+                # not read, so the access point ran WPA2 with no key while its
+                # clients had one, and nothing associated. The lab opened and
+                # every field looked right on both sides.
+                process = node.find("WEP_PROCESS")
+                if process is None:
+                    process = ET.SubElement(node, "WEP_PROCESS")
+                _ensure_text(process, "KEY", str(operation["passphrase"]))
+                _ensure_text(process, "ENCRYPTION", str(operation["encrypt_type"]))
         for profile in _profile_nodes(engine):
             _ensure_text(profile, "NAME", str(operation["ssid"]))
             _ensure_text(profile, "SSID", str(operation["ssid"]))

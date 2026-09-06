@@ -7323,9 +7323,12 @@ def _match_wireless_security_to_the_access_point(root: ET.Element) -> list[str]:
     encrypt = (common.findtext("ENCRYPT_TYPE") or "").strip()
     if not authen:
         return []
+    # `WEP_PROCESS/KEY` first: that is where a working access point keeps its
+    # key whatever the security is, and the other two are older spellings that
+    # some donors still carry.
     key = ""
-    for tag in ("WPA_PASSPHRASE", "WEP_KEY"):
-        value = (common.findtext(tag) or "").strip()
+    for path in ("WEP_PROCESS/KEY", "WPA_PASSPHRASE", "WEP_KEY"):
+        value = (common.findtext(path) or "").strip()
         if value:
             key = value
             break

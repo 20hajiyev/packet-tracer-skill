@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import json
+import re
 import shutil
 import subprocess
 
@@ -115,7 +116,13 @@ def test_readme_highlights_release_and_runtime_contracts() -> None:
     assert "output/local-sample-audit.json" in readme
     assert "Bu repo Cisco Packet Tracer 9.x `.pkt` faylları" in readme
     assert "generate_ready=0" in readme
-    assert "packet-tracer-skill@0.3.0" in readme
+    # Pinned to `package.json` rather than to a constant. What matters is that
+    # the README names the version actually being shipped -- a constant here
+    # just has to be edited at every bump, and the edit is the thing that gets
+    # forgotten.
+    version = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
+    assert f"packet-tracer-skill@{version}" in readme
+    assert f"`{version}`" in readme, "the README's headline section names some other version"
     assert "user_summary" in readme
     assert "next_best_action" in readme
     assert "proof_card_refs" in readme
@@ -127,7 +134,9 @@ def test_package_metadata_is_publish_ready() -> None:
     files = set(payload["files"])
     scripts = payload["scripts"]
 
-    assert payload["version"] == "0.3.0"
+    # Shape, not value: a bump should not need this file edited, but a version
+    # that is not a release number should still fail here.
+    assert re.fullmatch(r"\d+\.\d+\.\d+", payload["version"]), payload["version"]
     assert {"packet-tracer", "network-lab", "natural-language", "codex", "cursor", "claude"} <= keywords
     assert {
         "CONTRIBUTING.md",

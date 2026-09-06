@@ -10,7 +10,7 @@ This repository is built for one job: take a natural-language network request, b
 
 It is intended for networking labs where correctness matters more than producing a pretty but unverifiable diagram. The skill can plan, inspect, edit, compare, and explain Packet Tracer scenarios, but it deliberately separates "recognized by the parser", "visible in inventory", "edit-proven", "donor-backed ready", and "generate-ready" support.
 
-## What `0.3.0` does
+## What `0.3.1` does
 
 In this release a prompt produces a lab Packet Tracer opens.
 
@@ -26,10 +26,10 @@ inspecting the file.
 | --- | --- |
 | corpus scenarios generated | 32 of 33 (the 33rd asks for no devices and is refused) |
 | of those, opened by Packet Tracer | 31 of 32 |
-| tests | 824 passed, 1 skipped |
+| tests | 833 passed, 1 skipped |
 | generated DHCP lab | four PCs took leases from the router pool and pinged their gateway and each other 4/4 |
 | generated leased line | traffic crossed `Serial0/1/1 <-> Serial0/1/0` 4/4 |
-| generated home-router lab | both hosts pinged the gateway and each other 4/4 |
+| generated home-router lab | both hosts pinged the gateway and each other 4/4, cabled and over Wi-Fi, open and WPA2 |
 
 Three defects had made every generated WAN lab unopenable, each hiding the next.
 A donor the selector had *rejected* still rewrote the request, so a planned
@@ -44,17 +44,13 @@ donor-prune generation: a real lab is pruned and rewired to match the request.
 The atlas `generate_ready` count further down is a stricter per-feature
 acceptance gate, still `0` by design.
 
-**One thing to know before you ask for Wi-Fi.** A lab whose hosts reach the
-network over a *cable* is verified by ping here. A lab whose hosts have only a
-radio is not: Packet Tracer does not re-form the association when it opens such
-a file, so the client shows its port `up` and `linked`, holds no address, and
-reaches nothing until you nudge a device in the workspace. Which of the two you
-get depends on the donor -- one whose laptops carry a copper port produces the
-first, one whose laptops carry only a radio produces the second. The generator
-now makes the client agree with its network in every field that can be written
-(name, security, key, addressing mode, and placement inside the access point's
-coverage), and that is still not sufficient. Treat wireless-only topologies as
-unverified.
+**One thing to know when you check a Wi-Fi lab.** Read a wireless client once,
+straight after the file opens, and it will look broken: port `up` and `linked`,
+`ip 0.0.0.0`, the radio at its un-negotiated rate. That is a first reading and
+means nothing -- the client has not finished taking its lease. Read it again and
+it holds its address and pings. A lab Packet Tracer saved itself, seconds after
+it pinged 4/4, reads the same way on reopen, which is how we know the reading
+rather than the lab is at fault.
 
 The previous line, the `0.2.3` capability release, was focused on:
 
@@ -602,7 +598,7 @@ See also:
 
 ## Release and Launch State
 
-The current line is `packet-tracer-skill@0.3.0`, and it is the first release
+The current line is `packet-tracer-skill@0.3.1`, and it is the first release
 where generation is the headline rather than a deferred promise. `0.2.3`, the
 previous published line, was a capability proof and readiness release that
 deliberately refused broad generation.
@@ -656,7 +652,7 @@ qurur, mövcud faylı redaktə edir və hər iddiasını ölçü ilə əsasland�
 fayl Packet Tracer-də açılır və cihazları bir-birini ping edir; alınmayanda
 səbəbini açıq deyir.
 
-### `0.3.0` nə dəyişdi
+### `0.3.1` nə dəyişdi
 
 Bu, promptun Packet Tracer-in açdığı fayla çevrildiyi ilk buraxılışdır.
 
@@ -664,23 +660,21 @@ Bu, promptun Packet Tracer-in açdığı fayla çevrildiyi ilk buraxılışdır.
 | --- | --- |
 | korpusda qurulan ssenari | 33-dən 32 (33-cü heç bir cihaz istəmir, rədd edilir) |
 | onlardan Packet Tracer-in açdığı | 32-dən 31 |
-| testlər | 824 keçdi, 1 ötürüldü |
+| testlər | 833 keçdi, 1 ötürüldü |
 | DHCP laboratoriyası | 4 kompüter routerin hovuzundan ünvan aldı, şlüzə və bir-birinə 4/4 ping |
 | icarə xətti (leased line) | trafik `Serial0/1/1 <-> Serial0/1/0` üzərindən 4/4 keçdi |
-| ev routeri laboratoriyası | hər iki host şlüzə və bir-birinə 4/4 ping etdi |
+| ev routeri laboratoriyası | hər iki host şlüzə və bir-birinə 4/4 ping etdi -- kabel və Wi-Fi, açıq və WPA2 |
 
 Ping rəqəmləri cihazların özündə `ping` işlədilməklə alınıb. Bu layihədə bütün
 statik yoxlamaları keçən, amma heç nəyin ping etmədiyi laboratoriyalar olub.
 
-**Wi-Fi istəməzdən əvvəl bilməli olduğunuz bir şey.** Hostları şəbəkəyə **kabel**
-ilə çıxan laboratoriya burada ping ilə təsdiqlənib. Yalnız radiosu olan host isə
-təsdiqlənməyib: Packet Tracer belə faylı açanda assosiasiyanı yenidən qurmur --
-port `up` və `linked` görünür, ünvan olmur, heç yerə çatmır, ta ki iş sahəsində
-cihazı tərpədənə qədər. Hansını alacağınız donordan asılıdır: laptopları mis
-porta malik donor birincisini, yalnız radiosu olan donor ikincisini verir.
-Generator artıq klienti şəbəkəsi ilə yazıla bilən hər sahədə uzlaşdırır (ad,
-təhlükəsizlik, açar, ünvanlama rejimi və əhatə dairəsinin içində yerləşdirmə) --
-bu **hələ də kifayət etmir**. Yalnız simsiz topologiyaları təsdiqlənməmiş sayın.
+**Wi-Fi laboratoriyasını yoxlayarkən bilməli olduğunuz bir şey.** Fayl açılan
+kimi simsiz klienti bir dəfə oxusanız, xarab görünəcək: port `up` və `linked`,
+`ip 0.0.0.0`, radio danışılmamış sürətdə. Bu **ilk oxunuşdur** və heç nə demir --
+klient hələ icarəsini almayıb. İkinci dəfə oxuyun: ünvanı olur və ping edir.
+Packet Tracer-in özünün yaddaşa verdiyi, saniyələr əvvəl 4/4 ping edən fayl da
+yenidən açılanda eyni cür oxunur -- səhv olanın lab yox, oxunuş olduğunu bundan
+bilirik.
 
 ### Nə düzəldildi
 

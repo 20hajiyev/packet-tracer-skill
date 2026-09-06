@@ -65,7 +65,8 @@ def _router(name: str = "WRT1", ssid: str = "EvSebeke", dhcp: str = "1") -> ET.E
         "</POOL></POOLS></DHCP_SERVER>"
         f"<WIRELESS_SERVER><WIRELESS_COMMON><SSID>{ssid}</SSID>"
         "<AUTHEN_TYPE>4</AUTHEN_TYPE><ENCRYPT_TYPE>4</ENCRYPT_TYPE>"
-        "<WPA_PASSPHRASE>Gizli123</WPA_PASSPHRASE></WIRELESS_COMMON></WIRELESS_SERVER>"
+        "<WEP_PROCESS><KEY>Gizli123</KEY><ENCRYPTION>4</ENCRYPTION></WEP_PROCESS>"
+        "</WIRELESS_COMMON></WIRELESS_SERVER>"
         "</ENGINE></DEVICE>"
     )
     device.find("./ENGINE/NAME").text = name
@@ -167,3 +168,76 @@ def test_a_static_port_makes_the_profile_static_too() -> None:
     assert live.findtext("DHCP_ENABLED") == "0"
     assert live.findtext("IP_ADDRESS") == "192.168.10.20"
     assert live.findtext("DEFAULT_GATEWAY") == "192.168.10.1"
+
+
+def test_the_access_point_key_is_written_where_packet_tracer_reads_it() -> None:
+    """`WPA_PASSPHRASE` is not that place, and putting it there cost the whole lab.
+
+    A working WPA2 home router keeps `WIRELESS_COMMON/WEP_PROCESS/KEY` with
+    `WEP_PROCESS/ENCRYPTION` set to the encryption type, and carries no
+    `WPA_PASSPHRASE` at all -- measured on `hr-guest`, which associates and
+    pings. The names are legacy; WPA2 uses them, and the client side already
+    used the same shape.
+
+    Choosing the field by authentication type put the passphrase somewhere
+    Packet Tracer does not read, so the access point ran WPA2 with no key while
+    its clients had one. The lab opened, both sides looked right in every field
+    anyone was reading, and nothing associated: 0/4 to the gateway.
+    """
+    from pkt_editor import _apply_wireless_op
+
+    device = ET.fromstring(
+        "<DEVICE><ENGINE><TYPE>WirelessRouterNewGeneration</TYPE><NAME>WRT1</NAME>"
+        "<WIRELESS_SERVER><WIRELESS_COMMON><SSID>Default</SSID>"
+        "<AUTHEN_TYPE>0</AUTHEN_TYPE><ENCRYPT_TYPE>0</ENCRYPT_TYPE>"
+        "<STANDARD_CHANNEL>0</STANDARD_CHANNEL></WIRELESS_COMMON></WIRELESS_SERVER>"
+        "</ENGINE></DEVICE>"
+    )
+    _apply_wireless_op(
+        device,
+        {
+            "op": "set_wireless_ssid",
+            "ssid": "EvSebeke",
+            "auth_type": "4",
+            "encrypt_type": "4",
+            "channel": "1",
+            "passphrase": "Gizli123",
+        },
+    )
+    common = device.find("./ENGINE/WIRELESS_SERVER/WIRELESS_COMMON")
+    assert common.findtext("./WEP_PROCESS/KEY") == "Gizli123"
+    assert common.findtext("./WEP_PROCESS/ENCRYPTION") == "4"
+    assert common.findtext("WPA_PASSPHRASE") is None
+
+
+def test_a_donor_running_an_open_network_still_gets_the_key() -> None:
+    """The element has to be created; guarding on its existence swallowed the passphrase."""
+    from pkt_editor import _apply_wireless_op
+
+    device = ET.fromstring(
+        "<DEVICE><ENGINE><TYPE>WirelessRouter</TYPE><NAME>WRT1</NAME>"
+        "<WIRELESS_SERVER><WIRELESS_COMMON><SSID>Default</SSID>"
+        "<AUTHEN_TYPE>0</AUTHEN_TYPE><ENCRYPT_TYPE>0</ENCRYPT_TYPE>"
+        "</WIRELESS_COMMON></WIRELESS_SERVER></ENGINE></DEVICE>"
+    )
+    assert device.find(".//WEP_PROCESS") is None
+    _apply_wireless_op(
+        device,
+        {
+            "op": "set_wireless_ssid",
+            "ssid": "EvSebeke",
+            "auth_type": "4",
+            "encrypt_type": "4",
+            "channel": "6",
+            "passphrase": "Gizli123",
+        },
+    )
+    assert device.findtext(".//WEP_PROCESS/KEY") == "Gizli123"
+
+
+def test_the_client_finds_the_key_wherever_the_access_point_keeps_it() -> None:
+    """The repair pass read only the old spellings, so the clients came out keyless."""
+    root = _lab([_router(), _client("Laptop1", "EvSebeke")])
+    _match_wireless_security_to_the_access_point(root)
+    common = _laptop(root).find("./ENGINE/WIRELESS_CLIENT/WIRELESS_COMMON")
+    assert common.findtext("./WEP_PROCESS/KEY") == "Gizli123"
