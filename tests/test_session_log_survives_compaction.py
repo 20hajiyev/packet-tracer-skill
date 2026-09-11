@@ -196,3 +196,36 @@ def test_the_log_never_ships(tmp_path: Path) -> None:
     files = _json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["files"]
     assert not [pattern for pattern in files if pattern.startswith("output")]
     assert session_log.DEFAULT_LOG_PATH.parent.name == "output"
+
+
+def test_reading_the_log_does_not_write_to_it(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A reader that writes evicts, in a bounded log, the steps it reports on.
+
+    `--session-state` and `--resume` were landing as `other` entries in front
+    of the real chain, so every recovery made the history one step longer and
+    one step less useful.
+    """
+    import os
+
+    path = tmp_path / "log.jsonl"
+    lab = tmp_path / "lab.pkt"
+    lab.write_bytes(b"a lab")
+
+    env = dict(os.environ)
+    env["PKT_SESSION_LOG"] = str(path)
+    env["PYTHONIOENCODING"] = "utf-8"
+    path.write_text(
+        json.dumps({"v": 1, "at": "2026-01-01T00:00:00+00:00", "command": "generate",
+                    "status": "ok", "artifact": str(lab),
+                    "artifact_sha256": session_log.artifact_digest(lab)}) + "\n",
+        encoding="utf-8",
+    )
+    before = path.read_text(encoding="utf-8")
+
+    for flags in (["--session-state"], ["--resume", str(lab)]):
+        subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "generate_pkt.py"), *flags],
+            capture_output=True, text=True, cwd=str(ROOT), env=env, timeout=300,
+        )
+
+    assert path.read_text(encoding="utf-8") == before, "reading the log appended to it"

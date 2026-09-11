@@ -12917,6 +12917,12 @@ def _record_session_step(args: argparse.Namespace, status: str) -> None:
         from session_log import had_detailed, record
         from usage_ledger import prompt_fingerprint
 
+        # Reading the log is not a step in the work. Recording it pushed two
+        # `other` entries in front of the real chain on every recovery, and in
+        # a bounded log a reader that writes eventually evicts the very steps
+        # it exists to report.
+        if getattr(args, "resume", None) or getattr(args, "session_state", False):
+            return
         if had_detailed() and status == "ok":
             return
 
