@@ -10,7 +10,7 @@ This repository is built for one job: take a natural-language network request, b
 
 It is intended for networking labs where correctness matters more than producing a pretty but unverifiable diagram. The skill can plan, inspect, edit, compare, and explain Packet Tracer scenarios, but it deliberately separates "recognized by the parser", "visible in inventory", "edit-proven", "donor-backed ready", and "generate-ready" support.
 
-## What `0.3.1` does
+## What `0.3.2` does
 
 In this release a prompt produces a lab Packet Tracer opens.
 
@@ -626,7 +626,7 @@ See also:
 
 ## Release and Launch State
 
-The current line is `packet-tracer-skill@0.3.1`, and it is the first release
+The current line is `packet-tracer-skill@0.3.2`, and it is the first release
 where generation is the headline rather than a deferred promise. `0.2.3`, the
 previous published line, was a capability proof and readiness release that
 deliberately refused broad generation.
@@ -680,7 +680,7 @@ qurur, mövcud faylı redaktə edir və hər iddiasını ölçü ilə əsasland�
 fayl Packet Tracer-də açılır və cihazları bir-birini ping edir; alınmayanda
 səbəbini açıq deyir.
 
-### `0.3.1` nə dəyişdi
+### `0.3.2` nə dəyişdi
 
 Bu, promptun Packet Tracer-in açdığı fayla çevrildiyi ilk buraxılışdır.
 

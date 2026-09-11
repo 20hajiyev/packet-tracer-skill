@@ -4,6 +4,55 @@ All notable changes to this project should be recorded in this file.
 
 The format is intentionally simple and release-oriented.
 
+## [0.3.2] - 2026-09-12
+
+### Picking up a half-finished edit session
+
+Almost nothing here needs remembering between turns: `--doctor`,
+`--explain-plan` and `--parity-report` all recompute from the install, the
+donor registry and the bridge, so an agent that has lost its earlier context
+re-runs one and is exactly as certain as before. One question had no such
+source -- part-way through `--explain-plan` -> `--edit` -> `--parity-report`,
+*which lab am I working on and what comes next*.
+
+### Added
+
+- `output/session-log.jsonl`, one line per run, and two flags that read it
+  back: `--session-state` lists the labs in flight, `--resume <lab.pkt>` says
+  where one was left.
+- `--resume` re-hashes the lab and compares it with what the last step
+  recorded, and claims a position **only when the two agree**. When they do
+  not it says the lab has changed and to re-derive instead -- the same
+  refusal-first stance the rest of the skill takes. Verified first that a
+  digest can carry that weight: decoding a lab and re-encoding it reproduces
+  the file byte for byte.
+- Three constraints, each with a test. No secrets: facts are allow-listed
+  rather than filtered, because an edit prompt holds a passphrase in a field
+  called `passphrase` and a deny-list would leak whatever secret field is added
+  next; the prompt survives only as a non-reversible shape fingerprint. No
+  weight: a test regenerates a lab with and without the log and compares the
+  decoded content. Ships nowhere: `output/` is gitignored and in no
+  `package.json` file list, checked rather than assumed.
+
+### Fixed
+
+- `PKT_USAGE_LEDGER=on`, the obvious way to switch learning on, made the path
+  resolver treat `"on"` as a filename and write the ledger to a file called
+  `on` in the working directory. One variable carrying two meanings with only
+  one of its two readers knowing the switch words. Found by doing it.
+- `--session-state` and `--resume` were recorded as steps by the same wrapper
+  as the work they report on, so each recovery pushed itself in front of the
+  real chain. In a bounded log a reader that writes eventually evicts the steps
+  it exists to report.
+
+### Changed
+
+- `main()` is split into `_build_parser`, `_dispatch` and a wrapper that
+  records once around the whole dispatch. Fourteen branches with twelve return
+  points is not somewhere to repeat a hook.
+
+847 passed, 1 skipped. Corpus: 32 of 33 generated, 31 opened, 0 unexpected.
+
 ## [0.3.1] - 2026-09-06
 
 ### Wireless labs that actually carry traffic
