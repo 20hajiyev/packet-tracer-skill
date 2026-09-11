@@ -341,7 +341,7 @@ def _local_donor_candidates(
 
 
 def _rank_generation_donors(
-    plan: IntentPlan,
+    plan: "IntentPlan",
     topology_tags: list[str],
     donor_roots: list[Path] | None = None,
 ) -> tuple[list[SampleCandidate], list[SampleCandidate], list[SampleCandidate]]:
@@ -405,7 +405,7 @@ def _default_import_cache_root() -> Path:
 
 
 def _resolve_remote_sources(
-    plan: IntentPlan,
+    plan: "IntentPlan",
     reference_roots: list[Path] | None,
     donor_roots: list[Path] | None,
     *,
@@ -658,7 +658,7 @@ def _candidate_archetype_alignment(
 
 
 def _build_support_reports(
-    plan: IntentPlan,
+    plan: "IntentPlan",
     *,
     blueprint: dict[str, object] | None = None,
     cisco_ranked: list[SampleCandidate] | None = None,
@@ -1486,7 +1486,7 @@ def _pool_selected_a_donor(diagnostics: list[dict[str, object]]) -> bool:
 
 
 def _evaluate_donor_prune_candidates(
-    plan: IntentPlan,
+    plan: "IntentPlan",
     blueprint: dict[str, object],
     donor_candidates: list[SampleCandidate],
 ) -> tuple[
@@ -3979,7 +3979,7 @@ def _address_hosts_per_vlan(
 
 
 def _unify_host_segment(
-    plan: IntentPlan,
+    plan: "IntentPlan",
     devices: list[dict[str, object]],
     links: list[dict[str, object]],
     donor_root=None,
@@ -10624,7 +10624,7 @@ def _build_donor_prune_plan_for_donor(plan: IntentPlan, blueprint: dict[str, obj
 
 
 def _build_donor_prune_plan(
-    plan: IntentPlan,
+    plan: "IntentPlan",
     blueprint: dict[str, object],
     donor_roots: list[Path] | None = None,
 ) -> tuple[IntentPlan, DonorArchetypePlan]:
@@ -11683,12 +11683,68 @@ def generate_from_prompt(
         donor_archetype=donor_archetype,
         outcome=usage_ledger.OUTCOME_GENERATED_UNVERIFIED,
     )
+    _record_session_generation(
+        output_path=output_path,
+        plan=raw_plan,
+        blueprint_plan=blueprint_plan,
+        scenario_decision=scenario_generate_decision,
+        donor_archetype=donor_archetype,
+        root=root,
+    )
     if blueprint_out_path is not None:
         blueprint_out_path.parent.mkdir(parents=True, exist_ok=True)
         blueprint_out_path.write_text(json.dumps(blueprint_plan, indent=2, ensure_ascii=False), encoding="utf-8")
     if resolved_reference_roots:
         references = load_reference_catalog(resolved_reference_roots)
         print(f"Loaded reference-only samples: {len(references)}")
+
+
+def _record_session_generation(
+    *,
+    output_path: Path,
+    plan: "IntentPlan",
+    blueprint_plan: dict,
+    scenario_decision: dict,
+    donor_archetype: object,
+    root: ET.Element,
+) -> None:
+    """Note what was built, next to where the ledger notes that it worked.
+
+    Placed here because this is the one point where the answer to "what is this
+    lab" is fully known: the plan that asked for it, the donor it came from and
+    the file that was just written. Recording it anywhere earlier would be
+    recording an intention rather than an outcome.
+
+    The prompt itself is not passed on. What survives is what it parsed to --
+    counts, VLAN numbers, capability names -- which says what was being built
+    without saying who it was for, and carries none of the passphrases an edit
+    prompt can hold.
+    """
+    try:
+        from session_log import note_detailed, record
+
+        note_detailed()
+        donor = getattr(donor_archetype, "compat_donor", "")
+        record(
+            "generate",
+            artifact=output_path,
+            status="ok",
+            facts={
+                "goal": getattr(plan, "goal", ""),
+                "device_counts": dict(getattr(plan, "device_counts", {}) or {}),
+                "vlan_ids": list(getattr(plan, "vlan_ids", []) or []),
+                "capabilities": list(blueprint_plan.get("required_capabilities") or []),
+                "scenario_family": scenario_decision.get("family"),
+                "readiness_status": scenario_decision.get("readiness_status"),
+                "allow_generate": scenario_decision.get("allow_generate"),
+                "donor": Path(str(donor)).name if donor else "",
+                "device_count": len(root.findall(".//DEVICES/DEVICE")),
+                "link_count": len(root.findall(".//LINKS/LINK")),
+                "next_best_action": scenario_decision.get("what_would_make_it_pass") or "",
+            },
+        )
+    except Exception:
+        return
 
 
 def _resolve_edit_link_ports(pkt_path: Path, plan: IntentPlan) -> None:
@@ -12559,7 +12615,62 @@ def local_sample_audit(root: Path, audit_out: Path | None = None) -> None:
     print(json.dumps(payload, indent=2, ensure_ascii=False))
 
 
-def main() -> None:
+def _print_resume(artifact: Path) -> None:
+    """Say where this lab was left, and admit it when the answer cannot be trusted.
+
+    Deliberately not a claim. The log says what the last step was; the lab on
+    disk says what it is now. Only when the two agree is a position reported,
+    because a checkpoint believed without checking would be the same defect
+    this skill spends its passes hunting: one fact derived twice, with nothing
+    comparing the derivations.
+    """
+    from session_log import resume_report
+
+    report = resume_report(artifact)
+    if not report.get("known"):
+        print(f"No recorded steps for {artifact}.")
+        print("Nothing is lost: run --explain-plan to re-derive the plan, or --coherence-report to see where the lab stands.")
+        return
+
+    print(f"{artifact}")
+    print(f"  last step   : {report.get('last_command')} ({report.get('last_status')}) at {report.get('at')}")
+    print(f"  steps logged: {report.get('steps')}")
+    print(f"  {report.get('summary')}")
+    if not report.get("matches_log"):
+        print("  -> re-derive rather than resume: --explain-plan, then --coherence-report")
+    if report.get("next_best_action"):
+        print(f"  next        : {report['next_best_action']}")
+    facts = report.get("last_facts") or {}
+    for key in ("device_counts", "vlan_ids", "capabilities", "donor", "contradiction_counts"):
+        if facts.get(key):
+            print(f"  {key:12}: {facts[key]}")
+    history = report.get("history") or []
+    if len(history) > 1:
+        print("  history     :")
+        for step in history:
+            print(f"    {step.get('at')}  {step.get('command')} ({step.get('status')})")
+
+
+def _print_session_state() -> None:
+    from session_log import artifacts_seen, latest_for, log_enabled, log_path
+
+    if not log_enabled():
+        print("Session logging is off (PKT_SESSION_LOG).")
+        return
+    seen = artifacts_seen()
+    if not seen:
+        print(f"No session steps recorded yet ({log_path()}).")
+        return
+    print(f"{len(seen)} lab(s) touched, most recent first:")
+    for name in seen[:20]:
+        last = latest_for(name) or {}
+        print(f"  {name}")
+        print(f"    {last.get('command')} ({last.get('status')}) at {last.get('at')}")
+    print()
+    print("Run --resume <path> for one of them.")
+
+
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Generate or inspect Cisco Packet Tracer 9.0 .pkt files")
     parser.add_argument("--blueprint", help="Path to the topology blueprint JSON")
     parser.add_argument("--prompt", help="Natural language topology or edit request")
@@ -12598,7 +12709,19 @@ def main() -> None:
     parser.add_argument("--matrix-out", help="Optional JSON output path when using --compare-scenarios")
     parser.add_argument("--acceptance-json-out", help="Optional JSON output path for explain/compare/parity payloads")
     parser.add_argument("--device-family", help="Optional device family filter for --coverage-report")
-    args = parser.parse_args()
+    parser.add_argument(
+        "--resume",
+        help="Say where a multi-step edit session left this .pkt, and whether the file still matches what was recorded",
+    )
+    parser.add_argument(
+        "--session-state",
+        action="store_true",
+        help="List the labs a session has touched, most recently first",
+    )
+    return parser
+
+
+def _dispatch(args: argparse.Namespace) -> None:
     if args.compat_donor:
         os.environ["PACKET_TRACER_COMPAT_DONOR"] = args.compat_donor
     reference_roots = [Path(path) for path in (args.reference_root or [])]
@@ -12657,7 +12780,15 @@ def main() -> None:
             inventory_out=Path(args.inventory_out) if args.inventory_out else None,
         )
         return
+    if args.resume:
+        _print_resume(Path(args.resume))
+        return
+    if args.session_state:
+        _print_session_state()
+        return
     if args.coherence_report:
+        from collections import Counter
+
         from lab_coherence import check_lab_coherence, summarise
 
         root = decode_pkt_to_root(Path(args.coherence_report))
@@ -12665,6 +12796,23 @@ def main() -> None:
         print(summarise(findings))
         for finding in findings:
             print(f"  {finding}")
+        try:
+            from session_log import note_detailed, record
+
+            note_detailed()
+            record(
+                "coherence-report",
+                source=args.coherence_report,
+                status="ok" if not findings else "contradictions",
+                facts={
+                    "contradiction_counts": dict(Counter(getattr(f, "kind", "") for f in findings)),
+                    "next_best_action": (
+                        "" if not findings else "resolve the contradictions above, then re-run --coherence-report"
+                    ),
+                },
+            )
+        except Exception:
+            pass
         # A lab that contradicts itself opens perfectly well, so the exit code
         # is the only place the answer can be acted on.
         raise SystemExit(1 if findings else 0)
@@ -12732,6 +12880,97 @@ def main() -> None:
     if not args.blueprint:
         parser.error("generation requires either --blueprint or --prompt")
     generate_from_blueprint(Path(args.blueprint), Path(args.output), Path(args.xml_out) if args.xml_out else None)
+
+
+
+def main() -> None:
+    """Run the command, and leave a note saying it ran.
+
+    The note is for a later agent, not for this one. Everything this skill
+    decides is recomputed from the environment, so a lost conversation costs
+    only the time to run `--doctor` again -- except for one question, which has
+    no source but the conversation: part-way through a chain of
+    `--explain-plan` -> `--edit` -> `--parity-report`, which lab is being
+    worked on and which step is next. `--resume` answers that from the log.
+
+    Wrapped once, around the whole dispatch, rather than added to each of the
+    fourteen branches: a hook repeated fourteen times is a hook that will be
+    forgotten on the fifteenth.
+    """
+    args = _build_parser().parse_args()
+    status = "ok"
+    try:
+        _dispatch(args)
+    except SystemExit as exit_request:
+        status = "ok" if not exit_request.code else "refused"
+        raise
+    except BaseException:
+        status = "error"
+        raise
+    finally:
+        _record_session_step(args, status)
+
+
+def _record_session_step(args: argparse.Namespace, status: str) -> None:
+    """Append one line describing this invocation. Never raises."""
+    try:
+        from session_log import had_detailed, record
+        from usage_ledger import prompt_fingerprint
+
+        if had_detailed() and status == "ok":
+            return
+
+        command = next(
+            (
+                name
+                for name in (
+                    "explain_plan",
+                    "parity_report",
+                    "coherence_report",
+                    "compare_scenarios",
+                    "inventory",
+                    "validate_open",
+                    "validate_open_debug",
+                    "decode",
+                    "edit",
+                    "coverage_report",
+                    "feature_gap_report",
+                )
+                if getattr(args, name, None)
+            ),
+            "generate" if getattr(args, "prompt", None) else "other",
+        )
+
+        # The prompt is never written down. Its shape is: "3 switch 6 pc" and
+        # "5 switch 2 pc" share a fingerprint, which is the granularity that
+        # answers "what was I building" without recording who it was for.
+        text = ""
+        for candidate in (
+            getattr(args, "prompt", None),
+            getattr(args, "explain_plan", None),
+            getattr(args, "parity_report", None),
+        ):
+            if isinstance(candidate, str) and candidate:
+                text = candidate
+                break
+
+        facts = {}
+        if text:
+            facts["prompt_shape"] = prompt_fingerprint(text)
+
+        source = getattr(args, "edit", None) or getattr(args, "coherence_report", None)
+        if not source and isinstance(getattr(args, "validate_open", None), str):
+            source = args.validate_open
+
+        record(
+            command.replace("_", "-"),
+            artifact=getattr(args, "output", None),
+            source=source,
+            status=status,
+            facts=facts,
+        )
+    except Exception:
+        return
 
 
 if __name__ == "__main__":

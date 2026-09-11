@@ -229,6 +229,34 @@ Launch references:
 - [docs/security-edge-deepening-proof.md](docs/security-edge-deepening-proof.md)
 - [docs/packet-tracer-feature-gap-atlas.md](docs/packet-tracer-feature-gap-atlas.md)
 
+## Picking Up A Half-Finished Edit Session
+
+Almost nothing in this skill needs remembering between turns. `--doctor`,
+`--explain-plan` and `--parity-report` recompute from the install, the donor
+registry and the bridge, so an agent that has lost its earlier context re-runs
+one and is exactly as certain as before.
+
+One question has no such source: part-way through
+`--explain-plan` -> `--edit` -> `--parity-report`, *which lab am I working on
+and what comes next*. Each run now appends a line to
+`output/session-log.jsonl`, and two flags read it back:
+
+```powershell
+python scripts\generate_pkt.py --session-state
+python scripts\generate_pkt.py --resume output\lab.pkt
+```
+
+`--resume` re-hashes the lab and compares it with what the last step recorded.
+A position is reported **only when the two agree**; otherwise it says the lab
+has changed and to re-derive instead. That refusal is the useful answer, and it
+is the same stance the rest of the skill takes when it cannot prove something.
+
+The log carries no secrets (facts are allow-listed, and the prompt survives
+only as a non-reversible shape fingerprint), carries no weight (a test
+regenerates a lab with and without it and compares the decoded content), and
+ships nowhere (`output/` is gitignored and in no `package.json` file list).
+`PKT_SESSION_LOG=off` disables it.
+
 ## Runtime Doctor Contract
 
 `--doctor` is a product surface, not a debug afterthought. It reports:

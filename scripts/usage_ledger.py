@@ -50,14 +50,26 @@ _SUCCESS_WEIGHT = {
 }
 
 
+# One variable carries two meanings -- a switch and a path -- and only one of
+# them was reading the switch words. `PKT_USAGE_LEDGER=on`, the obvious way to
+# turn learning on, made `ledger_path` treat "on" as a filename and write the
+# ledger to a file called `on` in the working directory. Found by doing exactly
+# that while testing something else, which left an untracked `on` in the
+# repository root. Both readers share the vocabulary now.
+_OFF_WORDS = {"off", "0", "false", "none"}
+_ON_WORDS = {"on", "1", "true"}
+
+
 def ledger_path() -> Path:
-    override = os.getenv("PKT_USAGE_LEDGER")
-    return Path(override).expanduser() if override else DEFAULT_LEDGER_PATH
+    override = (os.getenv("PKT_USAGE_LEDGER") or "").strip()
+    if override and override.lower() not in (_OFF_WORDS | _ON_WORDS):
+        return Path(override).expanduser()
+    return DEFAULT_LEDGER_PATH
 
 
 def ledger_enabled() -> bool:
     """Learning is on by default; `PKT_USAGE_LEDGER=off` disables it entirely."""
-    return (os.getenv("PKT_USAGE_LEDGER") or "").strip().lower() not in {"off", "0", "false", "none"}
+    return (os.getenv("PKT_USAGE_LEDGER") or "").strip().lower() not in _OFF_WORDS
 
 
 def prompt_fingerprint(prompt: str) -> str:

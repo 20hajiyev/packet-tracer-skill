@@ -175,6 +175,42 @@ There is no artificial device limit. The only ceiling is physical: a switch has
 the ports it has, and the generator says so plainly when it runs out. Ask for
 more switches, not fewer hosts.
 
+### If you lost the thread part-way through an edit chain
+
+Almost nothing here needs remembering. `--doctor`, `--explain-plan` and
+`--parity-report` all recompute from the install, the donor registry and the
+bridge, so re-running one costs time and nothing else. Losing the conversation
+does not make the skill less certain about anything it reports.
+
+One question has no such source. Part-way through
+`--explain-plan` -> `--edit` -> `--parity-report`, *which lab am I working on
+and what comes next* lived only in the conversation. So each run appends a line
+to `output/session-log.jsonl`, and two flags read it back:
+
+```bash
+python scripts/generate_pkt.py --session-state          # which labs are in flight
+python scripts/generate_pkt.py --resume output/lab.pkt  # where this one was left
+```
+
+`--resume` re-hashes the lab and compares it to what the last step recorded. It
+reports a position **only when the two agree**; when they do not, it says the
+lab has changed and tells you to re-derive instead. Treat "position not
+claimed" as the correct answer, not a failure -- it is the same refusal-first
+stance as everything else here.
+
+Three things the log deliberately is not:
+
+- **not a secret store.** Facts are allow-listed, never filtered. An edit
+  prompt carries a passphrase in an ordinary field, so nothing is written but
+  the named, known-safe keys, and the prompt survives only as the same
+  non-reversible shape fingerprint the usage ledger uses.
+- **not load-bearing.** Delete it and every result is identical; there is a
+  test that regenerates a lab with and without it and compares the content.
+- **not shipped.** It lives under `output/`, which is gitignored and in no
+  `package.json` file list.
+
+`PKT_SESSION_LOG=off` turns it off; `PKT_SESSION_LOG=<path>` moves it.
+
 ### A generated lab becomes the next build's donor
 
 Donor selection can pick a lab this skill produced, so every repair pass

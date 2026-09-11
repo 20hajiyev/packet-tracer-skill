@@ -179,3 +179,28 @@ def test_ledger_default_path_stays_inside_gitignored_output() -> None:
     """The ledger must never land somewhere it could be committed or packaged."""
     assert usage_ledger.DEFAULT_LEDGER_PATH.parent.name == "output"
     assert "output/" in (ROOT / ".gitignore").read_text(encoding="utf-8")
+
+
+def test_switching_the_ledger_on_does_not_create_a_file_called_on(monkeypatch, tmp_path) -> None:
+    """One variable, two meanings, and only one reader knew the vocabulary.
+
+    `ledger_enabled` treated `off` as a word; `ledger_path` treated every value
+    as a filename. So `PKT_USAGE_LEDGER=on` -- the obvious way to turn learning
+    on -- wrote the ledger to a file named `on` in the working directory.
+    Measured by doing it: an untracked `on` holding real ledger lines appeared
+    in the repository root.
+    """
+    from usage_ledger import DEFAULT_LEDGER_PATH, ledger_enabled, ledger_path
+
+    for word in ("on", "1", "true", "ON"):
+        monkeypatch.setenv("PKT_USAGE_LEDGER", word)
+        assert ledger_enabled() is True
+        assert ledger_path() == DEFAULT_LEDGER_PATH, f"{word!r} was taken for a filename"
+
+    for word in ("off", "0", "false", "none"):
+        monkeypatch.setenv("PKT_USAGE_LEDGER", word)
+        assert ledger_enabled() is False
+
+    explicit = tmp_path / "ledger.jsonl"
+    monkeypatch.setenv("PKT_USAGE_LEDGER", str(explicit))
+    assert ledger_path() == explicit
